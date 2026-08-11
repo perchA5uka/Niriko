@@ -23,6 +23,9 @@ object SteamApiClient {
     /** 当前游玩人数接口完整地址（api.steampowered.com）。 */
     const val CURRENT_PLAYERS_URL = "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
 
+    /** 用户游戏库接口完整地址（api.steampowered.com，baseUrl 是 store 域，需完整地址）。 */
+    const val OWNED_GAMES_URL = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/"
+
     /**
      * 可选 Steam Web API key 读取器（由 Application 注入 SettingsDataStore 读取）。
      * 公开接口（storesearch / appdetails / 当前游玩人数）均无需 key；key 仅用于未来扩展。

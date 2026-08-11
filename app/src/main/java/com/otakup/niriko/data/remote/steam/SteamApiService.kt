@@ -50,9 +50,12 @@ interface SteamApiService {
     /**
      * 用户游戏库（api.steampowered.com/IPlayerService/GetOwnedGames）。
      * 需 key + steamid64（用户自己的 key 查自己的库，隐私私密也可见）。
+     * 用 @Url 传完整地址：baseUrl 是 store.steampowered.com（商店搜索/详情），
+     * 相对路径会解析到 store 域 → 返回 HTML 错误页而非 JSON。
      */
-    @GET("IPlayerService/GetOwnedGames/v1/")
+    @GET
     suspend fun ownedGames(
+        @Url url: String,
         @Query("key") key: String,
         @Query("steamid") steamId: String,
         @Query("include_appinfo") includeAppInfo: Boolean = true,

@@ -169,6 +169,7 @@ class SteamSyncViewModel(
                 }
                 val response = withContext(Dispatchers.IO) {
                     apiService.ownedGames(
+                        url = SteamApiClient.OWNED_GAMES_URL,
                         key = key,
                         steamId = s.steamId64,
                     )
