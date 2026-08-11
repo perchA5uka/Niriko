@@ -176,7 +176,13 @@ private fun SteamOpenIdWebView(
                         request: WebResourceRequest?,
                     ): Boolean {
                         val url = request?.url?.toString() ?: return false
-                        if (url.startsWith(SteamOpenIdClient.RETURN_TO_URL)) {
+                        val isSteamCallback =
+                            url.startsWith(SteamOpenIdClient.RETURN_TO_URL) ||
+                                // 兜底：Steam 个别情况下仍可能以 http 形式回跳
+                                url.startsWith(
+                                    SteamOpenIdClient.RETURN_TO_URL.replaceFirst("https://", "http://"),
+                                )
+                        if (isSteamCallback) {
                             // OpenID 回跳：拦截并回调，不再继续加载
                             onOpenIdCallback(url)
                             return true
