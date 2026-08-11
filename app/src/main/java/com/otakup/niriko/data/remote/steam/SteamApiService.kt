@@ -2,6 +2,7 @@ package com.otakup.niriko.data.remote.steam
 
 import com.otakup.niriko.data.remote.steam.dto.SteamAppDetailsWrapperDto
 import com.otakup.niriko.data.remote.steam.dto.SteamCurrentPlayersResponseDto
+import com.otakup.niriko.data.remote.steam.dto.SteamOwnedGamesResponseDto
 import com.otakup.niriko.data.remote.steam.dto.SteamStoreSearchResponseDto
 import retrofit2.http.GET
 import retrofit2.http.Query
@@ -45,4 +46,18 @@ interface SteamApiService {
         @Query("appid") appId: Int,
         @Query("key") key: String? = null,
     ): SteamCurrentPlayersResponseDto
+
+    /**
+     * 用户游戏库（api.steampowered.com/IPlayerService/GetOwnedGames）。
+     * 需 key + steamid64（用户自己的 key 查自己的库，隐私私密也可见）。
+     */
+    @GET("IPlayerService/GetOwnedGames/v1/")
+    suspend fun ownedGames(
+        @Query("key") key: String,
+        @Query("steamid") steamId: String,
+        @Query("include_appinfo") includeAppInfo: Boolean = true,
+        @Query("include_played_free_games") includePlayedFreeGames: Boolean = true,
+        @Query("include_free_sub") includeFreeSub: Boolean = true,
+        @Query("format") format: String = "json",
+    ): SteamOwnedGamesResponseDto
 }

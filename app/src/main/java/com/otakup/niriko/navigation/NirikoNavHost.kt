@@ -26,6 +26,8 @@ import com.otakup.niriko.ui.subject.StaffListScreen
 import com.otakup.niriko.ui.subject.SubjectSearchScreen
 import com.otakup.niriko.ui.bilibili.BilibiliSyncScreen
 import com.otakup.niriko.ui.bilibili.BilibiliSyncViewModelFactory
+import com.otakup.niriko.ui.steam.SteamSyncScreen
+import com.otakup.niriko.ui.steam.SteamSyncViewModelFactory
 import com.otakup.niriko.viewmodel.StaffListViewModel
 import com.otakup.niriko.viewmodel.StaffListViewModelFactory
 import com.otakup.niriko.viewmodel.SubjectDetailViewModel
@@ -99,6 +101,26 @@ fun NirikoNavHost(
                 ),
             )
             BilibiliSyncScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            "steam_sync",
+            enterTransition = { enterFromRight() },
+            exitTransition = { exitToRight() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val viewModel = viewModel<com.otakup.niriko.ui.steam.SteamSyncViewModel>(
+                factory = SteamSyncViewModelFactory(
+                    settingsDataStore = app.settingsDataStore,
+                    steamRepository = app.steamRepository,
+                    subjectRepository = app.subjectRepository,
+                    database = app.database,
+                ),
+            )
+            SteamSyncScreen(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
             )

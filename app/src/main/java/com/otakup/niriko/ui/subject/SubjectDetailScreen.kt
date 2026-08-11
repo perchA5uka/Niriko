@@ -211,6 +211,9 @@ fun SubjectDetailScreen(
             onPersonClick = onPersonClick,
             onRelationClick = onRelationClick,
             onViewAllStaffClick = onViewAllStaffClick,
+            onRematchPlaceholder = {
+                coroutineScope.launch { viewModel.rematchPlaceholder() }
+            },
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.padding(innerPadding),
@@ -233,6 +236,7 @@ private fun SubjectDetailContent(
     onPersonClick: (Long) -> Unit = {},
     onRelationClick: (Long) -> Unit = {},
     onViewAllStaffClick: () -> Unit = {},
+    onRematchPlaceholder: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
@@ -370,6 +374,7 @@ private fun SubjectDetailContent(
                     onPersonClick = onPersonClick,
                     onRelationClick = onRelationClick,
                     onViewAllStaffClick = onViewAllStaffClick,
+                    onRematchPlaceholder = onRematchPlaceholder,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
@@ -394,6 +399,7 @@ private fun SubjectDetailBody(
     onPersonClick: (Long) -> Unit = {},
     onRelationClick: (Long) -> Unit = {},
     onViewAllStaffClick: () -> Unit = {},
+    onRematchPlaceholder: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -542,6 +548,8 @@ private fun SubjectDetailBody(
                     steam = state.steam,
                     backdrop = glassBackdrop,
                     isScrolling = isListScrolling,
+                    isPlaceholder = subject.isSteamPlaceholder,
+                    onRematchPlaceholder = onRematchPlaceholder,
                 )
                 Spacer(Modifier.height(24.dp))
             }
@@ -1139,6 +1147,8 @@ private fun SteamInfoSection(
     steam: SteamGameEntity,
     backdrop: Backdrop?,
     isScrolling: Boolean = false,
+    isPlaceholder: Boolean = false,
+    onRematchPlaceholder: () -> Unit = {},
 ) {
     GlassSectionCard(
         backdrop = backdrop,
@@ -1154,6 +1164,19 @@ private fun SteamInfoSection(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
+                // 独占词条徽标（Bangumi 无词条的占位作品）
+                if (isPlaceholder) {
+                    Text(
+                        "独占词条",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.small)
+                            .background(MaterialTheme.colorScheme.tertiaryContainer)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(
                     "appid ${steam.appId}",
                     style = MaterialTheme.typography.labelSmall,
@@ -1262,6 +1285,17 @@ private fun SteamInfoSection(
                             contentScale = ContentScale.Crop,
                         )
                     }
+                }
+            }
+
+            // 独占占位条目：重新匹配到 Bangumi 词条（升级迁移）
+            if (isPlaceholder) {
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onRematchPlaceholder,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("重新匹配 Bangumi 词条（升级为正式条目）")
                 }
             }
         }

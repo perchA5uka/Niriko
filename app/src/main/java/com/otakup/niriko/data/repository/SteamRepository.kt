@@ -1,7 +1,12 @@
 package com.otakup.niriko.data.repository
 
 import android.util.Log
+import androidx.room.withTransaction
+import com.otakup.niriko.data.local.NirikoDatabase
+import com.otakup.niriko.data.local.dao.CollectionDao
 import com.otakup.niriko.data.local.dao.SteamDao
+import com.otakup.niriko.data.local.dao.SteamLibraryItemDao
+import com.otakup.niriko.data.local.dao.SubjectDao
 import com.otakup.niriko.data.local.entity.SteamBindingEntity
 import com.otakup.niriko.data.local.entity.SteamGameEntity
 import com.otakup.niriko.data.model.SubjectType
@@ -215,6 +220,81 @@ class SteamRepository(
             true
         } catch (e: Exception) {
             Log.w(TAG, "bindManually failed", e)
+            false
+        }
+    }
+
+    // ==================== 占位条目升级 ====================
+
+    /**
+     * 占位条目（subjectId = -appId）升级为正式 Bangumi 词条。
+     *
+     * 原子事务内完成：
+     * 1. 确保目标 Bangumi subjectId 存在（缺则创建占位 subject）；
+     * 2. 迁移 collections：占位收藏 → 正式 subjectId（新 id 已有收藏则删占位收藏，避免重复）；
+     * 3. 迁移 steam_bindings / steam_games：subjectId -appId → 正式 id（新 id 已有则先删旧）；
+     * 4. 删除占位 SubjectEntity；
+     * 5. 更新 steam_library_items 快照（bgmSubjectId / isPlaceholder=0）。
+     *
+     * @param appId Steam appid（占位 id = -appId）
+     * @param newSubjectId 匹配到的正式 Bangumi subjectId
+     * @return 升级是否成功（false = 失败，事务回滚）
+     */
+    suspend fun upgradePlaceholder(
+        appId: Int,
+        newSubjectId: Long,
+        database: NirikoDatabase,
+        subjectDao: SubjectDao,
+        collectionDao: CollectionDao,
+        steamLibraryItemDao: SteamLibraryItemDao,
+    ): Boolean {
+        if (newSubjectId <= 0) return false
+        val oldSubjectId = -appId.toLong()
+        return try {
+            database.withTransaction {
+                // 1) 目标词条必须存在
+                if (subjectDao.getById(newSubjectId) == null) {
+                    // 从占位条目复制元数据（详情页打开时会被真实数据刷新）
+                    val old = subjectDao.getById(oldSubjectId)
+                    subjectDao.upsert(
+                        (old ?: SubjectEntity(
+                            subjectId = newSubjectId,
+                            title = "App $appId",
+                            type = SubjectType.GAME,
+                        )).copy(
+                            subjectId = newSubjectId,
+                            sourceId = "bangumi",
+                            lastSyncTime = System.currentTimeMillis(),
+                        )
+                    )
+                }
+
+                // 2) collections 迁移（新 id 已有收藏则不重复）
+                if (collectionDao.getBySubjectId(newSubjectId) == null) {
+                    collectionDao.migrateSubjectId(oldSubjectId, newSubjectId)
+                } else {
+                    collectionDao.deleteBySubjectId(oldSubjectId)
+                }
+
+                // 3) steam_bindings / steam_games 迁移（新 id 已有则先删旧）
+                if (steamDao.getBindingBySubjectId(newSubjectId) != null) {
+                    steamDao.deleteBindingBySubjectId(newSubjectId)
+                }
+                steamDao.migrateBindingSubjectId(oldSubjectId, newSubjectId)
+                if (steamDao.getGame(newSubjectId) != null) {
+                    steamDao.deleteGameBySubjectId(newSubjectId)
+                }
+                steamDao.migrateGameSubjectId(oldSubjectId, newSubjectId)
+
+                // 4) 删除占位 subject（外键 CASCADE 会清掉残留关联）
+                subjectDao.deleteById(oldSubjectId)
+
+                // 5) 快照标记升级
+                steamLibraryItemDao.upgradeBinding(appId, newSubjectId)
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "upgradePlaceholder failed appId=$appId → $newSubjectId", e)
             false
         }
     }

@@ -13,6 +13,7 @@ import com.otakup.niriko.data.local.dao.BilibiliSyncItemDao
 import com.otakup.niriko.data.local.dao.PersonCollectionDao
 import com.otakup.niriko.data.local.dao.SearchHistoryDao
 import com.otakup.niriko.data.local.dao.SteamDao
+import com.otakup.niriko.data.local.dao.SteamLibraryItemDao
 import com.otakup.niriko.data.local.dao.SubjectDao
 import com.otakup.niriko.data.local.WorkDao
 import com.otakup.niriko.data.local.entity.BilibiliSyncItemEntity
@@ -21,6 +22,7 @@ import com.otakup.niriko.data.local.entity.PersonCollectionEntity
 import com.otakup.niriko.data.local.entity.SearchHistoryEntity
 import com.otakup.niriko.data.local.entity.SteamBindingEntity
 import com.otakup.niriko.data.local.entity.SteamGameEntity
+import com.otakup.niriko.data.local.entity.SteamLibraryItemEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
 
 /**
@@ -29,8 +31,8 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
  * 无匹配 Migration 时 Room 抛出异常（不会静默删除数据）。
  */
 @Database(
-    entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class],
-    version = 15,
+    entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class],
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -43,6 +45,7 @@ abstract class NirikoDatabase : RoomDatabase() {
     abstract fun personCollectionDao(): PersonCollectionDao
     abstract fun bilibiliSyncItemDao(): BilibiliSyncItemDao
     abstract fun steamDao(): SteamDao
+    abstract fun steamLibraryItemDao(): SteamLibraryItemDao
 
     companion object {
         private const val DB_NAME = "niriko.db"
@@ -66,7 +69,7 @@ abstract class NirikoDatabase : RoomDatabase() {
                     MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
                     MIGRATION_6_7, MIGRATION_7_8,
                     MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
-                    MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
+                    MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 )
                 .build()
         }
@@ -243,6 +246,26 @@ abstract class NirikoDatabase : RoomDatabase() {
                         `matchMethod` TEXT NOT NULL DEFAULT 'AUTO',
                         `confidence` REAL NOT NULL DEFAULT 0,
                         `createTime` INTEGER NOT NULL
+                    )"""
+                )
+            }
+        }
+
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Steam 游戏库导入快照（GetOwnedGames 原始数据，与收藏主表解耦）
+                database.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `steam_library_items` (
+                        `appId` INTEGER NOT NULL PRIMARY KEY,
+                        `steamId64` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `coverUrl` TEXT,
+                        `playtimeForeverMinutes` INTEGER NOT NULL DEFAULT 0,
+                        `playtime2WeeksMinutes` INTEGER,
+                        `bgmSubjectId` INTEGER,
+                        `isPlaceholder` INTEGER NOT NULL DEFAULT 0,
+                        `imported` INTEGER NOT NULL DEFAULT 0,
+                        `importTime` INTEGER NOT NULL
                     )"""
                 )
             }

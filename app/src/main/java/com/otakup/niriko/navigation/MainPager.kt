@@ -124,6 +124,7 @@ fun MainPager(
                     viewModel = settingsViewModel,
                     backupViewModel = backupViewModel,
                     onNavigateToBilibiliSync = { navController.navigate("bilibili_sync") },
+                    onNavigateToSteamSync = { navController.navigate("steam_sync") },
                 )
             }
         }

@@ -143,6 +143,15 @@ fun UniversalSubjectCard(
                         model.ratingText?.let {
                             Text(" ★$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                         }
+                        // Steam 独占标记（Bangumi 无词条的占位作品）
+                        model.placeholderLabel?.let {
+                            Text(
+                                " $it ",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.padding(start = 6.dp),
+                            )
+                        }
                     }
 
                     // 第 2 行：主标题

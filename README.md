@@ -27,12 +27,13 @@ Kotlin + Jetpack Compose + Material 3 单 Activity 原生 Android 应用。
 - 搜索建议浮层背景模糊（Android 12+ 生效，低版本自动降级）
 - 离线可用：搜索结果与详情自动落库，远程失败时回退本地缓存
 - **Steam 游戏补充数据**：GAME 类型作品在搜索/作品库/详情页自动匹配 Steam（storesearch + 标题置信度匹配，绑定落库免重复匹配），补充展示价格、当前在线人数、开发商/发行商、Metacritic、Steam 标签与截图；数据存独立扩展表 `steam_games` / `steam_bindings`，不污染核心作品模型，未来可扩展 VNDB/PSN 等平台
+- **Steam 账号与游戏库导入**：OpenID 2.0 登录（WebView + 手动 SteamID64 兜底）→ GetOwnedGames 拉取游戏库 → 匹配 Bangumi → 勾选导入收藏（游玩时长推断状态）；Bangumi 无词条的游戏以「Steam 独占」占位条目展示，可重新匹配升级为正式词条
 - **哔哩哔哩导入**：设置页进入导入工作流，WebView 内登录 B 站后自动拉取追番列表、用户评分与短评（参考 Bangumi-master bilibili-sync 方案，经注入 JS 在 B 站会话内取数），按 season_id / 标题匹配到 Bangumi 条目后勾选一键导入本地收藏；原始数据单独落 `bilibili_sync_items` 表，默认不覆盖已有评分
 
 ## 技术栈
 
 - **UI**：Jetpack Compose + Material 3（Compose BOM）、Navigation Compose、Material Icons Extended
-- **数据层**：Room（收藏 / 作品元数据 / 手工作品 / 搜索历史 / 人物收藏 / Steam 扩展表，含迁移链 v2→v15）、DataStore Preferences（设置持久化）
+- **数据层**：Room（收藏 / 作品元数据 / 手工作品 / 搜索历史 / 人物收藏 / Steam 扩展表与库快照，含迁移链 v2→v16）、DataStore Preferences（设置持久化）
 - **网络**：Retrofit + OkHttp + Kotlin Serialization；数据源以插件链形式注册（Bangumi 主源 + AniList 兜底，可按能力调度）；Steam 商店/Web API 作为游戏补充数据源（storesearch / appdetails / GetNumberOfCurrentPlayers，公开接口无需 key）
 - **图片**：Coil Compose（显示尺寸感知解码 + 小图约束）
 - **架构**：单 Activity + ViewModel（手写 Factory，无 DI 框架）、Repository 层、纯函数计算器（StatsCalculator / TrendingCalculator，可单测）
@@ -54,6 +55,16 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 2. 未绑定 → `storesearch`（`l=schinese&cc=CN`）按标题搜索 → `SteamTitleMatcher` 归一化 + 置信度评分（阈值 0.7）→ 绑定落库
 3. 详情页打开 → `appdetails` 拉取完整详情 + `GetNumberOfCurrentPlayers` 拉取在线人数（30 分钟缓存）→ 落库
 4. 匹配失败静默，不影响搜索/详情主流程
+
+### 账号登录与游戏库导入
+
+设置页 →「Steam 账号与游戏库」进入导入工作流：登录 → 拉取游戏库 → 匹配 Bangumi → 勾选导入收藏。
+
+- **登录（Steam OpenID 2.0）**：WebView 承载 `steamcommunity.com/openid/login`（社区常称 "Sign in through Steam"），回跳 `niriko://steam-auth` 拦截并提取 SteamID64；登录本身无需 API key。`steamcommunity.com` 不可达时（如无代理）可**手动输入 SteamID64** 兜底
+- **拉库（GetOwnedGames）**：`IPlayerService/GetOwnedGames` 需要 `key` + `steamid64`——用**用户自己的 key 查自己的库**（隐私私密也可见），key 在设置页「Steam API Key」配置；快照落 `steam_library_items` 表
+- **匹配**：优先复用 `steam_bindings` 已绑定关系，未绑定用标题走 Bangumi 搜索（GAME）+ 置信度匹配
+- **导入**：勾选后导入收藏；状态按游玩时长推断（`playtime>0 → WATCHING`，未玩 `→ PLAN_TO_WATCH`），游玩时长（分钟）写入游戏时长字段；已存在收藏跳过
+- **Steam 独占占位条目**：Steam 有词条、Bangumi 无的游戏，以负数占位 `subjectId = -appId` 创建条目（`sourceId="steam"`），像普通作品一样进作品库/可收藏/可打开详情页，卡片与详情页显示「Steam 独占」标记；可在详情页或导入预览页点「重新匹配」升级为正式 Bangumi 词条（收藏/绑定/扩展数据原子迁移）
 
 ### API 策略
 
@@ -101,7 +112,7 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 ```
 app/src/main/java/com/otakup/niriko/
 ├── data/
-│   ├── local/          # Room 数据库、DAO、实体（含 steam_games/steam_bindings 扩展表）
+│   ├── local/          # Room 数据库、DAO、实体（含 steam_games/steam_bindings/steam_library_items）
 │   ├── remote/         # Bangumi / AniList / Steam 客户端、DTO、Fetcher
 │   ├── repository/     # Collection / Subject / Work / Steam 仓库
 │   ├── calculator/     # 统计与趋势纯函数计算

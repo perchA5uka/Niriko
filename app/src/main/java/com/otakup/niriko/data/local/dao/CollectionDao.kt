@@ -41,6 +41,10 @@ interface CollectionDao {
     @Query("DELETE FROM collections WHERE subjectId = :subjectId")
     suspend fun deleteBySubjectId(subjectId: Long): Int
 
+    /** 占位条目升级：把收藏从旧 subjectId 迁移到新 subjectId（新 id 无收藏时）。 */
+    @Query("UPDATE collections SET subjectId = :newSubjectId, updateTime = :now WHERE subjectId = :oldSubjectId")
+    suspend fun migrateSubjectId(oldSubjectId: Long, newSubjectId: Long, now: Long = System.currentTimeMillis()): Int
+
     /** 查询所有收藏（非 Flow，用于导出）。 */
     @Query("SELECT * FROM collections ORDER BY updateTime DESC")
     suspend fun getAll(): List<CollectionEntity>

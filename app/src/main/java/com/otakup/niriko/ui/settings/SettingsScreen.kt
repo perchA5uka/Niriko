@@ -59,6 +59,7 @@ fun SettingsScreen(
     backupViewModel: BackupViewModel? = null,
     modifier: Modifier = Modifier,
     onNavigateToBilibiliSync: () -> Unit = {},
+    onNavigateToSteamSync: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsState()
     val backupState by if (backupViewModel != null) {
@@ -263,6 +264,12 @@ fun SettingsScreen(
                         title = "Steam API Key",
                         value = if (viewModel.settings.value.steamApiKey.isEmpty()) "未配置(可选)" else "已配置(点击修改)",
                         onClick = { showSteamConfig = true },
+                    )
+                    // Steam 账号与游戏库导入入口
+                    SettingsPickerRow(
+                        title = "Steam 账号与游戏库",
+                        value = if (viewModel.settings.value.steamId64.isEmpty()) "未登录" else "已登录 · 点击导入",
+                        onClick = onNavigateToSteamSync,
                     )
                 }
             }

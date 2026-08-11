@@ -14,4 +14,6 @@ data class SubjectCardDisplayModel(
     val description: String?,
     /** Steam 补充信息（已绑定游戏卡显示，如 "¥298"）。 */
     val steamInfoText: String? = null,
+    /** 独占标记（Steam 有词条、Bangumi 无，如 "Steam 独占"）。 */
+    val placeholderLabel: String? = null,
 )

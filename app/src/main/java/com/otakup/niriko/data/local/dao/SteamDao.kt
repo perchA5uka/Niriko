@@ -69,4 +69,22 @@ interface SteamDao {
     suspend fun upsertGames(games: List<SteamGameEntity>) {
         games.forEach { upsertGame(it) }
     }
+
+    // ==================== 占位条目升级 ====================
+
+    /** 把绑定从旧 subjectId（占位 -appId）迁移到新 subjectId（正式 Bangumi id）。 */
+    @Query("UPDATE steam_bindings SET subjectId = :newSubjectId WHERE subjectId = :oldSubjectId")
+    suspend fun migrateBindingSubjectId(oldSubjectId: Long, newSubjectId: Long): Int
+
+    /** 删除指定 subjectId 的绑定（新 id 已存在绑定时的冲突清理）。 */
+    @Query("DELETE FROM steam_bindings WHERE subjectId = :subjectId")
+    suspend fun deleteBindingBySubjectId(subjectId: Long): Int
+
+    /** 把扩展数据从旧 subjectId 迁移到新 subjectId。 */
+    @Query("UPDATE steam_games SET subjectId = :newSubjectId WHERE subjectId = :oldSubjectId")
+    suspend fun migrateGameSubjectId(oldSubjectId: Long, newSubjectId: Long): Int
+
+    /** 删除指定 subjectId 的扩展数据（新 id 已存在时的冲突清理）。 */
+    @Query("DELETE FROM steam_games WHERE subjectId = :subjectId")
+    suspend fun deleteGameBySubjectId(subjectId: Long): Int
 }

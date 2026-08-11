@@ -67,5 +67,6 @@ fun SubjectEntity.toCardDisplayModel(steam: SteamGameEntity? = null): SubjectCar
         secondaryInfo = secondaryInfo,
         description = description,
         steamInfoText = steamInfoText,
+        placeholderLabel = if (isSteamPlaceholder) "Steam 独占" else null,
     )
 }

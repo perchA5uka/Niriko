@@ -38,4 +38,11 @@ data class SubjectEntity(
     val lastSyncTime: Long = 0L,
     /** 数据来源标识，如 "bangumi"、"anilist"。插件路由依据。 */
     val sourceId: String = "bangumi",
-)
+) {
+    /**
+     * Steam 独占占位条目判定：Steam 有词条但 Bangumi 无，以负数 subjectId（-appId）占位展示。
+     * 详情页/卡片据此显示「Steam 独占」标记；可经升级迁移转为正式 Bangumi 词条。
+     */
+    val isSteamPlaceholder: Boolean
+        get() = sourceId == "steam" && subjectId < 0
+}

@@ -38,6 +38,8 @@ data class AppSettings(
     val bangumiEndpoint: BangumiEndpoint = BangumiEndpoint.OFFICIAL,
     /** Steam Web API key（可选，公开接口无需 key，仅未来扩展用）。 */
     val steamApiKey: String = "",
+    /** Steam 登录用户 SteamID64（OpenID 登录或手动输入，空表示未登录）。 */
+    val steamId64: String = "",
 
     // ===== WebDAV 同步 =====
     val webDavUrl: String = "",

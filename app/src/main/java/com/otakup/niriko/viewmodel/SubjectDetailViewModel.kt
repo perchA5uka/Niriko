@@ -284,6 +284,53 @@ class SubjectDetailViewModel(
         _uiState.update { it.copy(steam = game) }
     }
 
+    /**
+     * 占位条目重新匹配升级：用标题搜索 Bangumi GAME 词条，命中后
+     * 调用 [SteamRepository.upgradePlaceholder] 把占位条目（-appId）迁移为正式词条。
+     * 供详情页「重新匹配」操作与导入预览页使用。
+     *
+     * @return 升级后的新 subjectId（成功且非占位）；失败返回 null
+     */
+    suspend fun rematchPlaceholder(): Long? {
+        val steam = steamRepository ?: return null
+        val current = _uiState.value.subject ?: return null
+        if (!current.isSteamPlaceholder) return null
+        val appId = (_uiState.value.steam?.appId) ?: return null
+
+        // 用标题搜索 Bangumi 游戏词条，取置信度最高者
+        val title = current.titleCN ?: current.title
+        val candidates = try {
+            subjectRepository.search(keyword = title, type = 4, limit = 5)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val best = candidates
+            .filter { it.subjectId > 0 && it.subjectId != subjectId }
+            .mapNotNull { candidate ->
+                val score = com.otakup.niriko.data.remote.steam.SteamTitleMatcher
+                    .confidence(title, candidate.titleCN ?: candidate.title)
+                if (score >= com.otakup.niriko.data.remote.steam.SteamTitleMatcher.MIN_CONFIDENCE) {
+                    candidate to score
+                } else null
+            }
+            .maxByOrNull { it.second }
+            ?.first ?: return null
+
+        val database = com.otakup.niriko.data.local.NirikoDatabase.getInstance(context)
+        val ok = steam.upgradePlaceholder(
+            appId = appId,
+            newSubjectId = best.subjectId,
+            database = database,
+            subjectDao = database.subjectDao(),
+            collectionDao = database.collectionDao(),
+            steamLibraryItemDao = database.steamLibraryItemDao(),
+        )
+        if (!ok) return null
+        // 刷新详情（subjectId 已变更，重载页面数据）
+        retry()
+        return best.subjectId
+    }
+
     fun addToCollection() {
         if (_uiState.value.isUpdating) return
         collectionMutation++

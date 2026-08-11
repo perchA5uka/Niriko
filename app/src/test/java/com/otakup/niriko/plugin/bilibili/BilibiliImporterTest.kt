@@ -103,6 +103,16 @@ class BilibiliImporterTest {
             collections.removeAll { it.subjectId == subjectId }
             return before - collections.size
         }
+        override suspend fun migrateSubjectId(oldSubjectId: Long, newSubjectId: Long, now: Long): Int {
+            var migrated = 0
+            collections.forEachIndexed { index, c ->
+                if (c.subjectId == oldSubjectId) {
+                    collections[index] = c.copy(subjectId = newSubjectId, updateTime = now)
+                    migrated++
+                }
+            }
+            return migrated
+        }
         override suspend fun getAll(): List<CollectionEntity> = collections.toList()
         override suspend fun clearAll() = collections.clear()
         override suspend fun insertAll(entities: List<CollectionEntity>) = entities.forEach { insert(it) }
