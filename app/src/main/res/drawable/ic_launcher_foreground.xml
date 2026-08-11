@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 简易「N」字母图标占位 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,30h12l18,32V30h12v48H64L46,46v32H34z" />
+</vector>

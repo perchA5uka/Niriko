@@ -1,0 +1,406 @@
+package com.otakup.niriko.data.backup
+
+import android.util.Log
+import androidx.room.withTransaction
+import com.otakup.niriko.data.local.NirikoDatabase
+import com.otakup.niriko.data.local.WorkItem
+import com.otakup.niriko.data.local.entity.CollectionEntity
+import com.otakup.niriko.data.local.entity.PersonCollectionEntity
+import com.otakup.niriko.data.local.entity.SearchHistoryEntity
+import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.model.WatchStatus
+import com.otakup.niriko.data.model.WorkType
+import com.otakup.niriko.data.model.collection.SortOrder
+import com.otakup.niriko.data.settings.AppSettings
+import com.otakup.niriko.data.settings.ThemeMode
+import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.time.LocalDate
+
+/**
+ * 数据备份/恢复管理器。
+ * 导出全部数据为单个 JSON 文件，可从 JSON 文件恢复数据。
+ */
+class BackupManager(
+    private val database: NirikoDatabase,
+) {
+
+    private val json = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = false
+    }
+
+    // ==================== 导出 ====================
+
+    /**
+     * 导出全部数据为 JSON 字符串。
+     */
+    suspend fun exportToJson(settings: AppSettings? = null): String {
+        val subjects = database.subjectDao().getAll()
+        val collections = database.collectionDao().getAll()
+        val workItems = database.workDao().getAll()
+        val history = database.searchHistoryDao().getAll()
+        val persons = database.personCollectionDao().getAll()
+
+        return json.encodeToString(JsonObject.serializer(), buildJsonObject {
+            put("version", JsonPrimitive(EXPORT_VERSION))
+            put("exportTime", JsonPrimitive(System.currentTimeMillis()))
+            put("appVersion", JsonPrimitive(APP_VERSION))
+
+            put("subjects", buildJsonArray {
+                subjects.forEach { s -> add(subjectToJson(s)) }
+            })
+            put("collections", buildJsonArray {
+                collections.forEach { c -> add(collectionToJson(c)) }
+            })
+            put("workItems", buildJsonArray {
+                workItems.forEach { w -> add(workItemToJson(w)) }
+            })
+            put("searchHistory", buildJsonArray {
+                history.forEach { h -> add(searchHistoryToJson(h)) }
+            })
+            put("personCollections", buildJsonArray {
+                persons.forEach { p -> add(personCollectionToJson(p)) }
+            })
+            if (settings != null) {
+                put("settings", settingsToJson(settings))
+            }
+        })
+    }
+
+    // ==================== 导入 ====================
+
+    /**
+     * 从 JSON 字符串导入/恢复数据。
+     * 默认模式为全覆盖（清空现有数据后导入）。
+     */
+    suspend fun importFromJson(jsonString: String, merge: Boolean = false): ImportResult {
+        val root = try {
+            json.decodeFromJsonElement<JsonObject>(json.parseToJsonElement(jsonString))
+        } catch (e: Exception) {
+            return ImportResult(success = false, error = "JSON 解析失败: ${e.message}")
+        }
+
+        val version = root["version"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+        if (version < 1 || version > EXPORT_VERSION) {
+            return ImportResult(success = false, error = "不支持的备份版本: $version")
+        }
+
+        // 解析各表数据
+        val subjects = parseSubjects(root["subjects"])
+        val collections = parseCollections(root["collections"])
+        val workItems = parseWorkItems(root["workItems"])
+        val history = parseSearchHistory(root["searchHistory"])
+        val persons = parsePersonCollections(root["personCollections"])
+
+        // 数据校验
+        if (collections.any { c -> subjects.none { s -> s.subjectId == c.subjectId } }) {
+            return ImportResult(success = false, error = "备份数据不完整：存在收藏指向不存在的作品")
+        }
+
+        // 写入数据库（整体事务：失败自动回滚，不出现半清空状态）
+        try {
+            database.withTransaction {
+                if (!merge) {
+                    // 全覆盖模式：先清空
+                    database.collectionDao().clearAll()
+                    database.subjectDao().clearAll()
+                    database.workDao().clearAll()
+                    database.searchHistoryDao().clearAll()
+                    database.personCollectionDao().clearAll()
+                }
+
+                // 按 FK 顺序插入
+                if (subjects.isNotEmpty()) database.subjectDao().insertAll(subjects)
+                if (collections.isNotEmpty()) database.collectionDao().insertAll(collections)
+                if (workItems.isNotEmpty()) database.workDao().insertAll(workItems)
+                if (history.isNotEmpty()) database.searchHistoryDao().insertAll(history)
+                if (persons.isNotEmpty()) database.personCollectionDao().insertAll(persons)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Import failed", e)
+            return ImportResult(success = false, error = "数据写入失败: ${e.message}")
+        }
+
+        // 解析设置
+        val settings = parseSettings(root["settings"])
+
+        return ImportResult(
+            success = true,
+            subjectsCount = subjects.size,
+            collectionsCount = collections.size,
+            workItemsCount = workItems.size,
+            historyCount = history.size,
+            settings = settings,
+        )
+    }
+
+    // ==================== JSON 序列化 ====================
+
+    private fun subjectToJson(s: SubjectEntity): JsonObject = buildJsonObject {
+        put("subjectId", JsonPrimitive(s.subjectId))
+        put("title", JsonPrimitive(s.title))
+        s.titleCN?.let { put("titleCN", JsonPrimitive(it)) }
+        put("type", JsonPrimitive(s.type.name))
+        s.summary?.let { put("summary", JsonPrimitive(it)) }
+        s.coverUrl?.let { put("coverUrl", JsonPrimitive(it)) }
+        s.totalEpisodes?.let { put("totalEpisodes", JsonPrimitive(it)) }
+        s.platform?.let { put("platform", JsonPrimitive(it)) }
+        s.volumes?.let { put("volumes", JsonPrimitive(it)) }
+        s.airDate?.let { put("airDate", JsonPrimitive(it)) }
+        s.airWeekday?.let { put("airWeekday", JsonPrimitive(it)) }
+        s.ratingScore?.let { put("ratingScore", JsonPrimitive(it.toDouble())) }
+        s.ratingTotal?.let { put("ratingTotal", JsonPrimitive(it)) }
+        s.biliScore?.let { put("biliScore", JsonPrimitive(it.toDouble())) }
+        s.biliRatingTotal?.let { put("biliRatingTotal", JsonPrimitive(it)) }
+        s.biliSeasonId?.let { put("biliSeasonId", JsonPrimitive(it)) }
+        s.series?.let { put("series", JsonPrimitive(it)) }
+        if (s.tags.isNotEmpty()) {
+            put("tags", buildJsonArray { s.tags.forEach { add(JsonPrimitive(it)) } })
+        }
+        put("lastSyncTime", JsonPrimitive(s.lastSyncTime))
+        put("sourceId", JsonPrimitive(s.sourceId))
+        s.rank?.let { put("rank", JsonPrimitive(it)) }
+    }
+
+    private fun collectionToJson(c: CollectionEntity): JsonObject = buildJsonObject {
+        put("id", JsonPrimitive(c.id))
+        put("subjectId", JsonPrimitive(c.subjectId))
+        put("status", JsonPrimitive(c.status.name))
+        c.watchedEpisodes?.let { put("watchedEpisodes", JsonPrimitive(it)) }
+        c.rating?.let { put("rating", JsonPrimitive(it.toDouble())) }
+        c.startDate?.let { put("startDate", JsonPrimitive(it.toString())) }
+        c.finishDate?.let { put("finishDate", JsonPrimitive(it.toString())) }
+        if (c.personalTags.isNotEmpty()) {
+            put("personalTags", buildJsonArray { c.personalTags.forEach { add(JsonPrimitive(it)) } })
+        }
+        c.personalImpression?.let { put("personalImpression", JsonPrimitive(it)) }
+        c.remark?.let { put("remark", JsonPrimitive(it)) }
+        if (c.watchedTrackIds.isNotEmpty()) {
+            put("watchedTrackIds", buildJsonArray { c.watchedTrackIds.forEach { add(JsonPrimitive(it)) } })
+        }
+        put("createTime", JsonPrimitive(c.createTime))
+        put("updateTime", JsonPrimitive(c.updateTime))
+    }
+
+    private fun workItemToJson(w: WorkItem): JsonObject = buildJsonObject {
+        put("id", JsonPrimitive(w.id))
+        put("title", JsonPrimitive(w.title))
+        put("type", JsonPrimitive(w.type.name))
+        put("status", JsonPrimitive(w.status.name))
+        w.totalEpisodes?.let { put("totalEpisodes", JsonPrimitive(it)) }
+        w.watchedEpisodes?.let { put("watchedEpisodes", JsonPrimitive(it)) }
+        w.rating?.let { put("rating", JsonPrimitive(it.toDouble())) }
+        w.startDate?.let { put("startDate", JsonPrimitive(it.toString())) }
+        w.finishDate?.let { put("finishDate", JsonPrimitive(it.toString())) }
+        if (w.tags.isNotEmpty()) {
+            put("tags", buildJsonArray { w.tags.forEach { add(JsonPrimitive(it)) } })
+        }
+        w.coverPath?.let { put("coverPath", JsonPrimitive(it)) }
+        w.remark?.let { put("remark", JsonPrimitive(it)) }
+        put("createTime", JsonPrimitive(w.createTime))
+        put("updateTime", JsonPrimitive(w.updateTime))
+    }
+
+    private fun searchHistoryToJson(h: SearchHistoryEntity): JsonObject = buildJsonObject {
+        put("id", JsonPrimitive(h.id))
+        put("keyword", JsonPrimitive(h.keyword))
+        put("createTime", JsonPrimitive(h.createTime))
+    }
+
+    private fun personCollectionToJson(p: PersonCollectionEntity): JsonObject = buildJsonObject {
+        put("personId", JsonPrimitive(p.personId))
+        put("name", JsonPrimitive(p.name))
+        p.nameCn?.let { put("nameCn", JsonPrimitive(it)) }
+        p.imageUrl?.let { put("imageUrl", JsonPrimitive(it)) }
+        if (p.career.isNotEmpty()) {
+            put("career", buildJsonArray { p.career.forEach { add(JsonPrimitive(it)) } })
+        }
+        put("createTime", JsonPrimitive(p.createTime))
+    }
+
+    private fun settingsToJson(s: AppSettings): JsonObject = buildJsonObject {
+        put("themeMode", JsonPrimitive(s.themeMode.name))
+        put("dynamicColor", JsonPrimitive(s.dynamicColor))
+        put("oledDark", JsonPrimitive(s.oledDark))
+        put("defaultSortOrder", JsonPrimitive(s.defaultSortOrder.name))
+        put("showStatusTags", JsonPrimitive(s.showStatusTags))
+        put("showProgressBar", JsonPrimitive(s.showProgressBar))
+        put("nsfwEnabled", JsonPrimitive(s.nsfwEnabled))
+        put("showSearchSuggestions", JsonPrimitive(s.showSearchSuggestions))
+        put("showAnnuallySummary", JsonPrimitive(s.showAnnuallySummary))
+        put("startPage", JsonPrimitive(s.startPage))
+        put("activeDataSourceId", JsonPrimitive(s.activeDataSourceId))
+        put("bangumiEndpoint", JsonPrimitive(s.bangumiEndpoint.name))
+    }
+
+    // ==================== JSON 反序列化 ====================
+
+    private fun parseSubjects(element: JsonElement?): List<SubjectEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.map { obj ->
+            val o = obj.jsonObject
+            SubjectEntity(
+                subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@map null,
+                title = o["title"]?.jsonPrimitive?.content ?: "",
+                titleCN = o["titleCN"]?.jsonPrimitive?.content,
+                type = o["type"]?.jsonPrimitive?.content?.let { try { SubjectType.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                summary = o["summary"]?.jsonPrimitive?.content,
+                coverUrl = o["coverUrl"]?.jsonPrimitive?.content,
+                totalEpisodes = o["totalEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
+                platform = o["platform"]?.jsonPrimitive?.content,
+                volumes = o["volumes"]?.jsonPrimitive?.content?.toIntOrNull(),
+                airDate = o["airDate"]?.jsonPrimitive?.content,
+                airWeekday = o["airWeekday"]?.jsonPrimitive?.content?.toIntOrNull(),
+                ratingScore = o["ratingScore"]?.jsonPrimitive?.content?.toFloatOrNull(),
+                ratingTotal = o["ratingTotal"]?.jsonPrimitive?.content?.toIntOrNull(),
+                biliScore = o["biliScore"]?.jsonPrimitive?.content?.toFloatOrNull(),
+                biliRatingTotal = o["biliRatingTotal"]?.jsonPrimitive?.content?.toIntOrNull(),
+                biliSeasonId = o["biliSeasonId"]?.jsonPrimitive?.content?.toIntOrNull(),
+                series = o["series"]?.jsonPrimitive?.content?.toBooleanStrictOrNull(),
+                tags = parseStringList(o["tags"]),
+                sourceId = o["sourceId"]?.jsonPrimitive?.content ?: "bangumi",
+                lastSyncTime = o["lastSyncTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                rank = o["rank"]?.jsonPrimitive?.content?.toIntOrNull(),
+            )
+        }.filterNotNull()
+    }
+
+    private fun parseCollections(element: JsonElement?): List<CollectionEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.map { obj ->
+            val o = obj.jsonObject
+            CollectionEntity(
+                id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@map null,
+                status = o["status"]?.jsonPrimitive?.content?.let { try { WatchStatus.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
+                rating = o["rating"]?.jsonPrimitive?.content?.toFloatOrNull(),
+                startDate = o["startDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
+                finishDate = o["finishDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
+                personalTags = parseStringList(o["personalTags"]),
+                personalImpression = o["personalImpression"]?.jsonPrimitive?.content,
+                remark = o["remark"]?.jsonPrimitive?.content,
+                watchedTrackIds = parseLongList(o["watchedTrackIds"]),
+                createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
+                updateTime = o["updateTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
+            )
+        }.filterNotNull()
+    }
+
+    private fun parseWorkItems(element: JsonElement?): List<WorkItem> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.map { obj ->
+            val o = obj.jsonObject
+            WorkItem(
+                id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                title = o["title"]?.jsonPrimitive?.content ?: return@map null,
+                type = o["type"]?.jsonPrimitive?.content?.let { try { WorkType.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                status = o["status"]?.jsonPrimitive?.content?.let { try { WatchStatus.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                totalEpisodes = o["totalEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
+                watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
+                rating = o["rating"]?.jsonPrimitive?.content?.toFloatOrNull(),
+                startDate = o["startDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
+                finishDate = o["finishDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
+                tags = parseStringList(o["tags"]),
+                coverPath = o["coverPath"]?.jsonPrimitive?.content,
+                remark = o["remark"]?.jsonPrimitive?.content,
+                createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
+                updateTime = o["updateTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
+            )
+        }.filterNotNull()
+    }
+
+    private fun parseSearchHistory(element: JsonElement?): List<SearchHistoryEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { obj ->
+            val o = obj.jsonObject
+            SearchHistoryEntity(
+                id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                keyword = o["keyword"]?.jsonPrimitive?.content ?: return@mapNotNull null,
+                createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
+            )
+        }
+    }
+
+    private fun parsePersonCollections(element: JsonElement?): List<PersonCollectionEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { obj ->
+            val o = obj.jsonObject
+            PersonCollectionEntity(
+                personId = o["personId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null,
+                name = o["name"]?.jsonPrimitive?.content ?: return@mapNotNull null,
+                nameCn = o["nameCn"]?.jsonPrimitive?.content,
+                imageUrl = o["imageUrl"]?.jsonPrimitive?.content,
+                career = parseStringList(o["career"]),
+                createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
+            )
+        }
+    }
+
+    private fun parseLongList(element: JsonElement?): List<Long> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonPrimitive)?.content?.toLongOrNull() }
+    }
+
+    private fun parseSettings(element: JsonElement?): AppSettings? {
+        val o = element as? JsonObject ?: return null
+        return AppSettings(
+            themeMode = o["themeMode"]?.jsonPrimitive?.content?.let { n ->
+                try { ThemeMode.valueOf(n) } catch (_: Exception) { null }
+            } ?: AppSettings().themeMode,
+            dynamicColor = o["dynamicColor"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().dynamicColor,
+            oledDark = o["oledDark"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().oledDark,
+            defaultSortOrder = o["defaultSortOrder"]?.jsonPrimitive?.content?.let { n ->
+                try { SortOrder.valueOf(n) } catch (_: Exception) { null }
+            } ?: AppSettings().defaultSortOrder,
+            showStatusTags = o["showStatusTags"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showStatusTags,
+            showProgressBar = o["showProgressBar"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showProgressBar,
+            nsfwEnabled = o["nsfwEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().nsfwEnabled,
+            showSearchSuggestions = o["showSearchSuggestions"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showSearchSuggestions,
+            showAnnuallySummary = o["showAnnuallySummary"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showAnnuallySummary,
+            startPage = o["startPage"]?.jsonPrimitive?.content ?: AppSettings().startPage,
+            activeDataSourceId = o["activeDataSourceId"]?.jsonPrimitive?.content ?: AppSettings().activeDataSourceId,
+            bangumiEndpoint = o["bangumiEndpoint"]?.jsonPrimitive?.content?.let { n ->
+                try { BangumiEndpoint.valueOf(n) } catch (_: Exception) { null }
+            } ?: AppSettings().bangumiEndpoint,
+        )
+    }
+
+    private fun parseStringList(element: JsonElement?): List<String> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonPrimitive)?.content }
+    }
+
+    companion object {
+        private const val EXPORT_VERSION = 2
+        private const val APP_VERSION = "1.0.0"
+        private const val TAG = "BackupManager"
+    }
+}
+
+/** 导入结果。 */
+data class ImportResult(
+    val success: Boolean,
+    val error: String? = null,
+    val subjectsCount: Int = 0,
+    val collectionsCount: Int = 0,
+    val workItemsCount: Int = 0,
+    val historyCount: Int = 0,
+    val settings: AppSettings? = null,
+)

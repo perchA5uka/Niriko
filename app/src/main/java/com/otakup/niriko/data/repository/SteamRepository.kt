@@ -1,0 +1,221 @@
+package com.otakup.niriko.data.repository
+
+import android.util.Log
+import com.otakup.niriko.data.local.dao.SteamDao
+import com.otakup.niriko.data.local.entity.SteamBindingEntity
+import com.otakup.niriko.data.local.entity.SteamGameEntity
+import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.remote.steam.SteamApiClient
+import com.otakup.niriko.data.remote.steam.SteamApiService
+import com.otakup.niriko.data.remote.steam.SteamTitleMatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+
+private const val TAG = "SteamRepo"
+
+/**
+ * Steam 补充数据仓储。
+ *
+ * 职责：
+ * - 匹配：Bangumi GAME 条目 → Steam appid（storesearch + 标题匹配），绑定落库
+ * - 补充：appdetails + 当前游玩人数 → SteamGameEntity，写入 steam_games 表
+ * - 读取：按 subjectId 返回 Steam 扩展数据（详情页/卡片展示用）
+ *
+ * 全部方法异常保护：Steam 是补充数据源，任何失败静默返回，不影响主流程。
+ * 当前游玩人数 30 分钟缓存（由 [PLAYER_CACHE_TTL_MS] 控制）。
+ */
+class SteamRepository(
+    private val steamDao: SteamDao,
+    private val apiService: SteamApiService = SteamApiClient.apiService,
+) {
+
+    companion object {
+        /** 当前游玩人数缓存有效期（30 分钟）。 */
+        const val PLAYER_CACHE_TTL_MS = 30 * 60 * 1000L
+    }
+
+    // ==================== 匹配与绑定 ====================
+
+    /**
+     * 对 GAME 条目执行 Steam 匹配并落库。
+     *
+     * 仅处理 type=GAME 且尚未绑定的条目；每个条目并发调 storesearch，
+     * 标题匹配置信度 ≥ [SteamTitleMatcher.MIN_CONFIDENCE] 才绑定。
+     * 任何失败静默跳过（不影响搜索主流程）。
+     *
+     * @return 新绑定成功的条目（subjectId → appId 已写入 steam_bindings）
+     */
+    suspend fun matchAndBind(subjects: List<SubjectEntity>): List<SteamBindingEntity> {
+        val games = subjects.filter { it.type == SubjectType.GAME }
+        if (games.isEmpty()) return emptyList()
+
+        val alreadyBound = steamDao.getBindingsBySubjectIds(games.map { it.subjectId })
+            .map { it.subjectId }
+            .toSet()
+        val toMatch = games.filter { it.subjectId !in alreadyBound }
+        if (toMatch.isEmpty()) return emptyList()
+
+        val now = System.currentTimeMillis()
+        // 分块并发（每批 5 个），避免收藏页/搜索页对大量未绑定 GAME 一次性打满 Steam 商店接口
+        val results = withContext(Dispatchers.IO) {
+            toMatch.chunked(5).flatMap { batch ->
+                coroutineScope {
+                    batch.map { subject ->
+                        async {
+                            try {
+                                val title = subject.titleCN?.takeIf { it.isNotBlank() } ?: subject.title
+                                val search = apiService.searchApps(term = title, count = 8)
+                                val match = SteamTitleMatcher.bestMatch(title, search.items)
+                                if (match == null) null
+                                else subject to match
+                            } catch (e: Exception) {
+                                Log.w(TAG, "match failed for ${subject.subjectId} ${subject.title}", e)
+                                null
+                            }
+                        }
+                    }.awaitAll().filterNotNull()
+                }
+            }
+        }
+
+        val bindings = results.map { (subject, match) ->
+            SteamBindingEntity(
+                subjectId = subject.subjectId,
+                steamAppId = match.appId,
+                matchMethod = "AUTO",
+                confidence = match.confidence,
+                createTime = now,
+            )
+        }
+        // 注意：绑定行不写 lastUpdated（保持 0），
+        // 让 getSupplement 正确识别"尚未拉取详情"并在详情页打开时立即补全
+        // （避免稀疏行被当成 30 分钟新鲜缓存，详情页长时间只显示搜索 stub）。
+        val gamesToPersist = results.map { (subject, match) ->
+            SteamGameEntity(
+                subjectId = subject.subjectId,
+                appId = match.appId,
+                name = match.steamName,
+                priceCents = match.priceCents,
+                currency = match.currency,
+                headerImage = match.tinyImage,
+                lastUpdated = 0L,
+            )
+        }
+        if (bindings.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                steamDao.upsertBindings(bindings)
+                steamDao.upsertGames(gamesToPersist)
+            }
+            Log.i(TAG, "Bound ${bindings.size} games to Steam")
+        }
+        return bindings
+    }
+
+    // ==================== 详情补充 ====================
+
+    /**
+     * 获取某条目的 Steam 扩展数据（无绑定返回 null）。
+     *
+     * 缓存策略：steam_games 存在且 lastUpdated 在 [PLAYER_CACHE_TTL_MS] 内 → 直接返回；
+     * 否则拉取 appdetails + 当前游玩人数并落库后返回（失败时返回旧缓存或 null）。
+     */
+    suspend fun getSupplement(subjectId: Long): SteamGameEntity? {
+        val binding = steamDao.getBindingBySubjectId(subjectId) ?: return null
+        val cached = steamDao.getGame(subjectId)
+        val fresh = cached?.takeIf {
+            System.currentTimeMillis() - it.lastUpdated < PLAYER_CACHE_TTL_MS
+        }
+        if (fresh != null) return fresh
+        return fetchDetailAndPersist(subjectId, binding.steamAppId) ?: cached
+    }
+
+    /**
+     * 拉取 appdetails + 当前游玩人数并落库（详情页刷新用）。
+     * 返回持久化后的 SteamGameEntity；失败返回 null。
+     */
+    suspend fun fetchDetailAndPersist(subjectId: Long, appId: Int): SteamGameEntity? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val details = apiService.appDetails(appIds = appId.toString())
+                val wrapper = details[appId.toString()] ?: return@withContext null
+                val data = wrapper.data ?: return@withContext null
+
+                val players = try {
+                    apiService.currentPlayers(
+                        url = SteamApiClient.CURRENT_PLAYERS_URL,
+                        appId = appId,
+                        // 当前公开接口无需 key；为避免 key 进入 URL 被日志/网络记录，
+                        // 不在此附加（apiKeyProvider 仅作未来扩展预留）
+                    ).response?.playerCount
+                } catch (e: Exception) {
+                    Log.w(TAG, "currentPlayers failed for appId=$appId", e)
+                    null
+                }
+
+                val game = SteamGameEntity(
+                    subjectId = subjectId,
+                    appId = data.steamAppId ?: appId,
+                    name = data.name ?: "",
+                    shortDescription = data.shortDescription,
+                    developers = data.developers,
+                    publishers = data.publishers,
+                    priceCents = data.priceOverview?.final ?: data.priceOverview?.initial
+                        ?: if (data.isFree) 0 else null,
+                    currency = data.priceOverview?.currency,
+                    metacriticScore = data.metacritic?.score,
+                    // 失败/无数据时保留本地旧玩家数，避免覆盖成 null
+                    currentPlayers = players ?: steamDao.getGame(subjectId)?.currentPlayers,
+                    steamTags = data.genres.mapNotNull { it.description },
+                    screenshots = data.screenshots.mapNotNull { it.pathFull },
+                    headerImage = data.headerImage,
+                    releaseDate = data.releaseDate?.date,
+                    lastUpdated = System.currentTimeMillis(),
+                )
+                steamDao.upsertGame(game)
+                game
+            } catch (e: Exception) {
+                Log.w(TAG, "fetchDetail failed for subjectId=$subjectId appId=$appId", e)
+                null
+            }
+        }
+    }
+
+    /** 按 subjectId 列表批量读取 Steam 扩展数据（卡片展示用，走缓存不触发网络）。 */
+    suspend fun getSupplements(subjectIds: List<Long>): Map<Long, SteamGameEntity> {
+        if (subjectIds.isEmpty()) return emptyMap()
+        return withContext(Dispatchers.IO) {
+            steamDao.getGamesBySubjectIds(subjectIds).associateBy { it.subjectId }
+        }
+    }
+
+    // ==================== 查询 ====================
+
+    /** 查询绑定关系（无则 null）。 */
+    suspend fun getBinding(subjectId: Long): SteamBindingEntity? =
+        steamDao.getBindingBySubjectId(subjectId)
+
+    /** 手动绑定（设置/详情页未来扩展用）。 */
+    suspend fun bindManually(subjectId: Long, appId: Int): Boolean {
+        return try {
+            withContext(Dispatchers.IO) {
+                steamDao.upsertBinding(
+                    SteamBindingEntity(
+                        subjectId = subjectId,
+                        steamAppId = appId,
+                        matchMethod = "MANUAL",
+                        confidence = 1f,
+                        createTime = System.currentTimeMillis(),
+                    )
+                )
+            }
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "bindManually failed", e)
+            false
+        }
+    }
+}

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Niriko · 分享卡片模板（横向版）</title>
+<style>
+  :root{
+    --bg:#F1F4EE;
+    --card:#101410;
+    --ink:#E8EBE4;
+    --ink-2:#B7C0B2;
+    --ink-3:#8A9385;
+    --primary:#81C784;
+    --chip:#22301F;
+    --chip-ink:#B8E6B0;
+    --line:#2A312A;
+    --star:#81C784;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;color:#20231F;padding:40px 24px 64px;-webkit-font-smoothing:antialiased}
+  .page{max-width:1240px;margin:0 auto}
+  .hd{font-size:22px;font-weight:800;display:flex;align-items:center;gap:10px}
+  .hd i{width:12px;height:12px;border-radius:50%;background:var(--primary);font-style:normal}
+  .sub{margin-top:8px;font-size:13px;color:#5A6157;line-height:1.8}
+  .grid{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:44px}
+  @media(max-width:1100px){.grid{grid-template-columns:1fr}}
+  /* 横向 1620×1080（3:2）深色卡片：水平微渐变 + 右上柔光 */
+  .card{background:linear-gradient(90deg,#161C16 0%,#101410 55%,#0B0E0B 100%);border-radius:20px;color:var(--ink);position:relative;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.28);aspect-ratio:1620/1080;display:flex}
+  .card::before{content:"";position:absolute;top:0;right:0;width:60%;height:70%;background:radial-gradient(120% 120% at 90% -10%, rgba(129,199,132,.18), transparent 62%);pointer-events:none}
+  /* 左侧全高 Hero 封面（3:4 原比例，右缘圆角） */
+  .hero{width:810px;flex:none;position:relative;overflow:hidden;border-radius:0 24px 24px 0;box-shadow:0 0 0 1px rgba(129,199,132,.16);background:#182019;align-self:stretch}
+  .hero svg{width:100%;height:100%;display:block}
+  .hero::after{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(180deg,rgba(255,255,255,.18),transparent)}
+  /* 右侧信息区 */
+  .body{flex:1;min-width:0;display:flex;flex-direction:column;padding:48px 44px 38px 44px}
+  .type{display:inline-flex;align-items:center;gap:7px;background:var(--chip);color:var(--chip-ink);font-size:12.5px;font-weight:600;letter-spacing:.6px;padding:5px 12px;border-radius:999px;align-self:flex-start}
+  .type::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--chip-ink)}
+  h2{font-size:36px;line-height:40px;font-weight:800;letter-spacing:-.7px;margin-top:14px}
+  .subtitle{font-size:17px;color:var(--ink-2);margin-top:7px;letter-spacing:.3px}
+  .meta-line{margin-top:8px;font-size:12.5px;color:var(--ink-3);letter-spacing:.3px}
+  /* 评分对比卡（静态玻璃） */
+  .rating-card{margin-top:18px;display:flex;justify-content:space-evenly;align-items:center;background:rgba(129,199,132,.1);border:1px solid rgba(184,230,176,.16);border-radius:16px;padding:14px 8px}
+  .rc-col{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .rc-label{font-size:11.5px;color:var(--ink-3);letter-spacing:.4px}
+  .rc-value{font-size:24px;font-weight:800;color:var(--ink-2)}
+  .rc-value.mine{font-size:28px;color:var(--primary)}
+  /* 进度短条 */
+  .progress{margin-top:16px}
+  .ptext{display:flex;justify-content:space-between;font-size:12.5px;color:var(--ink-2);margin-bottom:8px}
+  .ptext em{font-style:normal;color:var(--ink-3)}
+  .bar{height:4px;width:132px;border-radius:999px;background:var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;width:100%;border-radius:999px;background:var(--primary)}
+  /* 社区标签（作品卡下半区填充） */
+  .community-tags{margin-top:18px}
+  .community-tags .section-title{font-size:12.5px;color:var(--ink-3);letter-spacing:.4px;margin-bottom:10px}
+  /* 简介 */
+  .summary{margin-top:18px;font-size:15.5px;line-height:1.9;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:8;-webkit-box-orient:vertical;overflow:hidden}
+  .summary b{color:var(--ink);font-weight:600}
+  /* 收藏区 */
+  .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .tag{font-size:12.5px;color:var(--chip-ink);background:rgba(184,230,176,.1);border:1px solid rgba(184,230,176,.22);padding:5px 11px;border-radius:8px}
+  .impression{margin-top:18px;font-size:15px;line-height:1.85;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .impression::before{content:"“";color:var(--primary);font-size:22px;font-weight:700}
+  .dates{margin-top:16px;font-size:12.5px;color:var(--ink-3);letter-spacing:.3px}
+  .spacer{flex:1}
+  /* 品牌行 */
+  .brand{padding-top:18px;position:relative;display:flex;justify-content:space-between;align-items:center}
+  .brand::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,var(--line),rgba(42,49,42,0))}
+  .brand b{font-size:15px;font-weight:800;letter-spacing:2px;color:var(--ink-2)}
+  .brand b i{font-style:normal;color:var(--primary)}
+  .brand span{font-size:11.5px;color:var(--ink-3);letter-spacing:.6px}
+  .note{margin-top:40px;font-size:13px;color:#5F6A5C;line-height:2;max-width:960px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hd"><i></i>Niriko 分享卡片模板（横向 1620×1080）</div>
+  <p class="sub">作品详情分享（左）· 个人收藏分享（右）。全高封面置左做沉浸锚点；右侧 Type chip → 标题 → 原名 → 元信息行 → 评分对比卡 → 简介/收藏区 → 品牌行。作品卡下半区填充社区标签（前 10 个），简介放宽到 8 行。深色 + 品牌绿，无紫蓝渐变。</p>
+  <div class="grid">
+    <!-- 作品详情卡 -->
+    <div class="card">
+      <div class="hero"><svg viewBox="0 0 810 1080" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E5A36"/><stop offset="1" stop-color="#0F1F14"/></linearGradient></defs><rect width="810" height="1080" fill="url(#g1)"/><text x="50%" y="52%" fill="#9ECBA2" font-size="20" font-family="sans-serif" text-anchor="middle">封面占位</text></svg></div>
+      <div class="body">
+        <span class="type">动画</span>
+        <h2>葬送的芙莉莲</h2>
+        <div class="subtitle">葬送のフリーレン</div>
+        <div class="meta-line">东京电视台 · 28集 · 2023</div>
+        <div class="rating-card">
+          <div class="rc-col"><span class="rc-label">Bangumi</span><span class="rc-value">9.0</span></div>
+          <div class="rc-col"><span class="rc-label">评价人数</span><span class="rc-value">2.3 万人</span></div>
+        </div>
+        <p class="summary">魔王被打倒后的世界里，精灵术士<b>芙莉莲</b>踏上理解人类的旅程。战斗并非主题，<b>离别与回忆</b>才是——一部关于“时间”的作品，用平静的笔触写尽漫长生命中的相遇与失去。</p>
+        <div class="community-tags"><div class="section-title">社区标签</div><div class="tags"><span class="tag"># 治愈</span><span class="tag"># 冒险</span><span class="tag"># 奇幻</span><span class="tag"># 友情</span><span class="tag"># 催泪</span><span class="tag"># 日常</span><span class="tag"># 漫改</span><span class="tag"># 热血</span><span class="tag"># 感动</span><span class="tag"># 已完播</span></div></div>
+        <div class="spacer"></div>
+        <div class="brand"><b><i>N</i>IRIKO</b><span>分享自 Niriko 追番收藏</span></div>
+      </div>
+    </div>
+    <!-- 收藏卡 -->
+    <div class="card">
+      <div class="hero"><svg viewBox="0 0 810 1080" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#33415C"/><stop offset="1" stop-color="#12161F"/></linearGradient></defs><rect width="810" height="1080" fill="url(#g2)"/><text x="50%" y="52%" fill="#A9B4C9" font-size="20" font-family="sans-serif" text-anchor="middle">封面占位</text></svg></div>
+      <div class="body">
+        <span class="type">动画</span>
+        <h2>葬送的芙莉莲</h2>
+        <div class="subtitle">葬送のフリーレン</div>
+        <div class="meta-line">东京电视台 · 28集 · 2023</div>
+        <div class="rating-card">
+          <div class="rc-col"><span class="rc-label">我的评分</span><span class="rc-value mine">9.5</span></div>
+          <div class="rc-col"><span class="rc-label">Bangumi</span><span class="rc-value">9.0</span></div>
+          <div class="rc-col"><span class="rc-label">评价人数</span><span class="rc-value">2.3 万人</span></div>
+        </div>
+        <div class="progress"><div class="ptext"><span>已看完</span><em>28 / 28 集</em></div><div class="bar"><i></i></div></div>
+        <div class="tags"><span class="tag"># 治愈</span><span class="tag"># 哲学</span><span class="tag"># 2023 番</span></div>
+        <p class="impression">一部慢热的作品，看完后回味了很久。作画与配乐都在线，关于人与人之间距离的理解让人共鸣。</p>
+        <div class="dates">2023-10-01 开始 · 2024-01-14 看完</div>
+        <div class="spacer"></div>
+        <div class="brand"><b><i>N</i>IRIKO</b><span>分享自 Niriko 追番收藏</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">封面以 SVG 占位，实机由 Coil 加载真实封面；字体为系统中文字体。本模板与 <code>ShareCardLayout.kt</code> 一一对应（1dp = 1px @ Density 1，1620×1080）。微信/朋友圈缩略图居中裁切属平台行为，点开全图正常。</p>
+</div>
+</body>
+</html>

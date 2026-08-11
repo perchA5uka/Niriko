@@ -1,0 +1,43 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Gradle
+.gradle/
+local.properties
+
+# Android Studio
+.idea/
+*.iml
+.DS_Store
+
+# Kotlin
+.kotlin/
+
+# 本地工具 / AI 助手状态目录（非项目源码）
+.codewhale/
+.kun-design/
+.kunsdd/
+.reasonix/
+
+# 临时数据样本（根目录 JSON 抓包/导出文件）
+*.json
+!app/schemas/**/*.json
+!gradle/*.json
