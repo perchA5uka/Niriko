@@ -1,5 +1,8 @@
 package com.otakup.niriko.ui.person
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,10 +29,13 @@ import com.otakup.niriko.data.remote.PersonSubjectInfo
 import com.otakup.niriko.ui.components.appleGlassCard
 
 /** 参与作品横滑卡片：封面 + 标题 + staff 参与身份标签 + type 徽标。 */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun PersonSubjectCard(
     subject: PersonSubjectInfo,
     onClick: () -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -42,7 +48,17 @@ fun PersonSubjectCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(8.dp),
         ) {
-            // 封面（方形）
+            // 封面（方形）— 共享元素：参与作品封面 → 作品详情封面（key 与全局 "cover_{subjectId}" 一致）
+            val coverModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                with(sharedTransitionScope) {
+                    Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState("cover_${subject.subjectId}"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+            } else {
+                Modifier
+            }
             AsyncImage(
                 model = subject.imageUrl,
                 contentDescription = subject.titleCN ?: subject.title,
@@ -50,7 +66,8 @@ fun PersonSubjectCard(
                     .fillMaxWidth()
                     .height(100.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .then(coverModifier),
                 contentScale = ContentScale.Crop,
             )
             Spacer(Modifier.height(6.dp))

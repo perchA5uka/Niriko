@@ -112,7 +112,10 @@ class SubjectSearchViewModel(
         _uiState.update { it.copy(isLoadingMore = true) }
         viewModelScope.launch {
             try {
-                val offset = (cur.page - 1) * 20
+                // offset = 当前已加载页数 × 每页大小（cur.page 是"已加载到第几页"，
+                // 首次触底 cur.page=1 → offset=20 拉第二页；旧写法 (page-1)*20 首次 offset=0
+                // 重复拉第一页 → distinctBy 去重后无新增 → 列表不增长、触底反复触发抽搐）
+                val offset = cur.page * 20
                 val newRaw = withContext(Dispatchers.IO) {
                     // 历史排名分页：GET 榜单（绕开 POST body 被吞），offset 分页
                     subjectRepository.getRanking(type = type ?: 2, offset = offset, limit = 20)
@@ -518,6 +521,9 @@ class SubjectSearchViewModel(
 
     fun onHistoryClick(keyword: String) {
         _uiState.update { it.copy(query = keyword) }
+        // 关键：写入 queryInput 独立流——UI 侧从 viewModel.query 读关键词
+        // 决定显示搜索态（否则点击后仍停在历史/趋势区）
+        queryInput.value = keyword
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 searchHistoryDao?.upsertByKeyword(keyword)
@@ -547,12 +553,14 @@ class SubjectSearchViewModel(
         val s = _uiState.value
         // 切到作品类型时退出人物模式
         _uiState.update { it.copy(selectedType = type, isPersonSearch = false) }
-        if (s.query.isNotBlank()) {
+        // 判据用 queryInput（真实输入流）：onQueryChanged 只写该流，uiState.query 不随输入更新
+        val activeQuery = queryInput.value
+        if (activeQuery.isNotBlank()) {
             if (s.allResults.isNotEmpty()) {
                 val filtered = filterByType(s.allResults, type)
                 _uiState.update { it.copy(results = filtered) }
             } else {
-                debouncedSearch(s.query, null, immediate = true)
+                debouncedSearch(activeQuery, null, immediate = true)
             }
         } else {
             // 趋势模式：切类型走按类型缓存（已有则直接切，无则首次加载）

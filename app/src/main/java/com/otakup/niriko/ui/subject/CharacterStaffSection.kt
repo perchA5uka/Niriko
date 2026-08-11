@@ -1,5 +1,8 @@
 package com.otakup.niriko.ui.subject
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -41,6 +44,8 @@ fun CharacterSection(
     characters: List<CharacterInfo>,
     onCharacterClick: (Long) -> Unit = {},
     onPersonClick: (Long) -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     if (characters.isEmpty()) return
@@ -63,6 +68,8 @@ fun CharacterSection(
                     character = character,
                     onClick = { onCharacterClick(character.id) },
                     onActorClick = { actorId -> onPersonClick(actorId) },
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                 )
             }
         }
@@ -75,6 +82,8 @@ private fun CharacterCard(
     character: CharacterInfo,
     onClick: () -> Unit = {},
     onActorClick: (Long) -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -88,14 +97,13 @@ private fun CharacterCard(
             modifier = Modifier.padding(8.dp),
         ) {
             // 角色头像（圆形）— 用 Bangumi 服务端裁好的 grid 正方形图，Crop 裁中心即脸部
-            AsyncImage(
-                model = character.imageUrl,
+            // 共享元素：角色卡头像 → 角色详情页头像（key 唯一前缀避免与人物详情冲突）
+            CharacterAvatar(
+                imageUrl = character.imageUrl,
                 contentDescription = character.nameCn ?: character.name,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop,
+                sharedElementKey = "character_avatar_${character.id}",
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
             )
             Spacer(Modifier.height(6.dp))
             // 角色名
@@ -142,6 +150,8 @@ fun StaffSection(
     staff: List<StaffInfo>,
     onPersonClick: (Long) -> Unit = {},
     onViewAllClick: () -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     if (staff.isEmpty()) return
@@ -166,6 +176,8 @@ fun StaffSection(
                 StaffCard(
                     person = person,
                     onClick = { onPersonClick(person.id) },
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                 )
             }
             // 末尾"查看全部"卡片（仅当总数超过展示上限）
@@ -183,6 +195,8 @@ fun StaffSection(
 private fun StaffCard(
     person: StaffInfo,
     onClick: () -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -195,15 +209,13 @@ private fun StaffCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(8.dp),
         ) {
-            // 人物头像（圆形，grid 正方形图）
-            AsyncImage(
-                model = person.imageUrl,
+            // 人物头像（圆形，grid 正方形图）— 共享元素：制作人员卡头像 → 人物详情页头像
+            CharacterAvatar(
+                imageUrl = person.imageUrl,
                 contentDescription = person.nameCn ?: person.name,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop,
+                sharedElementKey = "person_avatar_${person.id}",
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = animatedVisibilityScope,
             )
             Spacer(Modifier.height(6.dp))
             // 人名
@@ -263,4 +275,39 @@ private fun ViewAllStaffCard(
             )
         }
     }
+}
+
+/**
+ * 圆形头像（角色/制作人员卡片共用），支持共享元素过渡。
+ * key 约定："character_avatar_{id}"（角色 → 角色详情）、"person_avatar_{id}"（人物 → 人物详情）。
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun CharacterAvatar(
+    imageUrl: String?,
+    contentDescription: String?,
+    sharedElementKey: String,
+    sharedTransitionScope: SharedTransitionScope?,
+    animatedVisibilityScope: AnimatedVisibilityScope?,
+) {
+    val sharedModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+        with(sharedTransitionScope) {
+            Modifier.sharedElement(
+                sharedContentState = rememberSharedContentState(sharedElementKey),
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+        }
+    } else {
+        Modifier
+    }
+    AsyncImage(
+        model = imageUrl,
+        contentDescription = contentDescription,
+        modifier = Modifier
+            .size(64.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .then(sharedModifier),
+        contentScale = ContentScale.Crop,
+    )
 }

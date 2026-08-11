@@ -195,6 +195,8 @@ fun NirikoNavHost(
                 viewModel = viewModel,
                 onBack = { navController.popBackStack() },
                 onSubjectClick = { subjectId -> navController.navigate("subject_detail/$subjectId") },
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = this@composable,
             )
         }
         composable(
@@ -218,6 +220,8 @@ fun NirikoNavHost(
                 onBack = { navController.popBackStack() },
                 onSubjectClick = { subjectId -> navController.navigate("subject_detail/$subjectId") },
                 onCharacterClick = { characterId -> navController.navigate("character_detail/$characterId") },
+                sharedTransitionScope = sharedTransitionScope,
+                animatedVisibilityScope = this@composable,
             )
         }
     }

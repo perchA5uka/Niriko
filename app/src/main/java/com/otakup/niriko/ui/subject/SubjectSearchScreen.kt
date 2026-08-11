@@ -17,6 +17,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -65,7 +66,9 @@ fun SubjectSearchScreen(
     val focusManager = LocalFocusManager.current
 
     // 前端状态机（纯 UI 层，不触碰数据/业务）
-    val searchVm = remember { SearchViewModel() }
+    // rememberSaveable + Saver：navigate 覆盖 MainPager 后 pop 返回时恢复搜索态
+    // （否则 phase 重建为 COLLAPSED → 回到发现页首页而非搜索结果页）
+    val searchVm = rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
 
     // 搜索结果列表滚动状态：上划离开顶部 → 折叠类型行；下拉回顶部 → 拉长
     val resultListState = rememberLazyListState()

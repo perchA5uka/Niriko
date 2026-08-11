@@ -66,26 +66,26 @@ fun SearchHistorySection(
         Spacer(Modifier.height(4.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             history.forEach { keyword ->
                 Box(
                     modifier = Modifier
-                        .appleGlassCard(shape = MaterialTheme.shapes.small)
+                        .appleGlassCard(shape = MaterialTheme.shapes.medium)
                         .clickable { onHistoryClick(keyword) }
-                        .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(keyword, style = MaterialTheme.typography.labelMedium)
+                        Text(keyword, style = MaterialTheme.typography.bodyMedium)
                         IconButton(
                             onClick = { onDeleteItem(keyword) },
-                            modifier = Modifier.height(18.dp).padding(start = 2.dp),
+                            modifier = Modifier.height(24.dp).padding(start = 4.dp),
                         ) {
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "删除 $keyword",
-                                modifier = Modifier.height(14.dp),
+                                modifier = Modifier.height(16.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }

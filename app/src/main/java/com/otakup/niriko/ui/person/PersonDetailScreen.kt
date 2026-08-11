@@ -1,5 +1,8 @@
 package com.otakup.niriko.ui.person
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -64,6 +67,8 @@ fun PersonDetailScreen(
     onBack: () -> Unit,
     onSubjectClick: (Long) -> Unit = {},
     onCharacterClick: (Long) -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -101,6 +106,8 @@ fun PersonDetailScreen(
                         characters = state.characters,
                         onSubjectClick = onSubjectClick,
                         onCharacterClick = onCharacterClick,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
                     )
                 }
                 else -> ErrorContent(message = "无法加载人物信息", onRetry = viewModel::retry)
@@ -109,7 +116,7 @@ fun PersonDetailScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 private fun PersonDetailBody(
     detail: PersonDetailInfo,
@@ -117,14 +124,27 @@ private fun PersonDetailBody(
     characters: List<CharacterInfo>,
     onSubjectClick: (Long) -> Unit,
     onCharacterClick: (Long) -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         // 头像 + 名称
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 共享元素：与作品详情页制作人员卡头像配对（key 一致）
+            val avatarModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                with(sharedTransitionScope) {
+                    Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState("person_avatar_${detail.id}"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+            } else {
+                Modifier
+            }
             AsyncImage(
                 model = detail.imageUrl,
                 contentDescription = detail.nameCn ?: detail.name,
-                modifier = Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).then(avatarModifier),
                 contentScale = ContentScale.Crop,
             )
             Spacer(Modifier.width(16.dp))
@@ -192,7 +212,12 @@ private fun PersonDetailBody(
                     contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
                 ) {
                     items(items, key = { it.subjectId }) { subject ->
-                        PersonSubjectCard(subject = subject, onClick = { onSubjectClick(subject.subjectId) })
+                        PersonSubjectCard(
+                            subject = subject,
+                            onClick = { onSubjectClick(subject.subjectId) },
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
                     }
                 }
             }
@@ -202,7 +227,12 @@ private fun PersonDetailBody(
                 Text(typeLabel(type), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
                     items(distinctItems, key = { it.subjectId }) { subject ->
-                        PersonSubjectCard(subject = subject, onClick = { onSubjectClick(subject.subjectId) })
+                        PersonSubjectCard(
+                            subject = subject,
+                            onClick = { onSubjectClick(subject.subjectId) },
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
                     }
                 }
             }

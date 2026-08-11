@@ -611,12 +611,20 @@ private fun SubjectDetailBody(
                     characters = state.characters,
                     onCharacterClick = onCharacterClick,
                     onPersonClick = onPersonClick,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                 )
             }
             Spacer(Modifier.height(20.dp))
             // 制作人员
             RevealOnScroll {
-                StaffSection(staff = state.staff, onPersonClick = onPersonClick, onViewAllClick = onViewAllStaffClick)
+                StaffSection(
+                    staff = state.staff,
+                    onPersonClick = onPersonClick,
+                    onViewAllClick = onViewAllStaffClick,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                )
             }
             Spacer(Modifier.height(20.dp))
             // 社区标签（Phase 3 替换为正式组件）

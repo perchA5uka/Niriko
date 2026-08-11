@@ -1,5 +1,8 @@
 package com.otakup.niriko.ui.character
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +55,8 @@ fun CharacterDetailScreen(
     viewModel: CharacterDetailViewModel,
     onBack: () -> Unit,
     onSubjectClick: (Long) -> Unit = {},
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -70,6 +75,8 @@ fun CharacterDetailScreen(
                         detail = detail,
                         subjects = state.subjects,
                         onSubjectClick = onSubjectClick,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
                     )
                 }
                 else -> ErrorContent(message = "无法加载角色信息", onRetry = viewModel::retry)
@@ -78,19 +85,33 @@ fun CharacterDetailScreen(
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun CharacterDetailBody(
     detail: CharacterDetailInfo,
     subjects: List<PersonSubjectInfo>,
     onSubjectClick: (Long) -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         // 头像 + 名称
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // 共享元素：与作品详情页角色卡头像配对（key 一致）
+            val avatarModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                with(sharedTransitionScope) {
+                    Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState("character_avatar_${detail.id}"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+            } else {
+                Modifier
+            }
             AsyncImage(
                 model = detail.imageUrl,
                 contentDescription = detail.nameCn ?: detail.name,
-                modifier = Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).then(avatarModifier),
                 contentScale = ContentScale.Crop,
             )
             Spacer(Modifier.width(16.dp))
@@ -115,17 +136,25 @@ private fun CharacterDetailBody(
             Text("出演作品", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             subjects.forEach { subject ->
-                CharacterSubjectRow(subject = subject, onClick = { onSubjectClick(subject.subjectId) })
+                CharacterSubjectRow(
+                    subject = subject,
+                    onClick = { onSubjectClick(subject.subjectId) },
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                )
                 Spacer(Modifier.height(6.dp))
             }
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun CharacterSubjectRow(
     subject: PersonSubjectInfo,
     onClick: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     Card(
         onClick = onClick,
@@ -133,10 +162,21 @@ private fun CharacterSubjectRow(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
     ) {
         Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // 共享元素：参与作品封面 → 作品详情封面（key 与全局 "cover_{subjectId}" 约定一致）
+            val coverModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
+                with(sharedTransitionScope) {
+                    Modifier.sharedElement(
+                        sharedContentState = rememberSharedContentState("cover_${subject.subjectId}"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+            } else {
+                Modifier
+            }
             AsyncImage(
                 model = subject.imageUrl,
                 contentDescription = subject.titleCN ?: subject.title,
-                modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant),
+                modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant).then(coverModifier),
                 contentScale = ContentScale.Crop,
             )
             Spacer(Modifier.width(12.dp))

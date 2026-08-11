@@ -3,6 +3,7 @@ package com.otakup.niriko.ui.common
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.setValue
 
 /**
@@ -119,5 +120,40 @@ class SearchViewModel {
     /** 同步查询词镜像。 */
     fun syncQuery(value: String) {
         query = value
+    }
+
+    // ==================== 状态保存/恢复（返回导航栈时保持搜索态） ====================
+
+    /**
+     * 从保存态恢复交互阶段（navigate 覆盖 MainPager 后 pop 返回时，
+     * 前端状态机会重建——若不恢复 phase，会丢搜索态回到发现页首页）。
+     */
+    fun restore(savedPhase: SearchPhase, savedQuery: String) {
+        phase = savedPhase
+        query = savedQuery
+    }
+
+    companion object {
+        /**
+         * 仅保存恢复"搜索态"所需的两个关键字段：phase 与 query。
+         * mode / contentType / dragProgress 等由 SubjectSearchViewModel 镜像同步或瞬时交互态，无需保存。
+         */
+        val Saver: Saver<SearchViewModel, Map<String, String>> = Saver(
+            save = { vm ->
+                mapOf(
+                    "phase" to vm.phase.name,
+                    "query" to vm.query,
+                )
+            },
+            restore = { saved ->
+                SearchViewModel().apply {
+                    restore(
+                        savedPhase = runCatching { SearchPhase.valueOf(saved["phase"] ?: "COLLAPSED") }
+                            .getOrDefault(SearchPhase.COLLAPSED),
+                        savedQuery = saved["query"] ?: "",
+                    )
+                }
+            },
+        )
     }
 }
