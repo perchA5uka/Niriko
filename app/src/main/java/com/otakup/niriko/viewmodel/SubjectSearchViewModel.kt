@@ -8,6 +8,7 @@ import com.otakup.niriko.data.model.SuggestionItem
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
+import com.otakup.niriko.data.remote.game.GameItemMapper
 import com.otakup.niriko.data.local.dao.SearchHistoryDao
 import com.otakup.niriko.data.local.dao.SubjectDao
 import com.otakup.niriko.data.calculator.TrendingCalculator
@@ -220,13 +221,48 @@ class SubjectSearchViewModel(
                 if (filterSort == "match") "heat" else filterSort
             } else filterSort
 
-            // STEAM 模式：不走 Bangumi 接口，展示本地 Steam 条目（含占位负数条目）
+            // STEAM 模式：GetMostPlayedGames 活跃排行（远程，即点即建） + 本地已导入 Steam 条目合并
             if (mode == TrendingMode.STEAM) {
                 val dao = subjectDao
-                val steamItems = if (dao != null) {
+                val localItems = if (dao != null) {
                     runCatching { withContext(Dispatchers.IO) { dao.getBySource("steam") } }
                         .getOrDefault(emptyList())
                 } else emptyList()
+
+                // 本地条目按 appid 索引（sourceKey = "steam:{appId}"）
+                val localByAppId = localItems.mapNotNull { item ->
+                    item.sourceKey?.removePrefix("steam:")?.toIntOrNull()?.let { it to item }
+                }.toMap()
+
+                // 活跃排行（失败静默 → 只有本地条目）
+                val chartRanks = runCatching { steamRepository?.getChartRanks().orEmpty() }
+                    .getOrDefault(emptyMap())
+
+                // 排行条目：本地已有 → 用本地完整条目；没有 → 轻量占位条目（落库，即点即建，详情页拉真实数据）
+                val chartSubjects = chartRanks.entries
+                    .sortedBy { it.value.rank }
+                    .map { (appId, entry) ->
+                        localByAppId[appId] ?: run {
+                            val light = SubjectEntity(
+                                subjectId = GameItemMapper.deriveSubjectId("steam", appId.toString()),
+                                title = "Steam 热门 #${entry.rank}（App $appId）",
+                                type = SubjectType.GAME,
+                                sourceId = "steam",
+                                sourceKey = "steam:$appId",
+                                lastSyncTime = 0L,
+                            )
+                            dao?.let { d ->
+                                runCatching { withContext(Dispatchers.IO) { d.upsert(light) } }
+                            }
+                            light
+                        }
+                    }
+
+                // 本地已导入但不在当前排行中的条目（如小众/已下架游戏）补在后面
+                val chartAppIds = chartRanks.keys
+                val localOnly = localItems.filter { it.sourceKey?.removePrefix("steam:")?.toIntOrNull() !in chartAppIds }
+                val steamItems = chartSubjects + localOnly
+
                 // 竞态防护
                 if (requestId != trendingRequestId) return
                 perTypeTrending[currentType] = TypeTrendingState(

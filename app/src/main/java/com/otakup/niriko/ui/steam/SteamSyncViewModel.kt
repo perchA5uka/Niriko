@@ -272,10 +272,10 @@ class SteamSyncViewModel(
         }
     }
 
-    /** 全选/全不选（默认只全选已匹配项）。 */
+    /** 全选/全不选（已匹配项默认选中；占位条目也可一并选择导入）。 */
     fun selectAll() {
         _uiState.update { state ->
-            state.copy(previews = state.previews.map { it.copy(selected = it.isMatched) })
+            state.copy(previews = state.previews.map { it.copy(selected = true) })
         }
     }
 

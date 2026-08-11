@@ -41,6 +41,47 @@ class SteamTitleMatcherTest {
     }
 
     @Test
+    fun confidence_continuousSubstring_isLow() {
+        // 连续子串（无空格边界）不应高置信：短标题撞长标题是误绑主因
+        val score = SteamTitleMatcher.confidence("elden", "eldenring")
+        assertTrue("连续子串应低于阈值 0.7,实际 $score", score < SteamTitleMatcher.MIN_CONFIDENCE)
+        val score2 = SteamTitleMatcher.confidence("夏日", "夏日回忆录")
+        assertTrue("连续子串(中文)应低于阈值,实际 $score2", score2 < SteamTitleMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test
+    fun confidence_wordBoundarySuffix_isHigh() {
+        // 带空格副标题/版本后缀 → 词边界包含,保持高置信
+        val score = SteamTitleMatcher.confidence("Hollow Knight", "Hollow Knight Silksong")
+        assertTrue("词边界包含应 ≥0.85,实际 $score", score >= 0.85f)
+    }
+
+    @Test
+    fun bestMatch_tiePrefersCloserLength() {
+        // 同分(0.85 词边界包含)候选:选与查询标题长度更接近的(多语言/版本消歧)
+        val result = SteamTitleMatcher.bestMatch(
+            "黑神话悟空",
+            listOf(
+                candidate(1, "黑神话悟空 豪华版"),
+                candidate(2, "黑神话悟空 终极典藏版"),
+            ),
+        )
+        assertNotNull(result)
+        assertEquals(1, result!!.appId)
+    }
+
+    @Test
+    fun bestMatch_shortSubstringNotPickedOverExact() {
+        // 短标题连续子串候选不得压过精确候选
+        val result = SteamTitleMatcher.bestMatch(
+            "Abyss",
+            listOf(candidate(1, "Abyss"), candidate(2, "Abyssia of the Deep")),
+        )
+        assertNotNull(result)
+        assertEquals(1, result!!.appId)
+    }
+
+    @Test
     fun confidence_unrelated_isLow() {
         val score = SteamTitleMatcher.confidence("孤独摇滚", "Dota 2")
         assertTrue("无关标题应 <0.5,实际 $score", score < 0.5f)

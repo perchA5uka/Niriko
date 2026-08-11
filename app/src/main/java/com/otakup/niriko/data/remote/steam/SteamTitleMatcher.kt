@@ -7,9 +7,13 @@ import com.otakup.niriko.data.remote.steam.dto.SteamStoreSearchItemDto
  *
  * 匹配策略：
  * 1. 标题归一化（去空白/全角转半角/剥版权符号）后与 storesearch 候选 name 比对；
- * 2. 精确相等 → 1.0；一方包含另一方（被包含方长度 ≥ 3）→ 0.85；
- * 3. 否则按字符重叠比例给出 0.5~0.84 的分数；
- * 4. 低于阈值 [MIN_CONFIDENCE] 视为不匹配，避免误绑。
+ * 2. 精确相等 → 1.0；
+ * 3. 包含关系分两种：
+ *    - 短标题**以词边界**出现在长标题中（前缀/后缀/空格分隔，如 "艾尔登法环" ∈ "艾尔登法环 黄金树幽影"）→ 0.85；
+ *    - 短标题是长标题的**连续子串**（无空格边界，如 "elden" ∈ "eldenring"，或 "xx" ∈ "xx改"）→ 0.6，
+ *      这是"短标题撞上长标题"误绑的主要来源，必须降权到阈值以下；
+ * 4. 否则按字符重叠比例给出 0.1~0.9 的分数（上限 0.9：字符几乎全同的变体可胜过 0.85 边界包含）；
+ * 5. 低于阈值 [MIN_CONFIDENCE] 视为不匹配，避免误绑。
  */
 object SteamTitleMatcher {
 
@@ -50,10 +54,15 @@ object SteamTitleMatcher {
         if (a.isEmpty() || b.isEmpty()) return 0f
         if (a == b) return 1f
 
-        // 包含关系（如 Bangumi「艾尔登法环」vs Steam「艾尔登法环」；或带版本后缀的长名）
+        // 包含关系：区分"词边界包含"（带副标题/版本后缀，可信）与"连续子串"（短标题撞长标题，易误绑）
         if (a.contains(b) || b.contains(a)) {
-            val shorter = minOf(a.length, b.length)
-            return if (shorter >= 3) 0.85f else 0.6f
+            val (long, short) = if (a.length >= b.length) a to b else b to a
+            if (short.length < 3) return 0.6f
+            // 词边界：短标题是长标题的前缀/后缀，或两侧以空格分隔
+            val atWordBoundary = long.startsWith("$short ") ||
+                long.endsWith(" $short") ||
+                long.contains(" $short ")
+            return if (atWordBoundary) 0.85f else 0.6f
         }
 
         // 字符重叠比例（公共字符数 / 平均长度），处理小差异（标点/空格变体）
@@ -62,7 +71,8 @@ object SteamTitleMatcher {
         if (avgLen <= 0f) return 0f
         val overlap = common / avgLen
         // 完全无重叠 → 0.1（远低于 MIN_CONFIDENCE，保证不误绑）；有重叠按比例给分
-        return (overlap * 0.8f + 0.1f).coerceIn(0.1f, 0.84f)
+        // 上限 0.9：字符几乎全同的变体（如空格差异）应胜过 0.85 的"带副标题包含"
+        return (overlap * 0.8f + 0.1f).coerceIn(0.1f, 0.9f)
     }
 
     /** 匹配结果。 */
@@ -86,21 +96,32 @@ object SteamTitleMatcher {
      */
     fun bestMatch(title: String, candidates: List<SteamStoreSearchItemDto>): MatchResult? {
         if (title.isBlank() || candidates.isEmpty()) return null
+        val normalizedTitle = normalizeTitle(title)
         var best: MatchResult? = null
         for (c in candidates) {
             // 只匹配 app（忽略 bundle/sub/package）
             if (c.type != null && c.type != "app") continue
             val score = confidence(title, c.name)
             if (score < MIN_CONFIDENCE) continue
-            if (best == null || score > best.confidence) {
-                best = MatchResult(
-                    appId = c.id,
-                    steamName = c.name,
-                    confidence = score,
-                    priceCents = c.price?.final ?: c.price?.initial,
-                    currency = c.price?.currency,
-                    tinyImage = c.tinyImage,
-                )
+            val candidate = MatchResult(
+                appId = c.id,
+                steamName = c.name,
+                confidence = score,
+                priceCents = c.price?.final ?: c.price?.initial,
+                currency = c.price?.currency,
+                tinyImage = c.tinyImage,
+            )
+            if (best == null) {
+                best = candidate
+                continue
+            }
+            // 分数更高 → 替换；同分 → 选标题长度更接近的（多语言/版本候选消歧）
+            if (score > best.confidence) {
+                best = candidate
+            } else if (score == best.confidence) {
+                val bestLenDiff = kotlin.math.abs(normalizedTitle.length - normalizeTitle(best.steamName).length)
+                val candLenDiff = kotlin.math.abs(normalizedTitle.length - normalizeTitle(c.name).length)
+                if (candLenDiff < bestLenDiff) best = candidate
             }
         }
         return best

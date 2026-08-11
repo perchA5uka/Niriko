@@ -14,6 +14,7 @@ import com.otakup.niriko.data.remote.InfoBoxEntry
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
+import com.otakup.niriko.data.repository.VndbRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -67,6 +68,9 @@ data class SubjectDetailUiState(
     val achievements: com.otakup.niriko.data.remote.steam.SteamAchievements? = null,
     // Steam 活跃玩家排名（未上榜/失败为 null）
     val chartRank: com.otakup.niriko.data.remote.steam.SteamChartEntry? = null,
+    // VNDB 补充数据（视觉小说信息：绑定 + 详情）
+    val vndbBinding: com.otakup.niriko.data.local.entity.VndbBindingEntity? = null,
+    val vndbDetail: com.otakup.niriko.data.remote.vndb.dto.VndbVisualNovelDto? = null,
     // Snackbar 消息
     val snackbarMessage: String? = null,
 )
@@ -81,6 +85,7 @@ class SubjectDetailViewModel(
     private val subjectId: Long,
     private val context: android.content.Context,
     private val steamRepository: SteamRepository? = null,
+    private val vndbRepository: VndbRepository? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SubjectDetailUiState())
@@ -220,6 +225,9 @@ class SubjectDetailViewModel(
                 val achievementsDeferred = async {
                     try { loadAchievements() } catch (_: Exception) { Unit }
                 }
+                val vndbDeferred = async {
+                    try { loadVndbSupplement() } catch (_: Exception) { Unit }
+                }
                 val characters = charactersDeferred.await()
                 val staff = staffDeferred.await()
                 val episodes = episodesDeferred.await()
@@ -229,6 +237,7 @@ class SubjectDetailViewModel(
                 biliDeferred.await()
                 steamDeferred.await()
                 achievementsDeferred.await()
+                vndbDeferred.await()
                 _uiState.update {
                     it.copy(
                         characters = characters,
@@ -281,6 +290,7 @@ class SubjectDetailViewModel(
 
     /**
      * 拉取 Steam 补充数据（仅 GAME 类型且已绑定时有效）。
+     * - 未绑定条目先懒触发一次自动匹配（matchAndBind，失败静默）
      * - 30 分钟缓存内直接读库；过期自动拉取 appdetails + 当前游玩人数并落库
      * - 失败静默（Steam 是补充信息，不影响主流程）
      */
@@ -288,8 +298,30 @@ class SubjectDetailViewModel(
         val steam = steamRepository ?: return
         val current = _uiState.value.subject ?: return
         if (current.type != com.otakup.niriko.data.model.SubjectType.GAME) return
+        // 懒绑定：详情页打开即尝试匹配（解决"先收藏后识别"的滞后——不依赖收藏页触发）
+        if (!current.isSteamPlaceholder) {
+            runCatching { steam.matchAndBind(listOf(current)) }
+        }
         val game = steam.getSupplement(subjectId) ?: return
         _uiState.update { it.copy(steam = game) }
+    }
+
+    /**
+     * 拉取 VNDB 补充数据（仅 GAME 类型）。
+     * - 未绑定条目先懒触发一次自动匹配（matchAndBind，失败静默）
+     * - 已绑定则拉详情（vndbId 查询），写入 uiState.vndbBinding/vndbDetail
+     * - 失败静默（VNDB 是补充信息源，不影响主流程）
+     */
+    private suspend fun loadVndbSupplement() {
+        val vndb = vndbRepository ?: return
+        val current = _uiState.value.subject ?: return
+        if (current.type != com.otakup.niriko.data.model.SubjectType.GAME) return
+        // 懒绑定：详情页打开即尝试匹配（与 Steam 懒绑定一致）
+        runCatching { vndb.matchAndBind(listOf(current)) }
+        val binding = vndb.getBinding(subjectId) ?: return
+        // 拉取 VNDB 详情（绑定后立即获取，供详情区块展示）
+        val detail = runCatching { vndb.getDetail(binding.vndbId) }.getOrNull()
+        _uiState.update { it.copy(vndbBinding = binding, vndbDetail = detail) }
     }
 
     /**
@@ -355,6 +387,26 @@ class SubjectDetailViewModel(
         // 刷新详情（subjectId 已变更，重载页面数据）
         retry()
         return best.subjectId
+    }
+
+    /**
+     * 解除 Steam 绑定（错绑数据手动解绑，之后可重新匹配）。
+     * 仅对非占位条目有效（占位条目本身就是独立作品，不解绑）。
+     * 成功后清空 uiState.steam/achievements/chartRank 并提示。
+     */
+    fun unbindSteam() {
+        val steam = steamRepository ?: return
+        val current = _uiState.value.subject ?: return
+        if (current.isSteamPlaceholder) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { steam.unbind(subjectId) }
+            _uiState.update {
+                it.copy(
+                    steam = null, achievements = null, chartRank = null,
+                    snackbarMessage = "已解除 Steam 绑定",
+                )
+            }
+        }
     }
 
     fun addToCollection() {
@@ -469,13 +521,14 @@ class SubjectDetailViewModelFactory(
     private val subjectId: Long,
     private val context: android.content.Context,
     private val steamRepository: SteamRepository? = null,
+    private val vndbRepository: VndbRepository? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SubjectDetailViewModel::class.java)) {
             return SubjectDetailViewModel(
                 subjectRepository, collectionRepository, remoteDataSource, subjectId,
-                context.applicationContext, steamRepository,
+                context.applicationContext, steamRepository, vndbRepository,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

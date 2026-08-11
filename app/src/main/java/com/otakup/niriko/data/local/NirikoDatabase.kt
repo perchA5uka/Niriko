@@ -15,6 +15,7 @@ import com.otakup.niriko.data.local.dao.SearchHistoryDao
 import com.otakup.niriko.data.local.dao.SteamDao
 import com.otakup.niriko.data.local.dao.SteamLibraryItemDao
 import com.otakup.niriko.data.local.dao.SubjectDao
+import com.otakup.niriko.data.local.dao.VndbDao
 import com.otakup.niriko.data.local.WorkDao
 import com.otakup.niriko.data.local.entity.BilibiliSyncItemEntity
 import com.otakup.niriko.data.local.entity.CollectionEntity
@@ -24,6 +25,7 @@ import com.otakup.niriko.data.local.entity.SteamBindingEntity
 import com.otakup.niriko.data.local.entity.SteamGameEntity
 import com.otakup.niriko.data.local.entity.SteamLibraryItemEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.local.entity.VndbBindingEntity
 
 /**
  * Niriko 本地数据库。
@@ -31,8 +33,8 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
  * 无匹配 Migration 时 Room 抛出异常（不会静默删除数据）。
  */
 @Database(
-    entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class],
-    version = 18,
+    entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class, VndbBindingEntity::class],
+    version = 19,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -46,6 +48,7 @@ abstract class NirikoDatabase : RoomDatabase() {
     abstract fun bilibiliSyncItemDao(): BilibiliSyncItemDao
     abstract fun steamDao(): SteamDao
     abstract fun steamLibraryItemDao(): SteamLibraryItemDao
+    abstract fun vndbDao(): VndbDao
 
     companion object {
         private const val DB_NAME = "niriko.db"
@@ -70,7 +73,7 @@ abstract class NirikoDatabase : RoomDatabase() {
                     MIGRATION_6_7, MIGRATION_7_8,
                     MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                    MIGRATION_16_17, MIGRATION_17_18,
+                    MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
                 )
                 .build()
         }
@@ -304,6 +307,24 @@ abstract class NirikoDatabase : RoomDatabase() {
                 // 唯一索引：SQLite 唯一索引允许多个 NULL，故 Bangumi 条目（sourceKey=null）不冲突
                 database.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS `index_subjects_sourceKey` ON `subjects` (`sourceKey`)"
+                )
+            }
+        }
+
+        /** v18 → v19：新增 vndb_bindings 表（bangumi subjectId ↔ VNDB id 绑定，与 steam_bindings 同构）。 */
+        private val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `vndb_bindings` (
+                        `subjectId` INTEGER NOT NULL,
+                        `vndbId` TEXT NOT NULL,
+                        `matchMethod` TEXT NOT NULL,
+                        `confidence` REAL NOT NULL,
+                        `createTime` INTEGER NOT NULL,
+                        PRIMARY KEY(`subjectId`)
+                    )
+                    """.trimIndent()
                 )
             }
         }

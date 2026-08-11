@@ -61,6 +61,20 @@ class SteamRepository(
     // ==================== 匹配与绑定 ====================
 
     /**
+     * 解除绑定：删除 subjectId 的 steam_bindings 与 steam_games。
+     * 供详情页「解除绑定」操作（错绑数据手动解绑后重新匹配）。
+     * 异常保护（Steam 是补充数据源）。
+     */
+    suspend fun unbind(subjectId: Long) {
+        withContext(Dispatchers.IO) {
+            runCatching {
+                steamDao.deleteBindingBySubjectId(subjectId)
+                steamDao.deleteGameBySubjectId(subjectId)
+            }
+        }
+    }
+
+    /**
      * 对 GAME 条目执行 Steam 匹配并落库。
      *
      * 仅处理 type=GAME 且尚未绑定的条目；每个条目并发调 storesearch，
@@ -154,38 +168,41 @@ class SteamRepository(
     }
 
     /**
+     * 获取全量活跃玩家排行（GetMostPlayedGames），appid → 排名信息。
+     * 实测无需 key；30 分钟内存缓存。失败返回空 Map，不抛异常。
+     */
+    suspend fun getChartRanks(): Map<Int, SteamChartEntry> {
+        val cached = chartCache
+        if (cached != null && System.currentTimeMillis() - cached.second < ACHIEVEMENT_CACHE_TTL_MS) {
+            return cached.first
+        }
+        val fresh = withContext(Dispatchers.IO) {
+            runCatching {
+                apiService.mostPlayedGames(
+                    url = SteamApiClient.MOST_PLAYED_GAMES_URL,
+                    // 排行接口实测无需 key；不附加避免 key 进入日志
+                ).response?.ranks.orEmpty()
+                    .associateBy { it.appid }
+                    .mapValues { (_, r) ->
+                        SteamChartEntry(
+                            rank = r.rank,
+                            lastWeekRank = r.lastWeekRank,
+                            peakInGame = r.peakInGame,
+                        )
+                    }
+            }.getOrNull() ?: emptyMap()
+        }
+        if (fresh.isNotEmpty()) {
+            chartCache = fresh to System.currentTimeMillis()
+        }
+        return fresh
+    }
+
+    /**
      * 获取某游戏的活跃玩家排名（GetMostPlayedGames）。
-     * 实测无需 key 也可调用；30 分钟内存缓存（全量排行一次拉取，按 appid 查询）。
      * 未上榜 / 失败返回 null，不抛异常。
      */
-    suspend fun getChartRank(appId: Int): SteamChartEntry? {
-        val cached = chartCache
-        val ranks = if (cached != null && System.currentTimeMillis() - cached.second < ACHIEVEMENT_CACHE_TTL_MS) {
-            cached.first
-        } else {
-            val fresh = withContext(Dispatchers.IO) {
-                runCatching {
-                    apiService.mostPlayedGames(
-                        url = SteamApiClient.MOST_PLAYED_GAMES_URL,
-                        // 排行接口实测无需 key；不附加避免 key 进入日志
-                    ).response?.ranks.orEmpty()
-                        .associateBy { it.appid }
-                        .mapValues { (_, r) ->
-                            SteamChartEntry(
-                                rank = r.rank,
-                                lastWeekRank = r.lastWeekRank,
-                                peakInGame = r.peakInGame,
-                            )
-                        }
-                }.getOrNull() ?: emptyMap()
-            }
-            if (fresh.isNotEmpty()) {
-                chartCache = fresh to System.currentTimeMillis()
-            }
-            fresh
-        }
-        return ranks[appId]
-    }
+    suspend fun getChartRank(appId: Int): SteamChartEntry? = getChartRanks()[appId]
 
     /**
      * 获取某条目的成就进度（GetPlayerAchievements + GetSchemaForGame 合并）。

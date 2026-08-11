@@ -217,6 +217,7 @@ fun SubjectDetailScreen(
             onRematchPlaceholder = {
                 coroutineScope.launch { viewModel.rematchPlaceholder() }
             },
+            onUnbindSteam = viewModel::unbindSteam,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.padding(innerPadding),
@@ -240,6 +241,7 @@ private fun SubjectDetailContent(
     onRelationClick: (Long) -> Unit = {},
     onViewAllStaffClick: () -> Unit = {},
     onRematchPlaceholder: () -> Unit = {},
+    onUnbindSteam: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
@@ -378,6 +380,7 @@ private fun SubjectDetailContent(
                     onRelationClick = onRelationClick,
                     onViewAllStaffClick = onViewAllStaffClick,
                     onRematchPlaceholder = onRematchPlaceholder,
+                    onUnbindSteam = onUnbindSteam,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
@@ -403,6 +406,7 @@ private fun SubjectDetailBody(
     onRelationClick: (Long) -> Unit = {},
     onViewAllStaffClick: () -> Unit = {},
     onRematchPlaceholder: () -> Unit = {},
+    onUnbindSteam: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
@@ -565,6 +569,19 @@ private fun SubjectDetailBody(
                     isScrolling = isListScrolling,
                     isPlaceholder = subject.isSteamPlaceholder,
                     onRematchPlaceholder = onRematchPlaceholder,
+                    onUnbindSteam = onUnbindSteam,
+                )
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+
+        // === VNDB 补充信息（仅游戏类型且已绑定 VNDB 时显示） ===
+        if (subject.type == SubjectType.GAME && state.vndbDetail != null) {
+            item(key = "vndb") {
+                VndbInfoSection(
+                    detail = state.vndbDetail,
+                    backdrop = glassBackdrop,
+                    isScrolling = isListScrolling,
                 )
                 Spacer(Modifier.height(24.dp))
             }
@@ -1180,6 +1197,7 @@ private fun SteamInfoSection(
     isScrolling: Boolean = false,
     isPlaceholder: Boolean = false,
     onRematchPlaceholder: () -> Unit = {},
+    onUnbindSteam: () -> Unit = {},
 ) {
     GlassSectionCard(
         backdrop = backdrop,
@@ -1397,6 +1415,15 @@ private fun SteamInfoSection(
                 ) {
                     Text("重新匹配 Bangumi 词条（升级为正式条目）")
                 }
+            } else {
+                // 已绑定正式词条：可解除绑定（错绑数据手动解绑后重新匹配）
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onUnbindSteam,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("解除 Steam 绑定")
+                }
             }
         }
     }
@@ -1425,6 +1452,138 @@ private fun formatPlayerCount(count: Int): String = when {
     count >= 10_000 -> "%.1f万".format(count / 10_000.0)
     count >= 1_000 -> "%.1fK".format(count / 1_000.0)
     else -> count.toString()
+}
+
+/** VNDB 信息区块（视觉小说补充：评分/开发商/时长/平台/语言/标签/封面）。 */
+@Composable
+private fun VndbInfoSection(
+    detail: com.otakup.niriko.data.remote.vndb.dto.VndbVisualNovelDto,
+    backdrop: Backdrop?,
+    isScrolling: Boolean = false,
+) {
+    GlassSectionCard(
+        backdrop = backdrop,
+        isScrolling = isScrolling,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // 标题行
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "VNDB 信息",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "vndb id ${detail.id}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+
+            // 评分 + 时长
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                detail.rating?.let { rating ->
+                    Box(
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "%.1f".format(rating / 10f),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                detail.votecount?.let { "$it 票" } ?: "评分",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                detail.lengthMinutes?.let { minutes ->
+                    Box(
+                        modifier = Modifier
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            "时长 ${formatVndbLength(minutes)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // 开发商 / 平台 / 语言
+            if (detail.developers.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                SteamMetaRow("开发商", detail.developers.joinToString(" / ") { it.name })
+            }
+            if (detail.platforms.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                SteamMetaRow("平台", detail.platforms.joinToString(" / "))
+            }
+            if (detail.olang != null) {
+                Spacer(Modifier.height(4.dp))
+                SteamMetaRow("原语", detail.olang)
+            }
+
+            // 发售日
+            detail.released?.takeIf { it != "TBA" && it != "unknown" }?.let { released ->
+                Spacer(Modifier.height(4.dp))
+                SteamMetaRow("发售日", released)
+            }
+
+            // 标签
+            if (detail.tags.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    detail.tags.take(8).forEach { tag ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {},
+                            label = { Text(tag.name, style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
+                }
+            }
+
+            // 简介（截断）
+            detail.description?.takeIf { it.isNotBlank() }?.let { desc ->
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    desc.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim().take(300),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+/** VNDB 时长（分钟）→ 可读文本（≥60 分钟显示 xh ym）。 */
+private fun formatVndbLength(minutes: Int): String = when {
+    minutes >= 60 -> "${minutes / 60}h ${minutes % 60}m"
+    minutes > 0 -> "${minutes}m"
+    else -> "-"
 }
 
 @Composable

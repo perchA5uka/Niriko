@@ -52,6 +52,7 @@ class BilibiliImporterTest {
         override fun observeAll(): Flow<List<SubjectEntity>> = MutableStateFlow(subjects.toList())
         override fun observeById(id: Long): Flow<SubjectEntity?> = MutableStateFlow(subjects.find { it.subjectId == id })
         override suspend fun getById(id: Long): SubjectEntity? = subjects.find { it.subjectId == id }
+        override suspend fun getBySourceKey(sourceKey: String): SubjectEntity? = subjects.find { it.sourceKey == sourceKey }
         override suspend fun getExistingIds(ids: List<Long>): List<Long> = subjects.map { it.subjectId }.filter { it in ids }
         override fun searchByKeyword(keyword: String): Flow<List<SubjectEntity>> = MutableStateFlow(emptyList())
         override suspend fun getAll(): List<SubjectEntity> = subjects.toList()

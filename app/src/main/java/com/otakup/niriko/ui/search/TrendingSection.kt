@@ -128,9 +128,9 @@ fun TrendingSection(
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("还没有 Steam 作品", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Steam 数据暂不可用", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
-                    "在「设置 → Steam 账号与游戏库」导入后，这里会展示你的 Steam 游戏（含 Bangumi 无词条的独占作品）",
+                    "这里展示 Steam 当前最活跃的游戏排行。网络不可用或暂无数据时为空；导入游戏库后也会显示你的 Steam 作品。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),

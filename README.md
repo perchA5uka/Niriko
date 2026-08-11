@@ -39,6 +39,20 @@ Kotlin + Jetpack Compose + Material 3 单 Activity 原生 Android 应用。
 - **图片**：Coil Compose（显示尺寸感知解码 + 小图约束）
 - **架构**：单 Activity + ViewModel（手写 Factory，无 DI 框架）、Repository 层、纯函数计算器（StatsCalculator / TrendingCalculator，可单测）
 
+
+## VNDB 数据源
+
+VNDB 作为 **视觉小说（GAME 类型）的补充信息源** 接入（纯信息源，不做用户库导入，参照 GalSpace 项目）：
+
+- **接入方式**：`VndbGameDataSource` 实现 `GameDataSource`（id="vndb"），注册进 `gameDataSourceRegistry`；
+  查询走 VNDB REST API v2（`POST https://api.vndb.org/kana/vn`，filters/fields/results/sort，无需 API key，限流约 200 次/5 分钟，带 User-Agent）
+- **绑定互通**：`vndb_bindings` 表（bangumi subjectId ↔ vndbId，与 steam_bindings 同构）；
+  同一 bangumi 词条可同时绑定 Steam 与 VNDB；匹配复用 `SteamTitleMatcher` 标题置信度（≥0.7）
+- **懒绑定**：详情页打开时对未绑定 GAME 条目自动触发一次 VNDB 匹配（与 Steam 懒绑定一致）
+- **详情区块**：详情页新增「VNDB 信息」区块（评分 10 分制 / 投票数 / 时长 / 开发商 / 平台 / 原语 / 发售日 / 标签 / 简介），与 Steam 区块并列
+- **主数据源优先级**：bangumi > Steam > VNDB——bangumi 有词条以 bangumi 为主体（外部源作补充）；
+  bangumi 无词条、Steam 有则以 Steam 为主体；两者皆无、VNDB 有则以 VNDB 为主体（sourceKey="vndb:{id}"）
+
 ## Steam 数据源
 
 Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi 仍负责作品语义元数据（标题/简介/评分/角色/Staff/关联），Steam 负责商业与运行数据（价格/开发商/发行商/Metacritic/当前在线/标签/截图），两者通过 `subjectId` 关联融合展示。
@@ -49,7 +63,7 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 - `steam_games`：Steam 扩展数据（价格分/币种/开发商/发行商/Metacritic/当前在线/标签/截图/发行日期）
 - `steam_library_items`：游戏库导入快照（appid / 游玩时长 / 匹配结果 / 占位标记 / 家庭库 shared 标记）
 
-未来可同样方式扩展 VNDB / PSN / Xbox 等平台数据。
+VNDB 已作为第二个 GameDataSource 接入（视觉小说信息源），PSN / Xbox 等平台可同样方式扩展。
 
 ### 通用游戏数据源架构（GameDataSource）
 

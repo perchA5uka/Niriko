@@ -142,6 +142,7 @@ fun NirikoNavHost(
                     subjectId = subjectId,
                     context = context,
                     steamRepository = app.steamRepository,
+                    vndbRepository = app.vndbRepository,
                 ),
             )
             SubjectDetailScreen(

@@ -12,10 +12,12 @@ import com.otakup.niriko.data.remote.anilist.AniListDataSource
 import com.otakup.niriko.data.remote.bangumi.BangumiDataSource
 import com.otakup.niriko.data.remote.game.GameDataSourceRegistry
 import com.otakup.niriko.data.remote.game.SteamGameDataSource
+import com.otakup.niriko.data.remote.vndb.VndbGameDataSource
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.NetworkMonitor
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
+import com.otakup.niriko.data.repository.VndbRepository
 import com.otakup.niriko.data.repository.WorkRepository
 import com.otakup.niriko.data.settings.SettingsDataStore
 import com.otakup.niriko.data.sync.SyncManager
@@ -162,10 +164,11 @@ class NirikoApplication : Application() {
         )
     }
 
-    /** 通用游戏数据源注册表（补充查询通道：Steam / RAWG / NeoDB 等）。 */
+    /** 通用游戏数据源注册表（补充查询通道：Steam / VNDB 等）。 */
     val gameDataSourceRegistry: GameDataSourceRegistry by lazy {
         GameDataSourceRegistry().apply {
             register(SteamGameDataSource())
+            register(VndbGameDataSource())
             // 后续接入：register(RawgGameDataSource(...))、register(NeoDbGameDataSource(...))
         }
     }
@@ -192,6 +195,11 @@ class NirikoApplication : Application() {
                     .takeIf { it.isNotBlank() }
             },
         )
+    }
+
+    /** VNDB 补充数据仓储（视觉小说信息源：评分/开发者/时长/平台/语言/截图）。 */
+    val vndbRepository: VndbRepository by lazy {
+        VndbRepository(vndbDao = database.vndbDao())
     }
 
     /** 作品元数据 DAO（本地 subjects 查询，发现页 Steam 标签用）。 */

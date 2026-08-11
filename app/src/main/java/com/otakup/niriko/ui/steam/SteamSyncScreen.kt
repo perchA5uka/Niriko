@@ -295,11 +295,10 @@ private fun SteamPreviewRow(
             Spacer(Modifier.width(8.dp))
         }
 
-        // 勾选
+        // 勾选（占位条目同样可勾选，导入时创建独立作品）
         Checkbox(
             checked = preview.selected,
             onCheckedChange = onToggle,
-            enabled = !preview.isPlaceholder || preview.selected,
         )
     }
 }

@@ -79,6 +79,10 @@ interface SubjectDao {
     @Query("SELECT * FROM subjects WHERE sourceId = :sourceId ORDER BY subjectId ASC")
     suspend fun getBySource(sourceId: String): List<SubjectEntity>
 
+    /** 按跨数据源唯一键查询本地作品（如 "steam:570"）。 */
+    @Query("SELECT * FROM subjects WHERE sourceKey = :sourceKey LIMIT 1")
+    suspend fun getBySourceKey(sourceKey: String): SubjectEntity?
+
     /** 旧负数占位条目（sourceId="steam" 且 subjectId<0；sourceKey 迁移前遗留）。 */
     @Query("SELECT * FROM subjects WHERE sourceId = 'steam' AND subjectId < 0 ORDER BY subjectId ASC")
     suspend fun getLegacySteamPlaceholders(): List<SubjectEntity>
