@@ -24,12 +24,21 @@ object SteamOpenIdClient {
     private const val IDENTIFIER_SELECT =
         "http://specs.openid.net/auth/2.0/identifier_select"
 
-    /** 回跳自定义 scheme（WebView 拦截用）。 */
-    const val RETURN_TO_SCHEME = "niriko"
-    const val RETURN_TO_HOST = "steam-auth"
+    /**
+     * 回跳地址（WebView 拦截用）。
+     *
+     * Steam OpenID 2.0 **只接受 http/https 协议的 return_to**（自定义 scheme 会被拒，
+     * 报 "Invalid return protocol"）。这里用 `http://localhost/steam-auth`：
+     * - Steam 接受 http 协议；
+     * - 回跳由 WebView `shouldOverrideUrlLoading` 拦截解析（[RETURN_TO_URL] 前缀匹配），
+     *   不会真正发起 localhost 网络请求，因此不受 Android 9+ cleartext 限制影响。
+     */
+    const val RETURN_TO_SCHEME = "http"
+    const val RETURN_TO_HOST = "localhost"
+    const val RETURN_TO_PATH = "/steam-auth"
 
-    /** 完整 return_to URL：niriko://steam-auth。 */
-    const val RETURN_TO_URL = "$RETURN_TO_SCHEME://$RETURN_TO_HOST"
+    /** 完整 return_to URL：http://localhost/steam-auth。 */
+    const val RETURN_TO_URL = "$RETURN_TO_SCHEME://$RETURN_TO_HOST$RETURN_TO_PATH"
 
     /** claimed_id 前缀（提取 SteamID64 用）。 */
     private const val CLAIMED_ID_PREFIX = "https://steamcommunity.com/openid/id/"
@@ -37,7 +46,7 @@ object SteamOpenIdClient {
     /**
      * 构造 OpenID checkid_setup 请求 URL（登录页地址）。
      * @param returnTo 回跳地址；默认 [RETURN_TO_URL]
-     * @param realm 声明域；默认 scheme+host（Android 自定义 scheme）
+     * @param realm 声明域；默认 http://localhost（须与 return_to 同源前缀）
      */
     fun buildLoginUrl(
         returnTo: String = RETURN_TO_URL,
