@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 18,
-    "identityHash": "5e1ad2b2dc6063914adc9f0a0a81776e",
+    "identityHash": "bfcee31cb0824b49107c8096d94eb76d",
     "entities": [
       {
         "tableName": "work_items",
@@ -219,7 +219,18 @@
           "columnNames": [
             "subjectId"
           ]
-        }
+        },
+        "indices": [
+          {
+            "name": "index_subjects_sourceKey",
+            "unique": true,
+            "columnNames": [
+              "sourceKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_subjects_sourceKey` ON `${TABLE_NAME}` (`sourceKey`)"
+          }
+        ]
       },
       {
         "tableName": "collections",
@@ -697,7 +708,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5e1ad2b2dc6063914adc9f0a0a81776e')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'bfcee31cb0824b49107c8096d94eb76d')"
     ]
   }
 }

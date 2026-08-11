@@ -285,11 +285,22 @@ abstract class NirikoDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 // sourceKey：跨数据源稳定唯一键（"steam:570"、"neodb:xxx" 等），
                 // 取代负数占位 hack。新列可空（Bangumi 条目沿用 subjectId 语义）。
-                // 注意：不能带 DEFAULT NULL——Room 实体列无默认值，
-                // ADD COLUMN ... DEFAULT NULL 会使 default value 校验失败。
-                database.execSQL(
-                    "ALTER TABLE `subjects` ADD COLUMN `sourceKey` TEXT"
-                )
+                //
+                // 幂等保护：前一次失败迁移可能已 ADD COLUMN（SQLite DDL 隐式提交，
+                // 校验失败也无法回滚），此时列已存在、仅缺索引 → 先查列存在性再决定。
+                // 注意不能带 DEFAULT NULL——Room 实体列无默认值，default value 校验会失败。
+                val cursor = database.query("PRAGMA table_info(`subjects`)")
+                val hasSourceKey = cursor.use { c ->
+                    val nameIdx = c.getColumnIndexOrThrow("name")
+                    var found = false
+                    while (c.moveToNext()) {
+                        if (c.getString(nameIdx) == "sourceKey") { found = true; break }
+                    }
+                    found
+                }
+                if (!hasSourceKey) {
+                    database.execSQL("ALTER TABLE `subjects` ADD COLUMN `sourceKey` TEXT")
+                }
                 // 唯一索引：SQLite 唯一索引允许多个 NULL，故 Bangumi 条目（sourceKey=null）不冲突
                 database.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS `index_subjects_sourceKey` ON `subjects` (`sourceKey`)"

@@ -1,6 +1,7 @@
 package com.otakup.niriko.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.otakup.niriko.data.model.SubjectType
 
@@ -9,7 +10,10 @@ import com.otakup.niriko.data.model.SubjectType
  * 主键为 Bangumi Subject ID；本地其他数据源条目用正数 subjectId + sourceKey 标识。
  * sourceId 标识数据来源（如 "bangumi"、"anilist"、"steam"），用于插件路由。
  */
-@Entity(tableName = "subjects")
+@Entity(
+    tableName = "subjects",
+    indices = [Index(value = ["sourceKey"], unique = true)],
+)
 data class SubjectEntity(
     @PrimaryKey
     val subjectId: Long,
