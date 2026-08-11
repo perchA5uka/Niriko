@@ -285,8 +285,10 @@ abstract class NirikoDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 // sourceKey：跨数据源稳定唯一键（"steam:570"、"neodb:xxx" 等），
                 // 取代负数占位 hack。新列可空（Bangumi 条目沿用 subjectId 语义）。
+                // 注意：不能带 DEFAULT NULL——Room 实体列无默认值，
+                // ADD COLUMN ... DEFAULT NULL 会使 default value 校验失败。
                 database.execSQL(
-                    "ALTER TABLE `subjects` ADD COLUMN `sourceKey` TEXT DEFAULT NULL"
+                    "ALTER TABLE `subjects` ADD COLUMN `sourceKey` TEXT"
                 )
                 // 唯一索引：SQLite 唯一索引允许多个 NULL，故 Bangumi 条目（sourceKey=null）不冲突
                 database.execSQL(
