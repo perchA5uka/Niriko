@@ -40,6 +40,8 @@ data class AppSettings(
     val steamApiKey: String = "",
     /** Steam 登录用户 SteamID64（OpenID 登录或手动输入，空表示未登录）。 */
     val steamId64: String = "",
+    /** Steam 用户 access token（webapi_token，家庭库接口用；登录会话抓取，约 1-2 天过期）。 */
+    val steamWebApiToken: String = "",
 
     // ===== WebDAV 同步 =====
     val webDavUrl: String = "",

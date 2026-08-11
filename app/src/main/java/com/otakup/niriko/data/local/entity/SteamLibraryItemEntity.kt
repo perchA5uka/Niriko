@@ -33,6 +33,8 @@ data class SteamLibraryItemEntity(
     val bgmSubjectId: Long? = null,
     /** 是否为占位条目（Bangumi 无词条，以 -appId 占位展示）。 */
     val isPlaceholder: Boolean = false,
+    /** 是否家庭共享库借入的游戏（非本人拥有，来自 IFamilyGroupsService/GetSharedLibraryApps）。 */
+    val shared: Boolean = false,
     /** 已合并进 subjects/collections。 */
     val imported: Boolean = false,
     val importTime: Long = System.currentTimeMillis(),

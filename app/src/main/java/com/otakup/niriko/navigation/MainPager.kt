@@ -84,6 +84,7 @@ fun MainPager(
                         collectionRepository = app.collectionRepository,
                         searchHistoryDao = app.searchHistoryDao,
                         steamRepository = app.steamRepository,
+                        subjectDao = app.subjectDao,
                     ),
                 )
                 SubjectSearchScreen(

@@ -13,6 +13,8 @@ import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.remote.steam.SteamApiClient
 import com.otakup.niriko.data.remote.steam.SteamApiService
+import com.otakup.niriko.data.remote.steam.SteamAchievements
+import com.otakup.niriko.data.remote.steam.SteamAchievementItem
 import com.otakup.niriko.data.remote.steam.SteamTitleMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -36,12 +38,20 @@ private const val TAG = "SteamRepo"
 class SteamRepository(
     private val steamDao: SteamDao,
     private val apiService: SteamApiService = SteamApiClient.apiService,
+    /** 当前登录用户的 SteamID64（成就等用户维度接口用；未登录返回 null）。 */
+    private val steamId64Provider: (() -> String?)? = null,
 ) {
 
     companion object {
         /** 当前游玩人数缓存有效期（30 分钟）。 */
         const val PLAYER_CACHE_TTL_MS = 30 * 60 * 1000L
+
+        /** 成就数据缓存有效期（30 分钟；成就频繁刷新意义不大且限流敏感）。 */
+        const val ACHIEVEMENT_CACHE_TTL_MS = 30 * 60 * 1000L
     }
+
+    /** 成就内存缓存：appId → (数据, 时间戳)。 */
+    private val achievementCache = mutableMapOf<Int, Pair<SteamAchievements, Long>>()
 
     // ==================== 匹配与绑定 ====================
 
@@ -136,6 +146,75 @@ class SteamRepository(
         }
         if (fresh != null) return fresh
         return fetchDetailAndPersist(subjectId, binding.steamAppId) ?: cached
+    }
+
+    /**
+     * 获取某条目的成就进度（GetPlayerAchievements + GetSchemaForGame 合并）。
+     *
+     * 前置条件：已绑定 + 已配置 API key + 已登录（steamId64）。
+     * 隐私限制（profile Game details 未公开）或失败时返回 null，不抛异常。
+     * 30 分钟内存缓存（[ACHIEVEMENT_CACHE_TTL_MS]），避免高频接口触发限流。
+     */
+    suspend fun getAchievements(subjectId: Long): SteamAchievements? {
+        val binding = steamDao.getBindingBySubjectId(subjectId) ?: return null
+        val appId = binding.steamAppId
+
+        // 缓存命中（30 分钟内）
+        val cached = achievementCache[appId]
+        if (cached != null && System.currentTimeMillis() - cached.second < ACHIEVEMENT_CACHE_TTL_MS) {
+            return cached.first
+        }
+
+        val key = SteamApiClient.currentApiKey() ?: return null
+        val steamId = steamId64Provider?.invoke()?.takeIf { it.isNotBlank() } ?: return null
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val progress = apiService.playerAchievements(
+                    url = SteamApiClient.PLAYER_ACHIEVEMENTS_URL,
+                    key = key,
+                    steamId = steamId,
+                    appId = appId,
+                ).playerstats
+                // 隐私限制 / 无该游戏成就 → 空数据，不缓存（用户可能随后公开）
+                val achievements = progress?.achievements
+                if (progress?.success != true || achievements.isNullOrEmpty()) {
+                    return@withContext null
+                }
+
+                // 成就定义（展示名/描述/图标；失败时降级用 API 名）
+                val definitions = runCatching {
+                    apiService.schemaForGame(
+                        url = SteamApiClient.SCHEMA_FOR_GAME_URL,
+                        key = key,
+                        appId = appId,
+                    ).game?.availableGameStats?.achievements.orEmpty()
+                        .associateBy { it.name }
+                }.getOrDefault(emptyMap())
+
+                val items = achievements.map { a ->
+                    val def = definitions[a.apiname]
+                    SteamAchievementItem(
+                        apiName = a.apiname ?: "",
+                        name = def?.displayName ?: a.apiname ?: "",
+                        description = def?.description,
+                        achieved = a.achieved,
+                        unlockTime = a.unlocktime.takeIf { it > 0 },
+                        icon = def?.icon,
+                    )
+                }
+                val result = SteamAchievements(
+                    unlocked = items.count { it.achieved },
+                    total = items.size,
+                    items = items,
+                )
+                achievementCache[appId] = result to System.currentTimeMillis()
+                result
+            } catch (e: Exception) {
+                Log.w(TAG, "getAchievements failed for appId=$appId", e)
+                null
+            }
+        }
     }
 
     /**

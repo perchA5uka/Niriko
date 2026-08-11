@@ -268,6 +268,9 @@ private fun SteamPreviewRow(
                 } else {
                     append(" · ").append("未匹配")
                 }
+                if (preview.shared) {
+                    append(" · ").append("家庭库")
+                }
             }
             Text(
                 status,

@@ -13,6 +13,7 @@ import com.otakup.niriko.data.remote.steam.SteamLibraryImporter
 import com.otakup.niriko.data.remote.steam.SteamLibraryMatcher
 import com.otakup.niriko.data.remote.steam.SteamLibraryPreview
 import com.otakup.niriko.data.remote.steam.SteamImportResult
+import com.otakup.niriko.data.remote.steam.dto.SteamOwnedGameDto
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
 import com.otakup.niriko.data.settings.SettingsDataStore
@@ -151,7 +152,7 @@ class SteamSyncViewModel(
         }
     }
 
-    /** 拉取游戏库（GetOwnedGames）→ 匹配 → 预览。 */
+    /** 拉取游戏库（GetOwnedGames + 家庭共享库）→ 匹配 → 预览。 */
     fun pullLibrary() {
         val s = _uiState.value
         if (s.steamId64.isBlank()) return
@@ -175,7 +176,19 @@ class SteamSyncViewModel(
                     )
                 }
                 val games = response.response?.games ?: emptyList()
-                if (games.isEmpty()) {
+
+                // 家庭共享库（借入游戏）：token 可用时尝试合并；失败静默，不影响主流程
+                val family = fetchFamilyLibrary(s.steamId64)
+                val sharedAppIds = family.ids
+                val allGames = if (family.games.isEmpty()) {
+                    games
+                } else {
+                    // 去重合并：家庭库借入的 appid 若与本人拥有重合，以本人为准
+                    val ownedIds = games.map { it.appid }.toSet()
+                    games + family.games.filter { it.appid !in ownedIds }
+                }
+
+                if (allGames.isEmpty()) {
                     _uiState.update {
                         it.copy(stage = SteamSyncStatus.READY, previews = emptyList(), message = "游戏库为空或接口未返回数据")
                     }
@@ -183,14 +196,14 @@ class SteamSyncViewModel(
                 }
 
                 _uiState.update {
-                    it.copy(stage = SteamSyncStatus.MATCHING, message = "已拉取 ${games.size} 款游戏，正在匹配 Bangumi 词条…")
+                    it.copy(stage = SteamSyncStatus.MATCHING, message = "已拉取 ${allGames.size} 款游戏（家庭库 ${sharedAppIds.size} 款），正在匹配 Bangumi 词条…")
                 }
-                val previews = matcher.toPreviews(games)
+                val previews = matcher.toPreviews(allGames, sharedAppIds)
                 _uiState.update {
                     it.copy(
                         stage = SteamSyncStatus.READY,
                         previews = previews,
-                        message = "共 ${previews.size} 款游戏（已匹配 ${previews.count { it.isMatched }}，占位 ${previews.count { it.isPlaceholder }}）",
+                        message = "共 ${previews.size} 款游戏（已匹配 ${previews.count { it.isMatched }}，占位 ${previews.count { it.isPlaceholder }}，家庭库 ${previews.count { it.shared }}）",
                     )
                 }
             } catch (e: Exception) {
@@ -200,6 +213,53 @@ class SteamSyncViewModel(
             }
         }
     }
+
+    /**
+     * 拉取家庭共享库（借入游戏）。
+     * 依赖 webapi_token（登录会话抓取，约 1-2 天过期）；token 失效/未登录/网络失败
+     * 均静默返回空（家庭库为增强功能，不影响 GetOwnedGames 主流程）。
+     * @return 家庭库原始条目 + 借入 appid 集合
+     */
+    private suspend fun fetchFamilyLibrary(steamId64: String): FamilyLibraryResult {
+        val token = runCatching { SteamApiClient.fetchWebApiToken() }.getOrNull()
+            ?: return FamilyLibraryResult()
+        return runCatching {
+            withContext(Dispatchers.IO) {
+                val group = apiService.familyGroup(
+                    url = SteamApiClient.FAMILY_GROUP_URL,
+                    token = token,
+                    steamId = steamId64,
+                ).response?.familyGroupId ?: return@withContext FamilyLibraryResult()
+
+                val apps = apiService.sharedLibraryApps(
+                    url = SteamApiClient.SHARED_LIBRARY_APPS_URL,
+                    token = token,
+                    steamId = steamId64,
+                    familyGroupId = group,
+                ).response?.apps ?: emptyList()
+
+                // 转换借入条目为统一 SteamOwnedGameDto（共享库条目无游玩时长）
+                FamilyLibraryResult(
+                    games = apps.map {
+                        SteamOwnedGameDto(
+                            appid = it.appid,
+                            name = it.name,
+                            imgIconUrl = it.imgIconUrl,
+                            imgLogoUrl = it.imgLogoUrl,
+                            playtimeForever = 0,
+                        )
+                    },
+                    ids = apps.map { it.appid }.toSet(),
+                )
+            }
+        }.getOrElse { FamilyLibraryResult() }
+    }
+
+    /** 家庭库拉取结果。 */
+    private data class FamilyLibraryResult(
+        val games: List<SteamOwnedGameDto> = emptyList(),
+        val ids: Set<Int> = emptySet(),
+    )
 
     /** 切换勾选态。 */
     fun toggleSelection(appId: Int, selected: Boolean) {

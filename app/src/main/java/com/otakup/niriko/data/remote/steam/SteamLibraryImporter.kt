@@ -192,6 +192,7 @@ class SteamLibraryImporter(
             playtime2WeeksMinutes = playtime2WeeksMinutes,
             bgmSubjectId = bgmSubjectId,
             isPlaceholder = isPlaceholder,
+            shared = shared,
             imported = false,
             importTime = System.currentTimeMillis(),
         )

@@ -75,6 +75,10 @@ interface SubjectDao {
     @Query("SELECT * FROM subjects WHERE airDate IS NOT NULL ORDER BY airDate DESC")
     suspend fun getAllWithAirDate(): List<SubjectEntity>
 
+    /** 按数据源查询本地作品（如 sourceId="steam" 的 Steam 条目，含占位负数条目）。 */
+    @Query("SELECT * FROM subjects WHERE sourceId = :sourceId ORDER BY subjectId ASC")
+    suspend fun getBySource(sourceId: String): List<SubjectEntity>
+
     /** 按标题前缀搜索本地作品（用于自动补全建议）。 */
     @Query(
         """

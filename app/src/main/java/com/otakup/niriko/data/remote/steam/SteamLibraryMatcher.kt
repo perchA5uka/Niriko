@@ -37,6 +37,8 @@ data class SteamLibraryPreview(
     val bgmSubjectId: Long? = null,
     /** 占位候选（Bangumi 无词条，将用 -appId 占位展示）。 */
     val isPlaceholder: Boolean = false,
+    /** 家庭共享库借入的游戏（非本人拥有）。 */
+    val shared: Boolean = false,
     /** 本地是否已存在该条目对应收藏。 */
     val alreadyInCollection: Boolean = false,
     /** 本地已匹配条目标题（供 UI 展示）。 */
@@ -66,21 +68,25 @@ class SteamLibraryMatcher(
     /**
      * 将 GetOwnedGames 原始条目批量转换为预览行（并发匹配）。
      * @param games Steam 库原始条目
+     * @param sharedAppIds 家庭共享库（借入）的 appid 集合，用于标记 [SteamLibraryPreview.shared]
      * @return 预览行列表（保持输入顺序；已绑定/已收藏标记齐全）
      */
-    suspend fun toPreviews(games: List<SteamOwnedGameDto>): List<SteamLibraryPreview> {
+    suspend fun toPreviews(
+        games: List<SteamOwnedGameDto>,
+        sharedAppIds: Set<Int> = emptySet(),
+    ): List<SteamLibraryPreview> {
         if (games.isEmpty()) return emptyList()
         return withContext(Dispatchers.IO) {
             coroutineScope {
                 games.map { game ->
-                    async { toPreview(game) }
+                    async { toPreview(game, game.appid in sharedAppIds) }
                 }.awaitAll()
             }
         }
     }
 
     /** 单条匹配。 */
-    suspend fun toPreview(game: SteamOwnedGameDto): SteamLibraryPreview {
+    suspend fun toPreview(game: SteamOwnedGameDto, shared: Boolean = false): SteamLibraryPreview {
         val appId = game.appid
         // 1) 绑定表优先
         val bound = steamDao?.getBindingByAppId(appId)
@@ -95,6 +101,7 @@ class SteamLibraryMatcher(
                 playtime2WeeksMinutes = game.playtime2Weeks,
                 bgmSubjectId = subjectId.takeIf { it > 0 },
                 isPlaceholder = subjectId < 0,
+                shared = shared,
                 alreadyInCollection = inCollection(subjectId),
                 localSubjectTitle = title,
                 selected = subjectId > 0, // 已绑定正式词条默认勾选；占位不默认勾
@@ -121,6 +128,7 @@ class SteamLibraryMatcher(
                     playtime2WeeksMinutes = game.playtime2Weeks,
                     bgmSubjectId = best.subjectId,
                     isPlaceholder = false,
+                    shared = shared,
                     alreadyInCollection = inCollection(best.subjectId),
                     localSubjectTitle = best.titleCN ?: best.title,
                     selected = true,
@@ -137,6 +145,7 @@ class SteamLibraryMatcher(
             playtime2WeeksMinutes = game.playtime2Weeks,
             bgmSubjectId = null,
             isPlaceholder = true,
+            shared = shared,
             alreadyInCollection = inCollection(-appId.toLong()),
             selected = false, // 占位默认不勾选（用户确认后导入）
         )

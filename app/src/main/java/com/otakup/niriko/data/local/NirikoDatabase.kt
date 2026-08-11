@@ -32,7 +32,7 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
  */
 @Database(
     entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class],
-    version = 16,
+    version = 17,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -70,6 +70,7 @@ abstract class NirikoDatabase : RoomDatabase() {
                     MIGRATION_6_7, MIGRATION_7_8,
                     MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
+                    MIGRATION_16_17,
                 )
                 .build()
         }
@@ -267,6 +268,15 @@ abstract class NirikoDatabase : RoomDatabase() {
                         `imported` INTEGER NOT NULL DEFAULT 0,
                         `importTime` INTEGER NOT NULL
                     )"""
+                )
+            }
+        }
+
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // 家庭共享库标记（IFamilyGroupsService/GetSharedLibraryApps 借入游戏）
+                database.execSQL(
+                    "ALTER TABLE `steam_library_items` ADD COLUMN `shared` INTEGER NOT NULL DEFAULT 0"
                 )
             }
         }

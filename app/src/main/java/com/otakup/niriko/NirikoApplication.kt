@@ -162,8 +162,17 @@ class NirikoApplication : Application() {
 
     /** Steam 补充数据仓储（游戏商业数据：价格/开发商/在线人数等）。 */
     val steamRepository: SteamRepository by lazy {
-        SteamRepository(steamDao = database.steamDao())
+        SteamRepository(
+            steamDao = database.steamDao(),
+            steamId64Provider = {
+                runBlocking(Dispatchers.IO) { settingsDataStore.settings.first().steamId64 }
+                    .takeIf { it.isNotBlank() }
+            },
+        )
     }
+
+    /** 作品元数据 DAO（本地 subjects 查询，发现页 Steam 标签用）。 */
+    val subjectDao by lazy { database.subjectDao() }
 
     val searchHistoryDao by lazy { database.searchHistoryDao() }
 

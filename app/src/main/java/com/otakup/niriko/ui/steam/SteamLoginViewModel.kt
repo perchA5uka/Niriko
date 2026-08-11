@@ -3,6 +3,7 @@ package com.otakup.niriko.ui.steam
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.otakup.niriko.data.remote.steam.SteamApiClient
 import com.otakup.niriko.data.remote.steam.SteamOpenIdClient
 import com.otakup.niriko.data.settings.SettingsDataStore
 import kotlinx.coroutines.Dispatchers
@@ -106,10 +107,34 @@ class SteamLoginViewModel(
         return true
     }
 
+    /**
+     * 登录会话 Cookie 就绪后：注入 [SteamApiClient.webCookieProvider] 并后台抓取
+     * webapi_token（用户 access token，家庭库 IFamilyGroupsService 用），持久化到
+     * [SettingsDataStore.steamWebApiToken]。失败静默（家庭库拉取时再提示）。
+     */
+    fun captureWebApiToken(cookie: String) {
+        if (cookie.isBlank()) return
+        SteamApiClient.webCookieProvider = { cookie }
+        viewModelScope.launch {
+            val token = withContext(Dispatchers.IO) {
+                SteamApiClient.fetchWebApiToken()
+            }
+            if (!token.isNullOrBlank()) {
+                withContext(Dispatchers.IO) {
+                    settingsDataStore.setSteamWebApiToken(token)
+                }
+            }
+        }
+    }
+
     /** 退出登录（清除本地登录态）。 */
     fun logout() {
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { settingsDataStore.setSteamId64("") }
+            withContext(Dispatchers.IO) {
+                settingsDataStore.setSteamId64("")
+                settingsDataStore.setSteamWebApiToken("")
+            }
+            SteamApiClient.webCookieProvider = null
             _uiState.update {
                 it.copy(status = SteamLoginStatus.IDLE, steamId64 = "", error = null)
             }

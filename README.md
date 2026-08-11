@@ -26,8 +26,8 @@ Kotlin + Jetpack Compose + Material 3 单 Activity 原生 Android 应用。
 - Liquid Glass 风格悬浮胶囊底栏与玻璃卡片（纯 Compose 自实现，无第三方模糊库）
 - 搜索建议浮层背景模糊（Android 12+ 生效，低版本自动降级）
 - 离线可用：搜索结果与详情自动落库，远程失败时回退本地缓存
-- **Steam 游戏补充数据**：GAME 类型作品在搜索/作品库/详情页自动匹配 Steam（storesearch + 标题置信度匹配，绑定落库免重复匹配），补充展示价格、当前在线人数、开发商/发行商、Metacritic、Steam 标签与截图；数据存独立扩展表 `steam_games` / `steam_bindings`，不污染核心作品模型，未来可扩展 VNDB/PSN 等平台
-- **Steam 账号与游戏库导入**：OpenID 2.0 登录（WebView + 手动 SteamID64 兜底）→ GetOwnedGames 拉取游戏库 → 匹配 Bangumi → 勾选导入收藏（游玩时长推断状态）；Bangumi 无词条的游戏以「Steam 独占」占位条目展示，可重新匹配升级为正式词条
+- **Steam 游戏补充数据**：GAME 类型作品在搜索/作品库/详情页自动匹配 Steam（storesearch + 标题置信度匹配，绑定落库免重复匹配），补充展示价格、当前在线人数、开发商/发行商、Metacritic、Steam 标签与截图；详情页显示成就进度（解锁数/总数，30 分钟缓存）；数据存独立扩展表 `steam_games` / `steam_bindings`，不污染核心作品模型，未来可扩展 VNDB/PSN 等平台
+- **Steam 账号与游戏库导入**：OpenID 2.0 登录（WebView + 手动 SteamID64 兜底）→ GetOwnedGames + 家庭共享库（IFamilyGroupsService，webapi_token 鉴权）拉取游戏库 → 匹配 Bangumi → 勾选导入收藏（游玩时长推断状态）；Bangumi 无词条的游戏以「Steam 独占」占位条目展示，可重新匹配升级为正式词条；发现页新增「Steam」标签展示本地 Steam 作品
 - **哔哩哔哩导入**：设置页进入导入工作流，WebView 内登录 B 站后自动拉取追番列表、用户评分与短评（参考 Bangumi-master bilibili-sync 方案，经注入 JS 在 B 站会话内取数），按 season_id / 标题匹配到 Bangumi 条目后勾选一键导入本地收藏；原始数据单独落 `bilibili_sync_items` 表，默认不覆盖已有评分
 
 ## 技术栈
@@ -46,6 +46,7 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 
 - `steam_bindings`：`subjectId ↔ steamAppId` 绑定关系（matchMethod / confidence），命中后免重复匹配
 - `steam_games`：Steam 扩展数据（价格分/币种/开发商/发行商/Metacritic/当前在线/标签/截图/发行日期）
+- `steam_library_items`：游戏库导入快照（appid / 游玩时长 / 匹配结果 / 占位标记 / 家庭库 shared 标记）
 
 未来可同样方式扩展 VNDB / PSN / Xbox 等平台数据。
 
@@ -60,17 +61,27 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 
 设置页 →「Steam 账号与游戏库」进入导入工作流：登录 → 拉取游戏库 → 匹配 Bangumi → 勾选导入收藏。
 
-- **登录（Steam OpenID 2.0）**：WebView 承载 `steamcommunity.com/openid/login`（社区常称 "Sign in through Steam"），回跳 `niriko://steam-auth` 拦截并提取 SteamID64；登录本身无需 API key。`steamcommunity.com` 不可达时（如无代理）可**手动输入 SteamID64** 兜底
+- **登录（Steam OpenID 2.0）**：WebView 承载 `steamcommunity.com/openid/login`（社区常称 "Sign in through Steam"）。回跳地址用 `https://localhost/steam-auth`（Steam 只接受 http/https 协议的 return_to；且必须 https，http 会被 Akamai 拒——Access Denied），由 WebView 拦截解析提取 SteamID64；登录本身无需 API key。`steamcommunity.com` 不可达时（如无代理）可**手动输入 SteamID64** 兜底
+- **用户 access token（webapi_token）**：登录成功后自动从登录态抓取并持久化（`pointssummary/ajaxgetasyncconfig`），约 1-2 天过期，过期后家庭库拉取会静默降级（提示重新登录）
 - **拉库（GetOwnedGames）**：`IPlayerService/GetOwnedGames` 需要 `key` + `steamid64`——用**用户自己的 key 查自己的库**（隐私私密也可见），key 在设置页「Steam API Key」配置；快照落 `steam_library_items` 表
+- **家庭共享库（Steam Families）**：官方 Web API 的 GetOwnedGames 不含家庭库借入游戏；通过 `IFamilyGroupsService/GetFamilyGroup` + `GetSharedLibraryApps`（用 webapi_token 鉴权，`include_own=true` 才含借入游戏）拉取并与本人库合并，预览标记「家庭库」。原理与小黑盒等平台一致；盖世游戏系本地跑 Steam 客户端读取，不适用本架构
 - **匹配**：优先复用 `steam_bindings` 已绑定关系，未绑定用标题走 Bangumi 搜索（GAME）+ 置信度匹配
 - **导入**：勾选后导入收藏；状态按游玩时长推断（`playtime>0 → WATCHING`，未玩 `→ PLAN_TO_WATCH`），游玩时长（分钟）写入游戏时长字段；已存在收藏跳过
 - **Steam 独占占位条目**：Steam 有词条、Bangumi 无的游戏，以负数占位 `subjectId = -appId` 创建条目（`sourceId="steam"`），像普通作品一样进作品库/可收藏/可打开详情页，卡片与详情页显示「Steam 独占」标记；可在详情页或导入预览页点「重新匹配」升级为正式 Bangumi 词条（收藏/绑定/扩展数据原子迁移）
 
+### 发现页「Steam」标签
+
+发现页趋势区新增「Steam」标签（与当季热门/历史排名并列）：展示本地 `sourceId="steam"` 条目（含独占占位作品），复用现有卡片流，可进详情页、正常收藏；未导入时显示引导文案。
+
+### 详情页成就进度
+
+已绑定的 GAME 条目详情页 Steam 区块显示成就进度（解锁数/总数 + 进度条 + 最近解锁项）：`GetPlayerAchievements`（用户解锁状态）+ `GetSchemaForGame`（成就定义）合并，30 分钟内存缓存。需 API key + 已登录；profile 的 Game details 未公开时返回 "Profile is not public"，区块自动隐藏不报错。
+
 ### API 策略
 
 - 公开接口（storesearch / appdetails / GetNumberOfCurrentPlayers）无需 API key，开箱即用
-- 设置页可选填 Steam Web API key（DataStore 持久化，预留扩展用；当前请求不附加 key 避免日志泄漏）
-- 匹配请求分块并发（每批 5 个）防止打满商店接口限流
+- GetOwnedGames / 成就接口需 API key（设置页「Steam API Key」配置）；家庭库接口需用户 access token（webapi_token，登录时自动获取）
+- 匹配请求分块并发（每批 5 个）防止打满商店接口限流；成就 30 分钟缓存避免高频触发限流
 
 ## 环境要求
 

@@ -46,6 +46,7 @@ class SettingsDataStore(private val context: Context) {
         val BANGUMI_ENDPOINT = stringPreferencesKey("bangumi_endpoint")
         val STEAM_API_KEY = stringPreferencesKey("steam_api_key")
         val STEAM_ID64 = stringPreferencesKey("steam_id64")
+        val STEAM_WEB_API_TOKEN = stringPreferencesKey("steam_web_api_token")
 
         // WebDAV
         val WEBDAV_URL = stringPreferencesKey("webdav_url")
@@ -102,6 +103,7 @@ class SettingsDataStore(private val context: Context) {
             } ?: defaults.bangumiEndpoint,
             steamApiKey = prefs[Keys.STEAM_API_KEY] ?: defaults.steamApiKey,
             steamId64 = prefs[Keys.STEAM_ID64] ?: defaults.steamId64,
+            steamWebApiToken = prefs[Keys.STEAM_WEB_API_TOKEN] ?: defaults.steamWebApiToken,
 
             // WebDAV
             webDavUrl = prefs[Keys.WEBDAV_URL] ?: defaults.webDavUrl,
@@ -187,6 +189,11 @@ class SettingsDataStore(private val context: Context) {
         runCatching { context.dataStore.edit { it[Keys.STEAM_ID64] = steamId64.trim() } }
     }
 
+    /** 设置 Steam 用户 access token（webapi_token；空串清除）。 */
+    suspend fun setSteamWebApiToken(token: String) {
+        runCatching { context.dataStore.edit { it[Keys.STEAM_WEB_API_TOKEN] = token.trim() } }
+    }
+
     suspend fun setWebDavUrl(url: String) {
         runCatching { context.dataStore.edit { it[Keys.WEBDAV_URL] = url } }
     }
@@ -245,6 +252,7 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.BANGUMI_ENDPOINT] = settings.bangumiEndpoint.name
                 prefs[Keys.STEAM_API_KEY] = settings.steamApiKey
                 prefs[Keys.STEAM_ID64] = settings.steamId64
+                prefs[Keys.STEAM_WEB_API_TOKEN] = settings.steamWebApiToken
                 prefs[Keys.WEBDAV_URL] = settings.webDavUrl
                 prefs[Keys.WEBDAV_USERNAME] = settings.webDavUsername
                 prefs[Keys.WEBDAV_PASSWORD] = settings.webDavPassword

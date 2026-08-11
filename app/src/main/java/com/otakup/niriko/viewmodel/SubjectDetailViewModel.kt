@@ -63,6 +63,8 @@ data class SubjectDetailUiState(
     val ratingDistribution: Map<Int, Int> = emptyMap(),
     // Steam 补充数据（游戏商业信息：价格/在线/开发商等）
     val steam: com.otakup.niriko.data.local.entity.SteamGameEntity? = null,
+    // Steam 成就进度（解锁数/总数；隐私未公开或失败为 null）
+    val achievements: com.otakup.niriko.data.remote.steam.SteamAchievements? = null,
     // Snackbar 消息
     val snackbarMessage: String? = null,
 )
@@ -213,6 +215,9 @@ class SubjectDetailViewModel(
                 val steamDeferred = async {
                     try { loadSteamSupplement() } catch (_: Exception) { Unit }
                 }
+                val achievementsDeferred = async {
+                    try { loadAchievements() } catch (_: Exception) { Unit }
+                }
                 val characters = charactersDeferred.await()
                 val staff = staffDeferred.await()
                 val episodes = episodesDeferred.await()
@@ -221,6 +226,7 @@ class SubjectDetailViewModel(
                 val infoBox = infoBoxDeferred.await()
                 biliDeferred.await()
                 steamDeferred.await()
+                achievementsDeferred.await()
                 _uiState.update {
                     it.copy(
                         characters = characters,
@@ -282,6 +288,18 @@ class SubjectDetailViewModel(
         if (current.type != com.otakup.niriko.data.model.SubjectType.GAME) return
         val game = steam.getSupplement(subjectId) ?: return
         _uiState.update { it.copy(steam = game) }
+    }
+
+    /**
+     * 拉取 Steam 成就进度（仅已绑定 GAME 条目有效）。
+     * 需 API key + 已登录；隐私未公开/失败静默（achievements 保持 null，UI 隐藏或提示）。
+     */
+    private suspend fun loadAchievements() {
+        val steam = steamRepository ?: return
+        val current = _uiState.value.subject ?: return
+        if (current.type != com.otakup.niriko.data.model.SubjectType.GAME) return
+        val achievements = steam.getAchievements(subjectId) ?: return
+        _uiState.update { it.copy(achievements = achievements) }
     }
 
     /**

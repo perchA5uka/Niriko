@@ -97,7 +97,7 @@ fun TrendingSection(
             LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
                 items(state.trendingResults, key = { it.subjectId }) { subject ->
                     SubjectResultCard(
-                        model = subject.toCardDisplayModel(),
+                        model = subject.toCardDisplayModel(state.steamGames[subject.subjectId]),
                         isInCollection = subject.subjectId in state.collectedSubjectIds,
                         onClick = { onSubjectClick(subject.subjectId) },
                         sharedElementKey = "cover_${subject.subjectId}",
@@ -118,6 +118,23 @@ fun TrendingSection(
                         }
                     }
                 }
+            }
+        }
+    } else if (state.trendingMode == TrendingMode.STEAM && query.isBlank()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("还没有 Steam 作品", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "在「设置 → Steam 账号与游戏库」导入后，这里会展示你的 Steam 游戏（含 Bangumi 无词条的独占作品）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),
+                )
             }
         }
     } else {

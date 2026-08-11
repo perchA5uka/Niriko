@@ -118,6 +118,7 @@ import android.content.Context
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.local.entity.SteamGameEntity
+import com.otakup.niriko.data.remote.steam.SteamAchievements
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.remote.InfoBoxEntry
@@ -546,6 +547,7 @@ private fun SubjectDetailBody(
             item(key = "steam") {
                 SteamInfoSection(
                     steam = state.steam,
+                    achievements = state.achievements,
                     backdrop = glassBackdrop,
                     isScrolling = isListScrolling,
                     isPlaceholder = subject.isSteamPlaceholder,
@@ -1145,6 +1147,7 @@ private fun SubjectDetailPreview() {
 @Composable
 private fun SteamInfoSection(
     steam: SteamGameEntity,
+    achievements: SteamAchievements? = null,
     backdrop: Backdrop?,
     isScrolling: Boolean = false,
     isPlaceholder: Boolean = false,
@@ -1264,6 +1267,64 @@ private fun SteamInfoSection(
                             label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
                         )
                     }
+                }
+            }
+
+            // 成就进度（隐私未公开/未登录时 null，隐藏区块）
+            if (achievements != null && achievements.total > 0) {
+                Spacer(Modifier.height(12.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "成就",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "${achievements.unlocked} / ${achievements.total} 已解锁",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { achievements.percent / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(MaterialTheme.shapes.small),
+                    )
+                    // 最近解锁的前 5 条（含未解锁占位提示用「未解锁」）
+                    Spacer(Modifier.height(6.dp))
+                    achievements.items
+                        .sortedByDescending { it.achieved }
+                        .take(5)
+                        .forEach { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    if (item.achieved) "✓" else "○",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (item.achieved) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.outline,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    item.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (item.achieved) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                 }
             }
 

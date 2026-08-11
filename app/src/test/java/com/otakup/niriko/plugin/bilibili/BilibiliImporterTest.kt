@@ -74,6 +74,8 @@ class BilibiliImporterTest {
         override suspend fun getSubjectsInAirDateRange(startDate: String, endDate: String): List<SubjectEntity> = emptyList()
         override suspend fun getAllWithAirDate(): List<SubjectEntity> = emptyList()
         override suspend fun searchByKeywordPrefix(keyword: String): List<SubjectEntity> = emptyList()
+        override suspend fun getBySource(sourceId: String): List<SubjectEntity> =
+            subjects.filter { it.sourceId == sourceId }
     }
 
     private class FakeCollectionDao : CollectionDao {

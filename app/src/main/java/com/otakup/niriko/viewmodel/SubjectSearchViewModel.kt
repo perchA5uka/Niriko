@@ -9,6 +9,7 @@ import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
 import com.otakup.niriko.data.local.dao.SearchHistoryDao
+import com.otakup.niriko.data.local.dao.SubjectDao
 import com.otakup.niriko.data.calculator.TrendingCalculator
 import com.otakup.niriko.data.filter.FilterDimension
 import com.otakup.niriko.data.filter.PresetFilterLoader
@@ -52,6 +53,7 @@ class SubjectSearchViewModel(
     private val collectionRepository: CollectionRepository,
     private val searchHistoryDao: SearchHistoryDao? = null,
     private val steamRepository: SteamRepository? = null,
+    private val subjectDao: SubjectDao? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SubjectSearchUiState())
@@ -214,6 +216,35 @@ class SubjectSearchViewModel(
             } else if (useAirDate) {
                 if (filterSort == "match") "heat" else filterSort
             } else filterSort
+
+            // STEAM 模式：不走 Bangumi 接口，展示本地 Steam 条目（含占位负数条目）
+            if (mode == TrendingMode.STEAM) {
+                val dao = subjectDao
+                val steamItems = if (dao != null) {
+                    runCatching { withContext(Dispatchers.IO) { dao.getBySource("steam") } }
+                        .getOrDefault(emptyList())
+                } else emptyList()
+                // 竞态防护
+                if (requestId != trendingRequestId) return
+                perTypeTrending[currentType] = TypeTrendingState(
+                    results = steamItems,
+                    page = 1,
+                    hasMore = false,
+                    scrollIndex = 0,
+                    scrollOffset = 0,
+                    loaded = true,
+                )
+                loadSteamSupplements(steamItems)
+                _uiState.update {
+                    it.copy(
+                        trendingResults = steamItems, isLoadingTrending = false, error = null,
+                        hasMore = false, page = 1,
+                        trendingScrollIndex = 0, trendingScrollOffset = 0,
+                        trendingVersion = it.trendingVersion + 1,
+                    )
+                }
+                return
+            }
 
             val results = if (currentType == null) {
                 val typeList = listOf(2, 1, 4, 3, 6)
@@ -773,11 +804,12 @@ class SubjectSearchViewModelFactory(
     private val collectionRepository: CollectionRepository,
     private val searchHistoryDao: SearchHistoryDao? = null,
     private val steamRepository: SteamRepository? = null,
+    private val subjectDao: SubjectDao? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SubjectSearchViewModel::class.java)) {
-            return SubjectSearchViewModel(subjectRepository, collectionRepository, searchHistoryDao, steamRepository) as T
+            return SubjectSearchViewModel(subjectRepository, collectionRepository, searchHistoryDao, steamRepository, subjectDao) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }

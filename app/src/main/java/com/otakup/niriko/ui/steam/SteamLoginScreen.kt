@@ -95,6 +95,10 @@ fun SteamLoginScreen(
                 onOpenIdCallback = { url ->
                     viewModel.onOpenIdCallback(url)?.let { onLoginSuccess(it) }
                 },
+                onSessionCookie = { cookie ->
+                    // store 域会话 Cookie 就绪：注入并后台抓取 webapi_token（家庭库用）
+                    viewModel.captureWebApiToken(cookie)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(320.dp),
@@ -153,13 +157,16 @@ fun SteamLoginScreen(
 
 /**
  * 承载 Steam OpenID 登录页的 WebView。
- * 拦截 `niriko://steam-auth` 回跳并回调原始 URL（解析由调用方完成）。
+ * 拦截 `https://localhost/steam-auth` 回跳并回调原始 URL（解析由调用方完成）。
+ * 回跳后自动导航到 store 域触发 SSO 登录，完成后回调 [onSessionCookie]（store 域会话 Cookie，
+ * 用于抓取 webapi_token 家庭库 token）。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun SteamOpenIdWebView(
     url: String,
     onOpenIdCallback: (String) -> Unit,
+    onSessionCookie: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -171,6 +178,8 @@ private fun SteamOpenIdWebView(
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 webViewClient = object : WebViewClient() {
+                    private var pendingCallback = false
+
                     override fun shouldOverrideUrlLoading(
                         view: WebView?,
                         request: WebResourceRequest?,
@@ -183,12 +192,27 @@ private fun SteamOpenIdWebView(
                                     SteamOpenIdClient.RETURN_TO_URL.replaceFirst("https://", "http://"),
                                 )
                         if (isSteamCallback) {
-                            // OpenID 回跳：拦截并回调，不再继续加载
+                            // OpenID 回跳：回调解析，不再继续加载回跳 URL；
+                            // 转而加载 store 主页触发 SSO，使 store 域 Cookie 就绪
+                            pendingCallback = true
                             onOpenIdCallback(url)
+                            view?.loadUrl("https://store.steampowered.com/")
                             return true
                         }
                         // 其余（steamcommunity.com 登录页等）留在 WebView 内
                         return false
+                    }
+
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        if (pendingCallback && url?.startsWith("https://store.steampowered.com/") == true) {
+                            pendingCallback = false
+                            val cookie = android.webkit.CookieManager.getInstance()
+                                .getCookie("https://store.steampowered.com")
+                            if (!cookie.isNullOrBlank()) {
+                                onSessionCookie(cookie)
+                            }
+                        }
                     }
                 }
                 loadUrl(url)
