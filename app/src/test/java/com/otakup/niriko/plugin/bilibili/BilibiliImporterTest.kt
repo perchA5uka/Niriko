@@ -76,6 +76,10 @@ class BilibiliImporterTest {
         override suspend fun searchByKeywordPrefix(keyword: String): List<SubjectEntity> = emptyList()
         override suspend fun getBySource(sourceId: String): List<SubjectEntity> =
             subjects.filter { it.sourceId == sourceId }
+        override suspend fun getLegacySteamPlaceholders(): List<SubjectEntity> =
+            subjects.filter { it.sourceId == "steam" && it.subjectId < 0 }
+        override suspend fun getMaxSubjectId(): Long =
+            subjects.maxOfOrNull { it.subjectId } ?: 0L
     }
 
     private class FakeCollectionDao : CollectionDao {

@@ -119,9 +119,11 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.local.entity.SteamGameEntity
 import com.otakup.niriko.data.remote.steam.SteamAchievements
+import com.otakup.niriko.data.remote.steam.SteamChartEntry
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.remote.InfoBoxEntry
+import com.otakup.niriko.data.remote.game.PlaytimeConverter
 import com.otakup.niriko.ui.animation.AnimDurationNormal
 import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.share.ShareBitmapHost
@@ -411,7 +413,17 @@ private fun SubjectDetailBody(
         blurredCover = loadBlurredCover(blurredCoverContext, subject.coverUrl)
     }
     // 本地编辑状态 — 使用 rememberSaveable 确保配置变更（如屏幕旋转）后状态不丢失
-    var watchedEpisodesText by rememberSaveable(state.watchedEpisodes, state.collectionId) { mutableStateOf(state.watchedEpisodes?.toString() ?: "") }
+    // 游戏类型：watchedEpisodes 统一存分钟（Steam 导入分钟、详情页按小时输入）
+    val isGameType = subject.type == SubjectType.GAME
+    var watchedEpisodesText by rememberSaveable(state.watchedEpisodes, state.collectionId) {
+        mutableStateOf(
+            if (isGameType && state.watchedEpisodes != null) {
+                PlaytimeConverter.minutesToHours(state.watchedEpisodes).toString() // 分钟 → 小时（UI 展示）
+            } else {
+                state.watchedEpisodes?.toString() ?: ""
+            }
+        )
+    }
     var myRatingValue by rememberSaveable(state.collectionId) { mutableFloatStateOf(state.myRating ?: 0f) }
     var personalTagsText by rememberSaveable(state.collectionId) { mutableStateOf(state.personalTags.joinToString(", ")) }
     var personalImpressionText by rememberSaveable(state.collectionId) { mutableStateOf(state.personalImpression ?: "") }
@@ -548,6 +560,7 @@ private fun SubjectDetailBody(
                 SteamInfoSection(
                     steam = state.steam,
                     achievements = state.achievements,
+                    chartRank = state.chartRank,
                     backdrop = glassBackdrop,
                     isScrolling = isListScrolling,
                     isPlaceholder = subject.isSteamPlaceholder,
@@ -927,8 +940,14 @@ private fun CollectionEditSheet(
 
         // 保存按钮
         Button(onClick = {
+            // 游戏类型：UI 按小时输入，存储统一为分钟（与 Steam 导入一致）
+            val storedProgress = if (subject.type == SubjectType.GAME) {
+                PlaytimeConverter.hoursToMinutes(watchedEpisodesText.toIntOrNull())
+            } else {
+                watchedEpisodesText.toIntOrNull()
+            }
             onSaveRecord(
-                watchedEpisodesText.toIntOrNull(),
+                storedProgress,
                 myRatingValue,
                 personalTagsText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                 personalImpressionText.ifBlank { null },
@@ -1148,6 +1167,7 @@ private fun SubjectDetailPreview() {
 private fun SteamInfoSection(
     steam: SteamGameEntity,
     achievements: SteamAchievements? = null,
+    chartRank: SteamChartEntry? = null,
     backdrop: Backdrop?,
     isScrolling: Boolean = false,
     isPlaceholder: Boolean = false,
@@ -1221,6 +1241,17 @@ private fun SteamInfoSection(
                         text = "当前在线 ${formatPlayerCount(players)}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.CenterVertically),
+                    )
+                }
+                // 活跃玩家排名（Top 100 活跃榜；未上榜不显示）
+                chartRank?.let { rank ->
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "活跃排名 #${rank.rank}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.align(Alignment.CenterVertically),
                     )
                 }
@@ -1609,10 +1640,15 @@ private suspend fun shareCollection(
     val cover = loadShareCover(context, subject.coverUrl)
     val total = subject.totalEpisodes
     val watched = state.watchedEpisodes
-    val progressText = when {
-        watched != null && total != null && total > 0 -> "$watched / $total 集"
-        watched != null -> "已看 $watched 集"
-        else -> null
+    // 游戏类型：watchedEpisodes 存分钟，展示转小时
+    val progressText = if (subject.type == SubjectType.GAME) {
+        watched?.let { PlaytimeConverter.format(it)?.let { fmt -> "已玩 $fmt" } }
+    } else {
+        when {
+            watched != null && total != null && total > 0 -> "$watched / $total 集"
+            watched != null -> "已看 $watched 集"
+            else -> null
+        }
     }
     val progressRatio = if (watched != null && total != null && total > 0) watched / total.toFloat() else 0f
     val dateText = listOfNotNull(

@@ -40,6 +40,9 @@ object SteamApiClient {
     /** 单游戏成就定义接口（api.steampowered.com）。 */
     const val SCHEMA_FOR_GAME_URL = "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v1/"
 
+    /** 活跃玩家最多游戏排行接口（api.steampowered.com，实测无需 key 也可调用）。 */
+    const val MOST_PLAYED_GAMES_URL = "https://api.steampowered.com/ISteamChartsService/GetMostPlayedGames/v1/"
+
     /** 登录态下获取 webapi_token（用户 access token）的接口（store.steampowered.com）。 */
     const val WEB_API_TOKEN_URL = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
 

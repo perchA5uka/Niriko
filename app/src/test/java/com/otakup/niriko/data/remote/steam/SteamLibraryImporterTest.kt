@@ -28,7 +28,7 @@ class SteamLibraryImporterTest {
             appId = 2358720,
             name = "黑神话：悟空",
         )
-        assertEquals(-2358720L, preview.placeholderSubjectId)
+        assertEquals(2358720L, preview.placeholderSubjectId)
         assertNull(preview.bgmSubjectId)
         assertNull(preview.coverUrl)
     }

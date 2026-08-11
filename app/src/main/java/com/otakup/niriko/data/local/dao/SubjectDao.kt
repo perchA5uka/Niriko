@@ -75,9 +75,17 @@ interface SubjectDao {
     @Query("SELECT * FROM subjects WHERE airDate IS NOT NULL ORDER BY airDate DESC")
     suspend fun getAllWithAirDate(): List<SubjectEntity>
 
-    /** 按数据源查询本地作品（如 sourceId="steam" 的 Steam 条目，含占位负数条目）。 */
+    /** 按数据源查询本地作品（如 sourceId="steam" 的 Steam 条目）。 */
     @Query("SELECT * FROM subjects WHERE sourceId = :sourceId ORDER BY subjectId ASC")
     suspend fun getBySource(sourceId: String): List<SubjectEntity>
+
+    /** 旧负数占位条目（sourceId="steam" 且 subjectId<0；sourceKey 迁移前遗留）。 */
+    @Query("SELECT * FROM subjects WHERE sourceId = 'steam' AND subjectId < 0 ORDER BY subjectId ASC")
+    suspend fun getLegacySteamPlaceholders(): List<SubjectEntity>
+
+    /** 当前最大 subjectId（迁移分配新 id 用）。 */
+    @Query("SELECT COALESCE(MAX(subjectId), 0) FROM subjects")
+    suspend fun getMaxSubjectId(): Long
 
     /** 按标题前缀搜索本地作品（用于自动补全建议）。 */
     @Query(

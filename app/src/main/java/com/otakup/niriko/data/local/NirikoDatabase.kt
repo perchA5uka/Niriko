@@ -32,7 +32,7 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
  */
 @Database(
     entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -70,7 +70,7 @@ abstract class NirikoDatabase : RoomDatabase() {
                     MIGRATION_6_7, MIGRATION_7_8,
                     MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
                     MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
-                    MIGRATION_16_17,
+                    MIGRATION_16_17, MIGRATION_17_18,
                 )
                 .build()
         }
@@ -277,6 +277,20 @@ abstract class NirikoDatabase : RoomDatabase() {
                 // 家庭共享库标记（IFamilyGroupsService/GetSharedLibraryApps 借入游戏）
                 database.execSQL(
                     "ALTER TABLE `steam_library_items` ADD COLUMN `shared` INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        private val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // sourceKey：跨数据源稳定唯一键（"steam:570"、"neodb:xxx" 等），
+                // 取代负数占位 hack。新列可空（Bangumi 条目沿用 subjectId 语义）。
+                database.execSQL(
+                    "ALTER TABLE `subjects` ADD COLUMN `sourceKey` TEXT DEFAULT NULL"
+                )
+                // 唯一索引：SQLite 唯一索引允许多个 NULL，故 Bangumi 条目（sourceKey=null）不冲突
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_subjects_sourceKey` ON `subjects` (`sourceKey`)"
                 )
             }
         }

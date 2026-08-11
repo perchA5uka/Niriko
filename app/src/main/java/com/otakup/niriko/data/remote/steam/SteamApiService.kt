@@ -3,6 +3,7 @@ package com.otakup.niriko.data.remote.steam
 import com.otakup.niriko.data.remote.steam.dto.SteamAppDetailsWrapperDto
 import com.otakup.niriko.data.remote.steam.dto.SteamCurrentPlayersResponseDto
 import com.otakup.niriko.data.remote.steam.dto.SteamFamilyGroupResponseDto
+import com.otakup.niriko.data.remote.steam.dto.SteamMostPlayedGamesResponseDto
 import com.otakup.niriko.data.remote.steam.dto.SteamOwnedGamesResponseDto
 import com.otakup.niriko.data.remote.steam.dto.SteamPlayerAchievementsResponseDto
 import com.otakup.niriko.data.remote.steam.dto.SteamSchemaForGameResponseDto
@@ -121,4 +122,15 @@ interface SteamApiService {
         @Query("appid") appId: Int,
         @Query("l") lang: String = "schinese",
     ): SteamSchemaForGameResponseDto
+
+    /**
+     * 活跃玩家最多游戏排行（api.steampowered.com/ISteamChartsService/GetMostPlayedGames）。
+     * 实测确认：无需 key 也可调用（返回完整 Top 排行）；响应 ranks[] 含
+     * rank / appid / last_week_rank / peak_in_game + response.rollup_date。
+     */
+    @GET
+    suspend fun mostPlayedGames(
+        @Url url: String,
+        @Query("access_token") accessToken: String? = null,
+    ): SteamMostPlayedGamesResponseDto
 }

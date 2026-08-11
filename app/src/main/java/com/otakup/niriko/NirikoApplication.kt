@@ -3,12 +3,15 @@ package com.otakup.niriko
 import android.app.Application
 import com.otakup.niriko.data.backup.BackupManager
 import com.otakup.niriko.data.local.NirikoDatabase
+import com.otakup.niriko.data.local.SteamPlaceholderMigrator
 import com.otakup.niriko.data.remote.BangumiClient
 import com.otakup.niriko.data.remote.BroadcastFetcher
 import com.otakup.niriko.data.remote.SeasonalFetcher
 import com.otakup.niriko.data.remote.anilist.AniListClient
 import com.otakup.niriko.data.remote.anilist.AniListDataSource
 import com.otakup.niriko.data.remote.bangumi.BangumiDataSource
+import com.otakup.niriko.data.remote.game.GameDataSourceRegistry
+import com.otakup.niriko.data.remote.game.SteamGameDataSource
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.NetworkMonitor
 import com.otakup.niriko.data.repository.SteamRepository
@@ -44,6 +47,17 @@ class NirikoApplication : Application() {
         kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val settings = settingsDataStore.settings.first()
             BangumiClient.setEndpoint(settings.bangumiEndpoint)
+        }
+        // 启动时迁移旧负数占位条目 → sourceKey 正式条目（幂等；无旧条目立即跳过）
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                SteamPlaceholderMigrator(
+                    database = database,
+                    subjectDao = database.subjectDao(),
+                    collectionDao = database.collectionDao(),
+                    steamDao = database.steamDao(),
+                ).migrateIfNeeded()
+            }
         }
         // 注入 Bangumi 凭据读取器：AuthInterceptor 请求时动态取当前 token（参考 Kazumi 条件 Bearer）
         BangumiClient.authTokenProvider = {
@@ -144,7 +158,16 @@ class NirikoApplication : Application() {
         DataSourceChain(
             plugins = pluginManager.plugins,
             subjectDao = database.subjectDao(),
+            gameDataSourceRegistry = gameDataSourceRegistry,
         )
+    }
+
+    /** 通用游戏数据源注册表（补充查询通道：Steam / RAWG / NeoDB 等）。 */
+    val gameDataSourceRegistry: GameDataSourceRegistry by lazy {
+        GameDataSourceRegistry().apply {
+            register(SteamGameDataSource())
+            // 后续接入：register(RawgGameDataSource(...))、register(NeoDbGameDataSource(...))
+        }
     }
 
     // ===== Repository =====

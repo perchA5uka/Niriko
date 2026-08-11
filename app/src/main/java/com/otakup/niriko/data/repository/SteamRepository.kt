@@ -11,10 +11,12 @@ import com.otakup.niriko.data.local.entity.SteamBindingEntity
 import com.otakup.niriko.data.local.entity.SteamGameEntity
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.remote.game.GameItemMapper
 import com.otakup.niriko.data.remote.steam.SteamApiClient
 import com.otakup.niriko.data.remote.steam.SteamApiService
 import com.otakup.niriko.data.remote.steam.SteamAchievements
 import com.otakup.niriko.data.remote.steam.SteamAchievementItem
+import com.otakup.niriko.data.remote.steam.SteamChartEntry
 import com.otakup.niriko.data.remote.steam.SteamTitleMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -52,6 +54,9 @@ class SteamRepository(
 
     /** 成就内存缓存：appId → (数据, 时间戳)。 */
     private val achievementCache = mutableMapOf<Int, Pair<SteamAchievements, Long>>()
+
+    /** 活跃排行缓存：全量排行 → (数据, 时间戳)。 */
+    private var chartCache: Pair<Map<Int, SteamChartEntry>, Long>? = null
 
     // ==================== 匹配与绑定 ====================
 
@@ -146,6 +151,40 @@ class SteamRepository(
         }
         if (fresh != null) return fresh
         return fetchDetailAndPersist(subjectId, binding.steamAppId) ?: cached
+    }
+
+    /**
+     * 获取某游戏的活跃玩家排名（GetMostPlayedGames）。
+     * 实测无需 key 也可调用；30 分钟内存缓存（全量排行一次拉取，按 appid 查询）。
+     * 未上榜 / 失败返回 null，不抛异常。
+     */
+    suspend fun getChartRank(appId: Int): SteamChartEntry? {
+        val cached = chartCache
+        val ranks = if (cached != null && System.currentTimeMillis() - cached.second < ACHIEVEMENT_CACHE_TTL_MS) {
+            cached.first
+        } else {
+            val fresh = withContext(Dispatchers.IO) {
+                runCatching {
+                    apiService.mostPlayedGames(
+                        url = SteamApiClient.MOST_PLAYED_GAMES_URL,
+                        // 排行接口实测无需 key；不附加避免 key 进入日志
+                    ).response?.ranks.orEmpty()
+                        .associateBy { it.appid }
+                        .mapValues { (_, r) ->
+                            SteamChartEntry(
+                                rank = r.rank,
+                                lastWeekRank = r.lastWeekRank,
+                                peakInGame = r.peakInGame,
+                            )
+                        }
+                }.getOrNull() ?: emptyMap()
+            }
+            if (fresh.isNotEmpty()) {
+                chartCache = fresh to System.currentTimeMillis()
+            }
+            fresh
+        }
+        return ranks[appId]
     }
 
     /**
@@ -328,7 +367,8 @@ class SteamRepository(
         steamLibraryItemDao: SteamLibraryItemDao,
     ): Boolean {
         if (newSubjectId <= 0) return false
-        val oldSubjectId = -appId.toLong()
+        // 占位条目 id：正数 sourceKey 体系（deriveSubjectId），与创建时一致
+        val oldSubjectId = GameItemMapper.deriveSubjectId("steam", appId.toString())
         return try {
             database.withTransaction {
                 // 1) 目标词条必须存在

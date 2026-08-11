@@ -86,26 +86,26 @@ class SteamLibraryMatcherTest {
         assertNull(preview.bgmSubjectId)
         assertTrue(preview.isPlaceholder)
         assertFalse(preview.selected) // 占位默认不勾选
-        // 占位 id 映射：-appId
-        assertEquals(-123456L, preview.placeholderSubjectId)
+        // 占位 id 映射：sourceKey 体系下为正数（appId）
+        assertEquals(123456L, preview.placeholderSubjectId)
     }
 
     @Test
-    fun toPreview_bindingsHasPlaceholderNegativeSubjectId() = kotlinx.coroutines.runBlocking {
-        // 已创建过占位条目（subjectId=-appId）再次拉库 → 识别为占位并标记已收藏
+    fun toPreview_bindingsHasPlaceholderSubjectId() = kotlinx.coroutines.runBlocking {
+        // 已创建过占位条目（subjectId=appId, sourceKey="steam:{appId}"）再次拉库 → 识别为占位并标记已收藏
         val matcher = SteamLibraryMatcher(
             steamDao = fakeSteamDao(binding = SteamBindingEntity(
-                subjectId = -123456L,
+                subjectId = 123456L,
                 steamAppId = 123456,
                 matchMethod = "PLACEHOLDER",
                 confidence = 1f,
                 createTime = 0L,
             )),
-            inCollection = { it == -123456L },
+            inCollection = { it == 123456L },
         )
         val preview = matcher.toPreview(game(123456, "某个游戏"))
         assertTrue(preview.isPlaceholder)
-        assertEquals(-123456L, preview.placeholderSubjectId)
+        assertEquals(123456L, preview.placeholderSubjectId)
         assertTrue(preview.alreadyInCollection)
         assertFalse(preview.selected) // 占位默认不勾选
     }

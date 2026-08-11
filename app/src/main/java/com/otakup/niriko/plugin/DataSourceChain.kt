@@ -13,6 +13,8 @@ import com.otakup.niriko.data.remote.PersonDetailInfo
 import com.otakup.niriko.data.remote.PersonSubjectInfo
 import com.otakup.niriko.data.remote.SubjectRelationInfo
 import com.otakup.niriko.data.remote.SubjectRemoteDataSource
+import com.otakup.niriko.data.remote.game.GameDataSourceRegistry
+import com.otakup.niriko.data.remote.game.GameItemMapper
 
 private const val TAG = "DataSourceChain"
 
@@ -28,6 +30,8 @@ private const val TAG = "DataSourceChain"
 class DataSourceChain(
     private val plugins: List<DataSourcePlugin>,
     private val subjectDao: SubjectDao,
+    /** 通用游戏数据源注册表（补充查询通道）。非空时 getDetail 对 game 源条目尝试元数据刷新。 */
+    private val gameDataSourceRegistry: GameDataSourceRegistry? = null,
 ) : SubjectRemoteDataSource {
 
     // ==================== 搜索 ====================
@@ -108,6 +112,33 @@ class DataSourceChain(
                     if (cached != null) return cached
                 }
             }
+            // game 源条目（如 sourceId="steam"）不在插件链中 → 尝试用游戏数据源刷新元数据
+            val gameSource = gameDataSourceRegistry?.get(sourceId)
+            if (gameSource?.capabilities?.supportsDetail == true) {
+                try {
+                    val sourceGameId = cached?.sourceKey?.substringAfter(':')
+                        ?: sourceId.removePrefix("steam:") // 兼容旧格式
+                    if (!sourceGameId.isNullOrBlank()) {
+                        val detail = gameSource.getDetail(sourceGameId)
+                        if (detail != null) {
+                            val refreshed = GameItemMapper.toSubject(
+                                sourceId = sourceId,
+                                item = detail.item,
+                                subjectId = subjectId,
+                            ).copy(
+                                titleCN = cached?.titleCN ?: detail.item.title,
+                                lastSyncTime = System.currentTimeMillis(),
+                            )
+                            subjectDao.upsert(refreshed)
+                            return refreshed
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "$sourceId gameSource.getDetail failed, using cache", e)
+                }
+            }
+            // game 源刷新失败/无详情 → 回退缓存
+            if (cached != null) return cached
         }
 
         // 无缓存/无 sourceId → 顺序尝试每个插件

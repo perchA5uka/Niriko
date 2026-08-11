@@ -6,8 +6,8 @@ import com.otakup.niriko.data.model.SubjectType
 
 /**
  * 作品元数据（来自 Bangumi 或其他元数据源）。
- * 主键为 Bangumi Subject ID；本地手动添加的作品可用负数占位。
- * sourceId 标识数据来源（如 "bangumi"、"anilist"），用于插件路由。
+ * 主键为 Bangumi Subject ID；本地其他数据源条目用正数 subjectId + sourceKey 标识。
+ * sourceId 标识数据来源（如 "bangumi"、"anilist"、"steam"），用于插件路由。
  */
 @Entity(tableName = "subjects")
 data class SubjectEntity(
@@ -36,13 +36,20 @@ data class SubjectEntity(
     val series: Boolean? = null,
     val tags: List<String> = emptyList(),
     val lastSyncTime: Long = 0L,
-    /** 数据来源标识，如 "bangumi"、"anilist"。插件路由依据。 */
+    /** 数据来源标识，如 "bangumi"、"anilist"、"steam"。插件/数据源路由依据。 */
     val sourceId: String = "bangumi",
+    /**
+     * 跨数据源稳定唯一键，形如 `{sourceId}:{sourceGameId}`（"steam:570"、"neodb:xxxx"）。
+     * 取代负数占位 hack：任何数据源搜到的游戏都以正 subjectId + sourceKey 落库，
+     * 与 Bangumi 词条同等展示/收藏。Bangumi 条目为 null（沿用 subjectId 语义）。
+     */
+    val sourceKey: String? = null,
 ) {
     /**
-     * Steam 独占占位条目判定：Steam 有词条但 Bangumi 无，以负数 subjectId（-appId）占位展示。
-     * 详情页/卡片据此显示「Steam 独占」标记；可经升级迁移转为正式 Bangumi 词条。
+     * Steam 独占占位条目判定：sourceKey 以 "steam:" 为前缀（由 Steam 导入创建、
+     * Bangumi 无词条的游戏）。详情页/卡片据此显示「Steam 独占」标记。
+     * 迁移后为正值 subjectId（不再依赖负数 hack）。
      */
     val isSteamPlaceholder: Boolean
-        get() = sourceId == "steam" && subjectId < 0
+        get() = sourceKey?.startsWith("steam:") == true
 }

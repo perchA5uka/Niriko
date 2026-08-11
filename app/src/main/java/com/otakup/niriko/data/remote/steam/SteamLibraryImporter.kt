@@ -11,6 +11,7 @@ import com.otakup.niriko.data.local.entity.SteamLibraryItemEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
+import com.otakup.niriko.data.remote.game.GameItemMapper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -82,13 +83,13 @@ class SteamLibraryImporter(
                         }
                     }
 
-                    // 情形 2：占位候选（Bangumi 无词条）→ 创建负数占位条目
+                    // 情形 2：占位候选（Bangumi 无词条）→ 创建 sourceKey 正式条目（正 id）
                     preview.isPlaceholder -> {
                         val subjectId = preview.placeholderSubjectId
                         if (subjectDao.getById(subjectId) == null) {
                             subjectDao.upsert(preview.toPlaceholderSubject(subjectId))
                         }
-                        // 占位条目绑定到自身（steam_bindings/steam_games 以负数 subjectId 关联）
+                        // 占位条目绑定到自身（steam_bindings/steam_games 以该 subjectId 关联）
                         steamDao?.upsertBinding(
                             SteamBindingEntity(
                                 subjectId = subjectId,
@@ -137,7 +138,7 @@ class SteamLibraryImporter(
         )
     }
 
-    /** preview → 占位 SubjectEntity（sourceId 按匹配结果区分）。 */
+    /** preview → 占位 SubjectEntity（sourceId 按匹配结果区分；sourceKey="steam:{appId}"）。 */
     private fun SteamLibraryPreview.toPlaceholderSubject(subjectId: Long): SubjectEntity =
         SubjectEntity(
             subjectId = subjectId,
@@ -162,6 +163,7 @@ class SteamLibraryImporter(
             lastSyncTime = System.currentTimeMillis(),
             // 正式匹配条目用 "steam"（详情页由 Steam 数据补充）；占位条目也标 "steam"
             sourceId = "steam",
+            sourceKey = GameItemMapper.sourceKey("steam", appId.toString()),
         )
 
     /** preview → 新 CollectionEntity（状态按游玩时长推断，时长写入 watchedEpisodes）。 */

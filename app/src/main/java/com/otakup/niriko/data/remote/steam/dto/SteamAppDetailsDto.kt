@@ -34,6 +34,7 @@ data class SteamAppDetailsDto(
     val metacritic: SteamMetacriticDto? = null,
     @SerialName("release_date")
     val releaseDate: SteamReleaseDateDto? = null,
+    val platforms: SteamPlatformsDto? = null,
     val genres: List<SteamGenreDto> = emptyList(),
     val screenshots: List<SteamScreenshotDto> = emptyList(),
 )

@@ -4,6 +4,7 @@ import com.otakup.niriko.data.local.dao.SteamDao
 import com.otakup.niriko.data.local.entity.SteamLibraryItemEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.remote.game.GameItemMapper
 import com.otakup.niriko.data.remote.steam.dto.SteamOwnedGameDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -48,8 +49,8 @@ data class SteamLibraryPreview(
 ) {
     val isMatched: Boolean get() = bgmSubjectId != null
 
-    /** 占位条目 subjectId（负数映射，稳定可逆，全应用共用约定）。 */
-    val placeholderSubjectId: Long get() = -appId.toLong()
+    /** 占位条目 subjectId（正数 + sourceKey 体系，由 [GameItemMapper.deriveSubjectId] 派生）。 */
+    val placeholderSubjectId: Long get() = GameItemMapper.deriveSubjectId("steam", appId.toString())
 }
 
 /** 匹配所需的外部依赖（纯函数可注入，便于单测）。 */
@@ -99,12 +100,13 @@ class SteamLibraryMatcher(
                 coverUrl = coverUrl(game),
                 playtimeForeverMinutes = game.playtimeForever,
                 playtime2WeeksMinutes = game.playtime2Weeks,
-                bgmSubjectId = subjectId.takeIf { it > 0 },
-                isPlaceholder = subjectId < 0,
+                bgmSubjectId = subjectId.takeIf { it > 0 && bound.matchMethod != "PLACEHOLDER" },
+                isPlaceholder = bound.matchMethod == "PLACEHOLDER" || subjectId < 0,
                 shared = shared,
                 alreadyInCollection = inCollection(subjectId),
                 localSubjectTitle = title,
-                selected = subjectId > 0, // 已绑定正式词条默认勾选；占位不默认勾
+                // 已绑定正式词条默认勾选；占位（PLACEHOLDER 绑定）不默认勾
+                selected = subjectId > 0 && bound.matchMethod != "PLACEHOLDER",
             )
         }
 
@@ -146,7 +148,7 @@ class SteamLibraryMatcher(
             bgmSubjectId = null,
             isPlaceholder = true,
             shared = shared,
-            alreadyInCollection = inCollection(-appId.toLong()),
+            alreadyInCollection = inCollection(GameItemMapper.deriveSubjectId("steam", appId.toString())),
             selected = false, // 占位默认不勾选（用户确认后导入）
         )
     }

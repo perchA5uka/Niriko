@@ -26,7 +26,8 @@ Kotlin + Jetpack Compose + Material 3 单 Activity 原生 Android 应用。
 - Liquid Glass 风格悬浮胶囊底栏与玻璃卡片（纯 Compose 自实现，无第三方模糊库）
 - 搜索建议浮层背景模糊（Android 12+ 生效，低版本自动降级）
 - 离线可用：搜索结果与详情自动落库，远程失败时回退本地缓存
-- **Steam 游戏补充数据**：GAME 类型作品在搜索/作品库/详情页自动匹配 Steam（storesearch + 标题置信度匹配，绑定落库免重复匹配），补充展示价格、当前在线人数、开发商/发行商、Metacritic、Steam 标签与截图；详情页显示成就进度（解锁数/总数，30 分钟缓存）；数据存独立扩展表 `steam_games` / `steam_bindings`，不污染核心作品模型，未来可扩展 VNDB/PSN 等平台
+- **Steam 游戏补充数据**：GAME 类型作品在搜索/作品库/详情页自动匹配 Steam（storesearch + 标题置信度匹配，绑定落库免重复匹配），补充展示价格、当前在线人数、开发商/发行商、Metacritic、Steam 标签与截图；详情页显示成就进度（解锁数/总数）与活跃玩家排名（Top 100，30 分钟缓存）；数据存独立扩展表 `steam_games` / `steam_bindings`，不污染核心作品模型
+- **通用游戏数据源架构**：统一 `GameDataSource` 接口 + `GameItem` 模型 + 注册表，Steam 已接入，RAWG/NeoDB/IGDB 等可即插即用；`sourceKey` 取代负数占位——任何数据源搜到的游戏都能成为与 Bangumi 作品同等的条目（卡片/收藏/评分评价/游戏时长）
 - **Steam 账号与游戏库导入**：OpenID 2.0 登录（WebView + 手动 SteamID64 兜底）→ GetOwnedGames + 家庭共享库（IFamilyGroupsService，webapi_token 鉴权）拉取游戏库 → 匹配 Bangumi → 勾选导入收藏（游玩时长推断状态）；Bangumi 无词条的游戏以「Steam 独占」占位条目展示，可重新匹配升级为正式词条；发现页新增「Steam」标签展示本地 Steam 作品
 - **哔哩哔哩导入**：设置页进入导入工作流，WebView 内登录 B 站后自动拉取追番列表、用户评分与短评（参考 Bangumi-master bilibili-sync 方案，经注入 JS 在 B 站会话内取数），按 season_id / 标题匹配到 Bangumi 条目后勾选一键导入本地收藏；原始数据单独落 `bilibili_sync_items` 表，默认不覆盖已有评分
 
@@ -49,6 +50,21 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 - `steam_library_items`：游戏库导入快照（appid / 游玩时长 / 匹配结果 / 占位标记 / 家庭库 shared 标记）
 
 未来可同样方式扩展 VNDB / PSN / Xbox 等平台数据。
+
+### 通用游戏数据源架构（GameDataSource）
+
+Steam 作为第一个 `GameDataSource` 实现接入统一游戏数据源体系，未来 RAWG / NeoDB / IGDB 等以同样方式注册即插即用：
+
+- **`GameItem` / `GameItemDetail`**：数据源无关的统一游戏模型（标题/封面/简介/平台/开发商/发行商/评分/标签/发行日期/截图/相似游戏）
+- **`GameDataSource` 接口**：能力声明（search / detail / screenshots / similar / charts）+ `GameDataSourceRegistry`（注册序即优先级、按 id 路由）
+- **`GameItemMapper`**：`GameItem → SubjectEntity` 映射，使"Bangumi 没有的词条、其他源有也能成为同等作品条目"
+- **`PlaytimeConverter`**：游戏时长单位换算（存储统一分钟、UI 输入/展示小时）
+
+### 条目身份：sourceKey 取代负数占位
+
+- `subjects.sourceKey`：跨数据源稳定唯一键（`steam:570` / `neodb:xxx`），唯一索引；Bangumi 条目为 null
+- 旧版负数占位条目（`subjectId=-appId`）启动时自动迁移为正 subjectId + sourceKey（`SteamPlaceholderMigrator`，幂等）
+- `isSteamPlaceholder` 按 `sourceKey.startsWith("steam:")` 判定；详情页对非 bangumi 条目经 `GameDataSourceRegistry` 刷新元数据
 
 ### 匹配流程
 
@@ -77,11 +93,15 @@ Steam 作为 **GAME 类型作品的补充数据源**（非替代）：Bangumi �
 
 已绑定的 GAME 条目详情页 Steam 区块显示成就进度（解锁数/总数 + 进度条 + 最近解锁项）：`GetPlayerAchievements`（用户解锁状态）+ `GetSchemaForGame`（成就定义）合并，30 分钟内存缓存。需 API key + 已登录；profile 的 Game details 未公开时返回 "Profile is not public"，区块自动隐藏不报错。
 
+### 活跃玩家排名
+
+详情页 Steam 区块显示「活跃排名 #N」（Top 100 活跃玩家榜）：`ISteamChartsService/GetMostPlayedGames`（实测确认无需 key 也可调用；响应 `ranks[]` 含 `rank` / `appid` / `last_week_rank` / `peak_in_game` + `rollup_date`）。30 分钟全量缓存按 appid 查询，未上榜不显示。
+
 ### API 策略
 
-- 公开接口（storesearch / appdetails / GetNumberOfCurrentPlayers）无需 API key，开箱即用
+- 公开接口（storesearch / appdetails / GetNumberOfCurrentPlayers / GetMostPlayedGames）无需 API key，开箱即用
 - GetOwnedGames / 成就接口需 API key（设置页「Steam API Key」配置）；家庭库接口需用户 access token（webapi_token，登录时自动获取）
-- 匹配请求分块并发（每批 5 个）防止打满商店接口限流；成就 30 分钟缓存避免高频触发限流
+- 匹配请求分块并发（每批 5 个）防止打满商店接口限流；成就/排行 30 分钟缓存避免高频触发限流
 
 ## 环境要求
 

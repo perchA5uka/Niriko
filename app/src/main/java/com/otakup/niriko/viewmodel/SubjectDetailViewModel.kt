@@ -65,6 +65,8 @@ data class SubjectDetailUiState(
     val steam: com.otakup.niriko.data.local.entity.SteamGameEntity? = null,
     // Steam 成就进度（解锁数/总数；隐私未公开或失败为 null）
     val achievements: com.otakup.niriko.data.remote.steam.SteamAchievements? = null,
+    // Steam 活跃玩家排名（未上榜/失败为 null）
+    val chartRank: com.otakup.niriko.data.remote.steam.SteamChartEntry? = null,
     // Snackbar 消息
     val snackbarMessage: String? = null,
 )
@@ -291,15 +293,21 @@ class SubjectDetailViewModel(
     }
 
     /**
-     * 拉取 Steam 成就进度（仅已绑定 GAME 条目有效）。
-     * 需 API key + 已登录；隐私未公开/失败静默（achievements 保持 null，UI 隐藏或提示）。
+     * 拉取 Steam 成就进度与活跃排名（仅已绑定 GAME 条目有效）。
+     * 需 API key + 已登录（成就）；失败静默（achievements/chartRank 保持 null，UI 隐藏或提示）。
      */
     private suspend fun loadAchievements() {
         val steam = steamRepository ?: return
         val current = _uiState.value.subject ?: return
         if (current.type != com.otakup.niriko.data.model.SubjectType.GAME) return
-        val achievements = steam.getAchievements(subjectId) ?: return
-        _uiState.update { it.copy(achievements = achievements) }
+        val achievements = steam.getAchievements(subjectId)
+        val chartRank = _uiState.value.steam?.appId?.let { steam.getChartRank(it) }
+        _uiState.update {
+            it.copy(
+                achievements = achievements,
+                chartRank = chartRank,
+            )
+        }
     }
 
     /**
