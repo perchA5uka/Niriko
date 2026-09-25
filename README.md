@@ -434,6 +434,6 @@ docs/                            # 设计与调研文档
 - 详情页 `ExtendedSnapshot` 未包含全部新字段，二次进详情页会重跑部分外部源详情 / 剧照候选
 - 平板 / 折叠屏的自适应布局（导航栏 + 详情双栏）尚未实现
 - `release` 构建未配置签名，`assembleRelease` 产出的是未签名 APK；如需分发请自备 keystore（`*.jks` / `*.keystore` 已在 `.gitignore` 中，切勿提交）
-- `compileSdk = 37` 需要本机安装 Android SDK Platform 37.0，Android Studio 版本过旧时可能同步失败
+- `compileSdk = 37` 需要本机安装 Android SDK Platform 37.0，Android Studio 版本过旧时可能同步失败；另外 AGP 8.13.2 官方只测试到 compileSdk 36.1，构建会打印一条「未测试的 compile SDK」警告（属预期，不影响产物）
 - 仓库未附带 CI，单元测试与构建需本地执行：`.\gradlew.bat testDebugUnitTest`
 - `app/schemas` 中缺少 v25 的 schema 文件（代码里的迁移链含 24→25→26），补迁移测试时需一并补齐
