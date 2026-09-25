@@ -64,3 +64,8 @@ reasonix.toml
 
 # 验证/构建日志（AgentTeams 跑验收 gate 的产物，不进版本库）
 verify-*.log
+
+# 全分辨率原始截图（1200×2608，单张 0.5–1.8MB）不进版本库：
+# README 使用的是 docs/screenshots/ 下 600px 宽、JPEG q82 的压缩版本（共约 1.9MB）。
+# 若你想把原图一并公开，删掉下面这一行即可。
+/screenshot/

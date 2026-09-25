@@ -20,6 +20,7 @@
 
 ## 目录
 
+- [截图](#截图)
 - [功能总览](#功能总览)
 - [数据源与整合](#数据源与整合)
 - [收藏模型](#收藏模型)
@@ -34,6 +35,54 @@
 - [设计文档](#设计文档)
 - [数据来源与声明](#数据来源与声明)
 - [已知限制与后续计划](#已知限制与后续计划)
+
+---
+
+## 截图
+
+> 以下截图取自 Android 设备实机运行。完整分辨率原图不随仓库分发，README 使用的是 600px 宽的压缩版本。
+
+### 作品库
+
+| 列表视图 | 观看状态编辑 |
+| --- | --- |
+| <img src="docs/screenshots/library-list.jpg" width="240" /> | <img src="docs/screenshots/library-status-edit.jpg" width="240" /> |
+
+### 发现
+
+| 当季热门 | 历史排名 | Steam 热销榜 |
+| --- | --- | --- |
+| <img src="docs/screenshots/discover-seasonal.jpg" width="240" /> | <img src="docs/screenshots/discover-ranking.jpg" width="240" /> | <img src="docs/screenshots/discover-steam.jpg" width="240" /> |
+
+### 作品详情
+
+| 封面与简介 | 简介原文与 infobox | 外部绑定 / 关联条目 / 取景地标 |
+| --- | --- | --- |
+| <img src="docs/screenshots/detail-1.jpg" width="240" /> | <img src="docs/screenshots/detail-2.jpg" width="240" /> | <img src="docs/screenshots/detail-3.jpg" width="240" /> |
+
+| 评分对比与评分分布 | 角色、制作人员与标签 | 剧照与剧集评分曲线 |
+| --- | --- | --- |
+| <img src="docs/screenshots/detail-4.jpg" width="240" /> | <img src="docs/screenshots/detail-5.jpg" width="240" /> | <img src="docs/screenshots/detail-6.jpg" width="240" /> |
+
+| 剧集列表与外部源绑定 |
+| --- |
+| <img src="docs/screenshots/detail-7.jpg" width="240" /> |
+
+### 统计
+
+| 作品日历与时间线 | 收藏概览与状态分布 |
+| --- | --- |
+| <img src="docs/screenshots/stats-1.jpg" width="240" /> | <img src="docs/screenshots/stats-2.jpg" width="240" /> |
+
+| 评分分布与年度总结 | 照片墙 |
+| --- | --- |
+| <img src="docs/screenshots/stats-3.jpg" width="240" /> | <img src="docs/screenshots/stats-4.jpg" width="240" /> |
+
+### 设置
+
+| 设置（分类导航） |
+| --- |
+| <img src="docs/screenshots/settings.jpg" width="240" /> |
 
 ---
 
