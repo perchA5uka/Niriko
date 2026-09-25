@@ -6,4 +6,12 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!--
+      第 5 轮：开屏已按用户要求移除。
+      原先这里有一个 Theme.Niriko.Splash（品牌绿底 + 白色 N 图标），
+      Manifest 的 Activity 主题现已直接指向 Theme.Niriko。
+      Android 12+ 冷启动仍会由系统绘制一帧启动画面，但内容退化为纯 Window 背景，
+      不再有品牌绿底与大 N 图标。
+    -->
 </resources>

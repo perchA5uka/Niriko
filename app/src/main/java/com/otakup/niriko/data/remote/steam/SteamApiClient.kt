@@ -1,5 +1,6 @@
 package com.otakup.niriko.data.remote.steam
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -122,4 +123,30 @@ object SteamApiClient {
 
     /** 当前是否具备家庭库拉取条件（有 Cookie 可拿 token）。 */
     fun canFetchFamilyLibrary(): Boolean = currentWebCookie() != null
+
+    /**
+     * 原始 HTML/文本 GET（store 域 search 等非 JSON 接口用，如热销榜降级数据源）。
+     * 失败（网络/非 2xx）返回 null，不抛异常。
+     * @param userAgent 是否附带浏览器 UA（部分 store 页面反爬需要）
+     */
+    suspend fun getRawHtml(url: String, userAgent: Boolean = false): String? = withContext(Dispatchers.IO) {
+        try {
+            val builder = okhttp3.Request.Builder().url(url).get()
+            if (userAgent) {
+                builder.header("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
+                builder.header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+            }
+            okHttpClient.newCall(builder.build()).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    Log.w("SteamRaw", "getRawHtml HTTP ${resp.code} for $url")
+                    null
+                } else {
+                    resp.body?.string()
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("SteamRaw", "getRawHtml failed for $url: ${e.javaClass.simpleName}: ${e.message}")
+            null
+        }
+    }
 }

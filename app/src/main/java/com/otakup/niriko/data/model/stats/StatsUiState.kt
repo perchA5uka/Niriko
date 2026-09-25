@@ -1,6 +1,7 @@
 package com.otakup.niriko.data.model.stats
 
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
+import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import java.time.DayOfWeek
@@ -29,4 +30,8 @@ data class StatsUiState(
     val broadcastError: String? = null,
     val isLoading: Boolean = true,
     val timelineEvents: List<TimelineEvent> = emptyList(),
+    /** 照片墙（阶段 E）。 */
+    val mosaic: List<MosaicItem> = emptyList(),
+    /** 每集数据（统计页放送信息：已播出状态与热力图）。 */
+    val episodesBySubject: Map<Long, List<EpisodeInfo>> = emptyMap(),
 )

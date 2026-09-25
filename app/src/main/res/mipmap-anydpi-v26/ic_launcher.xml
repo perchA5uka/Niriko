@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!-- 用户提供的正式图标：白底 + 玻璃质感 N（drawable-nodpi/ic_launcher_art.png）。
+         前景是满幅不透明图，覆盖整个 108dp 画布，因此掩码裁切后不会露出背景层。 -->
+    <background android:drawable="@color/ic_launcher_art_background" />
+    <foreground android:drawable="@drawable/ic_launcher_art" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>

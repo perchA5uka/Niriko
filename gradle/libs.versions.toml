@@ -15,11 +15,18 @@ cloudy = "1.0.0-alpha01"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.6.3"
+materialColorUtilities = "2.1.1"
+media3 = "1.6.1"
+splashscreen = "1.0.1"
+work = "2.10.0"
+pinyin4j = "2.5.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
+# ProcessLifecycleOwner（进前台/退后台刷新触发器）
+androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 
 # Compose — 版本由 BOM 统一对齐
@@ -39,6 +46,22 @@ retrofit-core = { group = "com.squareup.retrofit2", name = "retrofit", version.r
 retrofit-converter-kotlinx-serialization = { group = "com.squareup.retrofit2", name = "converter-kotlinx-serialization", version.ref = "retrofit" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+
+# HCT 色彩空间（Google material-color-utilities 的 Kotlin 移植）：任意种子色生成 M3 配色
+material-color-utilities = { group = "com.materialkolor", name = "material-color-utilities", version.ref = "materialColorUtilities" }
+
+# 开屏动画（Android 12+ 原生 SplashScreen，26+ 兼容）
+core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
+
+# Media3（动态壁纸视频播放）
+media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+
+# WorkManager（放送提醒周期任务）
+androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+
+# pinyin4j（阶段 D 拼音搜索；TinyPinyin 仅在 JitPack，镜像不可达，改用 Maven Central 的 pinyin4j）
+pinyin4j = { group = "com.belerweb", name = "pinyin4j", version.ref = "pinyin4j" }
 
 # Navigation / Room / Coil
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }

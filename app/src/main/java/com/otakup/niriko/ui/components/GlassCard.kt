@@ -21,7 +21,11 @@ import android.content.ContextWrapper
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.os.Build
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -49,14 +54,26 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.data.settings.CardGlassLevel
+import com.otakup.niriko.data.settings.GlassEffectLevel
 import com.otakup.niriko.ui.components.liquidglass.LiquidGlassConfig
 import com.otakup.niriko.ui.components.liquidglass.buildFrostedRenderEffect
 import com.otakup.niriko.ui.components.liquidglass.buildLiquidGlassRenderEffect
 import com.otakup.niriko.ui.components.liquidglass.liquidGlassTint
 import com.otakup.niriko.ui.components.liquidglass.tryLoadLiquidGlassShader
 import com.otakup.niriko.ui.theme.LocalDarkTheme
+import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
 import coil.Coil
 import coil.request.CachePolicy
 import coil.request.ImageRequest
@@ -76,35 +93,42 @@ import coil.request.ImageRequest
 fun Modifier.appleGlassCard(
     shape: Shape = RoundedCornerShape(16.dp),
     tintColor: Color? = null,
+    isCollectionCard: Boolean = false,
+    interactionSource: MutableInteractionSource? = null,
 ): Modifier {
     val isDark = LocalDarkTheme.current
-    // 深色模式：保留玻璃材质，但变暗——深色磨砂底 + 弱化高光/阴影（可读性优先）
-    val glassBase = if (isDark) Color(0xFF1C1C1E).copy(alpha = 0.75f)
-                    else Color.White.copy(alpha = 0.85f)
+    val cardBackdrop = LocalCardGlassBackdrop.current
+    val glassEffect = LocalGlassEffect.current
+    val glassLevel = LocalCardGlassLevel.current
+    val luma = LocalGlassLuminance.current
+    // 参考款：很透的磨砂玻璃 —— 低 alpha 中性 tint（浅白/深黑），让背景透过卡清晰可见。
+    // 自适应亮度：亮壁纸 → 稍微加深 tint 保对比；暗壁纸 → 更透。
+    val adaptive = (luma - 0.5f) * 0.10f
+    val glassBaseAlpha = if (isDark) (0.30f + adaptive).coerceIn(0.22f, 0.42f)
+                         else (0.20f + adaptive).coerceIn(0.14f, 0.32f)
+    val glassBase = if (isDark) Color.Black.copy(alpha = glassBaseAlpha)
+                    else Color.White.copy(alpha = glassBaseAlpha)
     val highlightColors = if (isDark) {
         listOf(
-            Color.White.copy(alpha = 0.08f),
+            Color.White.copy(alpha = 0.06f),
             Color.Transparent,
-            Color.Black.copy(alpha = 0.08f),
+            Color.Black.copy(alpha = 0.10f),
         )
     } else {
         listOf(
-            Color.White.copy(alpha = 0.30f),
+            Color.White.copy(alpha = 0.22f),
             Color.Transparent,
-            Color.Black.copy(alpha = 0.02f),
+            Color.Black.copy(alpha = 0.03f),
         )
     }
-    val shadowElevation = if (isDark) 10.dp else 14.dp
-    val shadowSpot = Color.Black.copy(alpha = if (isDark) 0.25f else 0.08f)
-    val shadowAmbient = Color.Black.copy(alpha = if (isDark) 0.08f else 0.03f)
-    val tintAlpha = 0.09f
-    // 静态 Brush：组合期创建一次，避免 drawBehind/border 每次绘制时重新分配渐变对象
+    // 封面 Ambient Tint：alpha 0.05，限制在卡片上 1/3 区域（余光，不是染色）
+    val tintAlpha = 0.05f
     val tintBrush = remember(tintColor) {
         tintColor?.let { tint ->
             Brush.verticalGradient(
                 colors = listOf(
                     tint.copy(alpha = tintAlpha),
-                    tint.copy(alpha = tintAlpha * 0.4f),
+                    tint.copy(alpha = tintAlpha * 0.25f),
                 ),
             )
         }
@@ -118,46 +142,84 @@ fun Modifier.appleGlassCard(
             ),
         )
     }
-    val borderBrush = remember(isDark) {
-        Brush.linearGradient(
-            colors = listOf(
-                Color.White.copy(alpha = 0.8f),
-                Color.Black.copy(alpha = if (isDark) 0.07f else 0.03f),
-            ),
-            start = Offset.Zero,
-            end = Offset.Infinite,
+    // 发光边缘：柔和、沿圆角定向衰减，Plus 混合“真发光”。
+    // 交互式 Highlight：按压时 alpha 0.5 → 0.85，边缘“被按下更亮”。
+    val pressed = interactionSource != null && interactionSource.collectIsPressedAsState().value
+    val highlightAlpha by animateFloatAsState(
+        targetValue = if (pressed) 0.95f else 0.65f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        label = "cardHighlight",
+    )
+    val highlight = {
+        Highlight.Default.copy(
+            width = 1.dp,
+            blurRadius = 0.5.dp,
+            alpha = highlightAlpha,
         )
     }
-    return this
-        // 1. 深阴影（浅色 iOS Widget 浮起感；深色稍弱但保留层次）
-        .shadow(
-            elevation = shadowElevation,
-            shape = shape,
-            spotColor = shadowSpot,
-            ambientColor = shadowAmbient,
+    // 方向性外投影：接触阴影下沉 + 环境弱化。
+    val shadow = {
+        Shadow(
+            radius = 12.dp,
+            offset = DpOffset(0.dp, 4.dp),
+            color = Color.Black.copy(alpha = if (isDark) 0.24f else 0.10f),
         )
-        // 2. 更白更实的磨砂背景（明显从背景分离）
-        .clip(shape)
-        .background(
-            color = glassBase,
-            shape = shape,
+    }
+    // 玻璃内厚度：底部一条下沉暗边。
+    val innerShadow = {
+        InnerShadow(
+            radius = 12.dp,
+            offset = DpOffset(0.dp, 2.dp),
+            color = Color.Black.copy(alpha = if (isDark) 0.22f else 0.14f),
         )
-        // 3. drawBehind 光层（内容之下）：Ambient Tint → 顶部受光/中心透明/底部沉降
-        .drawBehind {
-            // Ambient Tint Layer：封面环境色在玻璃上的微弱反射（上强下弱）
-            // Brush 为组合期静态实例（默认 startY/endY = 绘制区域全高，与原显式 0..height 等效）
-            tintBrush?.let { brush ->
-                drawRect(brush = brush)
-            }
-            // Highlight Layer：顶部受光 → 中心透明 → 底部沉降
-            drawRect(brush = highlightBrush)
+    }
+    val onDrawSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
+        // 玻璃 tint 底
+        drawRect(color = glassBase)
+        // Ambient Tint（仅上 1/3）
+        tintBrush?.let { brush ->
+            drawRect(brush = brush, size = Size(size.width, size.height / 3f))
         }
-        // 4. Edge reflection：对角折射细边（高光在左上、暗部在右下，非 outline）
-        .border(
-            width = 0.75.dp,
-            brush = borderBrush,
-            shape = shape,
+        // 顶部受光 → 中心透明 → 底部沉降
+        drawRect(brush = highlightBrush)
+    }
+    val realEnabled = cardBackdrop != null && glassEffect != GlassEffectLevel.OFF &&
+        (glassLevel == CardGlassLevel.FULL || (glassLevel == CardGlassLevel.COLLECTION_ONLY && isCollectionCard))
+    return if (realEnabled) {
+        // 真液态玻璃：和 dock 同管线 —— vibrancy → blur → lens（折射背后壁纸），
+        // 再叠加发光边缘/外投影/内厚度。这就是“卡片=玻璃”。
+        this.drawBackdrop(
+            backdrop = cardBackdrop,
+            shape = { shape },
+            effects = {
+                vibrancy()
+                blur(12.dp.toPx())
+                lens(
+                    // 增大 refractionHeight/refractionAmount → 边缘折射/色散带更宽、更明显。
+                    refractionHeight = 20.dp.toPx(),
+                    refractionAmount = 40.dp.toPx(),
+                    depthEffect = true,
+                    // 色散（chromatic aberration）：与 dock 同款 7 色带折射分离。
+                    chromaticAberration = true,
+                )
+            },
+            highlight = highlight,
+            shadow = shadow,
+            innerShadow = innerShadow,
+            onDrawSurface = onDrawSurface,
         )
+    } else {
+        // 静态降级（无壁纸 / 二级页 / 玻璃关闭）：不 blur/折射，仅保留发光/厚度/阴影。
+        this.drawBackdrop(
+            backdrop = emptyBackdrop(),
+            shape = { shape },
+            effects = {},
+            highlight = highlight,
+            shadow = shadow,
+            innerShadow = innerShadow,
+            onDrawSurface = onDrawSurface,
+        )
+    }
 }
 
 /**
@@ -313,7 +375,8 @@ private val coverTintCache = java.util.concurrent.ConcurrentHashMap<String, Colo
 @Composable
 fun rememberCoverTint(url: String?): Color? {
     val context = LocalContext.current
-    var tint by remember(url) { mutableStateOf(coverTintCache[url]) }
+    // ConcurrentHashMap 禁止 null key：url 为空时直接返回 null（无封面 → 无 tint）
+    var tint by remember(url) { mutableStateOf(url?.let { coverTintCache[it] }) }
     LaunchedEffect(url) {
         if (url != null && tint == null) {
             val extracted = runCatching {

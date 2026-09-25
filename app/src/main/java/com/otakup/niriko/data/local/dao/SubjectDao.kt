@@ -25,6 +25,10 @@ interface SubjectDao {
     @Query("SELECT subjectId FROM subjects WHERE subjectId IN (:ids)")
     suspend fun getExistingIds(ids: List<Long>): List<Long>
 
+    /** 批量按 id 读回整行（SubjectWriteGateway 的 diff 写用：判断哪些行真的变化了）。 */
+    @Query("SELECT * FROM subjects WHERE subjectId IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<SubjectEntity>
+
     @Query(
         """
         SELECT * FROM subjects 
@@ -35,9 +39,24 @@ interface SubjectDao {
     )
     fun searchByKeyword(keyword: String): Flow<List<SubjectEntity>>
 
+    /** 拼音搜索命中（阶段 D：pinyinKey LIKE）。 */
+    @Query("SELECT * FROM subjects WHERE pinyinKey LIKE '%' || :keyword || '%' ORDER BY title ASC")
+    suspend fun searchByPinyin(keyword: String): List<SubjectEntity>
+
+    /** 拼音包含匹配（自动补全建议，阶段 D；子串以便命中“juren→进击的巨人”）。 */
+    @Query("SELECT * FROM subjects WHERE pinyinKey LIKE '%' || :keyword || '%' ORDER BY title ASC LIMIT 5")
+    suspend fun searchByPinyinPrefix(keyword: String): List<SubjectEntity>
+
     /** 查询所有作品（非 Flow，用于导出）。 */
     @Query("SELECT * FROM subjects")
     suspend fun getAll(): List<SubjectEntity>
+
+    /**
+     * 某类型下所有有评分的作品分数（阶段 7「本地库内百分位」用）。
+     * 只取一列，避免把整表读进内存。
+     */
+    @Query("SELECT ratingScore FROM subjects WHERE type = :type AND ratingScore > 0")
+    suspend fun getRatingScoresByType(type: String): List<Float>
 
     /** 清空所有作品（用于导入覆盖）。 */
     @Query("DELETE FROM subjects")

@@ -1,75 +1,80 @@
 package com.otakup.niriko.ui.library
 
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.model.CollectionStats
 import com.otakup.niriko.ui.theme.NirikoTheme
 
+/**
+ * 作品库顶部统计条（P2：标签胶囊行）。
+ * 从「180 部作品 均分…」纯文本改为 labelSmall + tnum 数字的胶囊，FlowRow 自动换行，
+ * 彻底避免最右端被屏幕裁切（比横向滚动更稳妥）。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CollectionDashboard(
     stats: CollectionStats,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    FlowRow(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+    ) {
+        DashboardChip("${stats.totalCount} 部作品", emphasized = true)
+        if (stats.averageRating > 0.0) {
+            DashboardChip("均分 %.1f".format(stats.averageRating), emphasized = true)
+        }
+        if (stats.totalWatchedEpisodes > 0) {
+            DashboardChip("累计 ${stats.totalWatchedEpisodes} 集")
+        }
+        if (stats.completionRate > 0f) {
+            DashboardChip("完成率 %.0f%%".format(stats.completionRate * 100))
+        }
+        stats.statusCounts.entries.forEach { (status, count) ->
+            DashboardChip("${status.label} $count", color = MaterialTheme.colorScheme.secondary)
+        }
+    }
+}
+
+@Composable
+private fun DashboardChip(
+    text: String,
+    emphasized: Boolean = false,
+    color: androidx.compose.ui.graphics.Color? = null,
+) {
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = Modifier
+            .clip(shape)
+            .background(
+                if (emphasized) MaterialTheme.colorScheme.surfaceContainerHighest
+                else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.7f),
+                shape,
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "${stats.totalCount} 部作品",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(end = 12.dp),
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Medium,
+            color = color ?: MaterialTheme.colorScheme.onSurfaceVariant,
         )
-
-        if (stats.averageRating > 0.0) {
-            Text(
-                text = "均分 %.1f".format(stats.averageRating),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.padding(end = 12.dp),
-            )
-        }
-
-        if (stats.totalWatchedEpisodes > 0) {
-            Text(
-                text = "累计 ${stats.totalWatchedEpisodes} 集",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 12.dp),
-            )
-        }
-
-        if (stats.completionRate > 0f) {
-            Text(
-                text = "完成率 %.0f%%".format(stats.completionRate * 100),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 12.dp),
-            )
-        }
-
-        stats.statusCounts.entries.forEach { (status, count) ->
-            Text(
-                text = "${status.label} $count",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 8.dp),
-            )
-        }
     }
 }
 

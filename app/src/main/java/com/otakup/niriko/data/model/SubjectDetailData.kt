@@ -39,10 +39,16 @@ data class EpisodeInfo(
     val sort: Double,
     val airdate: String?,
     val duration: String?,
+    /** 放送状态：Air / Today / Tomorrow / NA。 */
+    val status: String? = null,
+    /** 本集讨论/回复数（热力图用）。 */
+    val comment: Int = 0,
     /** 音乐曲目的碟片数（音乐类型，0 表示未分组）。 */
     val disc: Int = 0,
     /** 服务器解析的时长（秒）。 */
     val durationSeconds: Int = 0,
     /** 剧集类型：0=本篇，1=SP，2=OP，3=ED。 */
     val type: Int = 0,
+    /** 本集剧照 URL（TMDb 每集 still）。无 TMDb 绑定时为 null。 */
+    val stillUrl: String? = null,
 )

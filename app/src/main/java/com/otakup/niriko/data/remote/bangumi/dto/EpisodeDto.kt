@@ -27,6 +27,8 @@ data class EpisodeDto(
     val duration: String? = null,
     /** 放送状态：Air / Today / Tomorrow / NA。 */
     val status: String? = null,
+    /** 本集讨论/回复数（热力图用）。 */
+    val comment: Int = 0,
     /** 音乐曲目的碟片数（音乐类型）。 */
     val disc: Int = 0,
     /** 服务器解析的时长（秒），无法解析时为 0。 */

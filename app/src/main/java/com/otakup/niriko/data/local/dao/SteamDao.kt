@@ -22,6 +22,13 @@ interface SteamDao {
     @Query("SELECT * FROM steam_bindings WHERE steamAppId = :appId LIMIT 1")
     suspend fun getBindingByAppId(appId: Int): SteamBindingEntity?
 
+    /**
+     * 批量按 appId 查绑定（发现页 Steam 榜单用）。
+     * 改造前是对榜内每个 appid 串行调 [getBindingByAppId]，100 条榜单 = 100 次串行数据库往返。
+     */
+    @Query("SELECT * FROM steam_bindings WHERE steamAppId IN (:appIds)")
+    suspend fun getBindingsByAppIds(appIds: List<Int>): List<SteamBindingEntity>
+
     /** 更新或插入绑定（update-first，避免 REPLACE 破坏外键关系）。 */
     @Transaction
     suspend fun upsertBinding(binding: SteamBindingEntity) {

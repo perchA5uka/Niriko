@@ -101,7 +101,7 @@ class SteamSyncViewModel(
             },
             subjectTitle = { id ->
                 try {
-                    database.subjectDao().getById(id)?.let { it.titleCN ?: it.title }
+                    database.subjectDao().getById(id)?.let { it.displayTitle }
                 } catch (_: Exception) {
                     null
                 }
@@ -203,7 +203,10 @@ class SteamSyncViewModel(
                     it.copy(
                         stage = SteamSyncStatus.READY,
                         previews = previews,
-                        message = "共 ${previews.size} 款游戏（已匹配 ${previews.count { it.isMatched }}，占位 ${previews.count { it.isPlaceholder }}，家庭库 ${previews.count { it.shared }}）",
+                        message = listOf(
+                            "共 ${previews.size} 款游戏（已匹配 ${previews.count { it.isMatched }}，占位 ${previews.count { it.isPlaceholder }}，家庭库 ${previews.count { it.shared }}）",
+                            family.notice,
+                        ).filterNotNull().joinToString("\n"),
                     )
                 }
             } catch (e: Exception) {
@@ -216,20 +219,38 @@ class SteamSyncViewModel(
 
     /**
      * 拉取家庭共享库（借入游戏）。
-     * 依赖 webapi_token（登录会话抓取，约 1-2 天过期）；token 失效/未登录/网络失败
-     * 均静默返回空（家庭库为增强功能，不影响 GetOwnedGames 主流程）。
-     * @return 家庭库原始条目 + 借入 appid 集合
+     * token 来源：优先持久化的 [SettingsDataStore.steamWebApiToken]（OpenID 登录时抓取，
+     * 约 1-2 天过期）；无持久 token 时尝试实时抓取（Cookie 仍在时）。
+     * 手动输入 SteamID64 登录（无 Cookie、无 token）无法拉取家庭库——返回空并带回提示，
+     * 不影响 GetOwnedGames 主流程。
+     * @return 家庭库原始条目 + 借入 appid 集合 + 不可用提示
      */
     private suspend fun fetchFamilyLibrary(steamId64: String): FamilyLibraryResult {
-        val token = runCatching { SteamApiClient.fetchWebApiToken() }.getOrNull()
-            ?: return FamilyLibraryResult()
+        // token 来源优先级：
+        // 1) 实时抓取（当前有网页登录 Cookie 时——最准，反映最新登录态）；
+        // 2) 持久化的 steamWebApiToken（上次 OpenID 登录抓取，约 1-2 天过期）。
+        // 手动输入 SteamID64 登录（无 Cookie、无持久 token）无法拉取家庭库——返回空并带回提示，
+        // 不影响 GetOwnedGames 主流程。
+        var token: String? = null
+        if (SteamApiClient.currentWebCookie() != null) {
+            token = runCatching { SteamApiClient.fetchWebApiToken() }.getOrNull()
+        }
+        if (token == null) {
+            token = settingsDataStore.settings.first().steamWebApiToken
+                ?.takeIf { it.isNotBlank() }
+        }
+        if (token == null) {
+            // 手动登录路径无 Cookie/无持久 token：家庭库无法拉取，明确提示
+            return FamilyLibraryResult(notice = "家庭库未拉取：需通过 Steam 网页登录（OpenID）授权后自动获取借入游戏，手动输入 SteamID64 无法访问家庭库")
+        }
         return runCatching {
             withContext(Dispatchers.IO) {
                 val group = apiService.familyGroup(
                     url = SteamApiClient.FAMILY_GROUP_URL,
                     token = token,
                     steamId = steamId64,
-                ).response?.familyGroupId ?: return@withContext FamilyLibraryResult()
+                ).response?.familyGroupId
+                    ?: return@withContext FamilyLibraryResult(notice = "家庭库未拉取：账号未加入 Steam 家庭组，或接口未返回家庭组信息")
 
                 val apps = apiService.sharedLibraryApps(
                     url = SteamApiClient.SHARED_LIBRARY_APPS_URL,
@@ -252,13 +273,17 @@ class SteamSyncViewModel(
                     ids = apps.map { it.appid }.toSet(),
                 )
             }
-        }.getOrElse { FamilyLibraryResult() }
+        }.getOrElse {
+            FamilyLibraryResult(notice = "家庭库拉取失败：${it.message ?: it.javaClass.simpleName}（token 可能已过期，可重新网页登录刷新）")
+        }
     }
 
     /** 家庭库拉取结果。 */
     private data class FamilyLibraryResult(
         val games: List<SteamOwnedGameDto> = emptyList(),
         val ids: Set<Int> = emptySet(),
+        /** 家庭库不可用/失败时的用户提示（null 表示正常）。 */
+        val notice: String? = null,
     )
 
     /** 切换勾选态。 */
@@ -291,6 +316,18 @@ class SteamSyncViewModel(
                     steamId64 = s.steamId64,
                 )
             }
+            // 导入即匹配：对本次导入的 GAME 词条立即触发 Steam 自动绑定（幂等，失败静默），
+            // 避免"导入后必须进详情页才匹配"的滞后
+            val importedGames = withContext(Dispatchers.IO) {
+                s.previews.filter { it.selected }
+                    .mapNotNull { it.bgmSubjectId }
+                    .distinct()
+                    .mapNotNull { id -> runCatching { database.subjectDao().getById(id) }.getOrNull() }
+                    .filter { it.type == SubjectType.GAME && !it.isSteamPlaceholder }
+            }
+            if (importedGames.isNotEmpty()) {
+                runCatching { steamRepository.matchAndBind(importedGames) }
+            }
             _uiState.update {
                 it.copy(
                     isImporting = false,
@@ -309,11 +346,15 @@ class SteamSyncViewModel(
             val newSubjectId = withContext(Dispatchers.IO) {
                 try {
                     val candidates = subjectRepository.search(keyword = preview.name, type = 4, limit = 5)
+                    // 只接受游戏词条：Bangumi 搜索可能命中同名书籍/设定集（如 Terraria 官方设定集），
+                    // 必须 type==GAME 过滤，否则会把 Steam 条目错绑到书
                     val best = candidates
-                        .filter { it.subjectId > 0 }
+                        .filter { it.type == SubjectType.GAME && it.subjectId > 0 }
                         .mapNotNull { candidate ->
-                            val score = com.otakup.niriko.data.remote.steam.SteamTitleMatcher
-                                .confidence(preview.name, candidate.titleCN ?: candidate.title)
+                            val score = com.otakup.niriko.data.remote.steam.SteamTitleMatcher.bestConfidence(
+                                queryTitles = listOf(preview.name),
+                                candidateTitles = listOfNotNull(candidate.title, candidate.titleCN),
+                            )
                             if (score >= com.otakup.niriko.data.remote.steam.SteamTitleMatcher.MIN_CONFIDENCE) {
                                 candidate to score
                             } else null

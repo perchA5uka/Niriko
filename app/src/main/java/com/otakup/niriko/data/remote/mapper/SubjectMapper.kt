@@ -63,6 +63,8 @@ class SubjectMapper {
                 sort = dto.sort,
                 airdate = dto.airdate,
                 duration = dto.duration,
+                status = dto.status,
+                comment = dto.comment,
                 disc = dto.disc,
                 durationSeconds = dto.durationSeconds,
                 type = dto.type,

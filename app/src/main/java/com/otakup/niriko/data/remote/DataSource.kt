@@ -4,6 +4,7 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.StaffInfo
+import com.otakup.niriko.util.TitleResolver
 import java.time.DayOfWeek
 
 /**
@@ -118,7 +119,18 @@ data class CharacterDetailInfo(
     val summary: String?,
     val imageUrl: String?,
     val relation: String?,
-)
+    // ===== 阶段 6：基本信息 / 声优 / 统计 =====
+    val gender: String? = null,
+    val birthday: String? = null,
+    val bloodType: String? = null,
+    val collects: Int? = null,
+    val comments: Int? = null,
+    val infoBox: List<InfoBoxEntry> = emptyList(),
+    /** 声优列表（角色详情页此前不展示，数据其实已有）。 */
+    val actors: List<StaffInfo> = emptyList(),
+) {
+    val moreInfoUrl: String get() = "https://bgm.tv/character/$id"
+}
 
 /** 人物（声优/导演等）详情信息。 */
 data class PersonDetailInfo(
@@ -131,6 +143,30 @@ data class PersonDetailInfo(
     val career: List<String>,
     /** 代表作品（卡片小图用，类型优先 + 核心身份过滤后的前 3 个）。 */
     val topWorks: List<PersonTopWork> = emptyList(),
+    // ===== 阶段 6：基本信息 / 统计 / 职位 =====
+    /** 性别（male / female）。 */
+    val gender: String? = null,
+    /** 生日（如 "1962-06-29"，只到年/月时按可用精度拼接）。 */
+    val birthday: String? = null,
+    /** 血型（A / B / O / AB）。 */
+    val bloodType: String? = null,
+    /** 收藏人数（stat.collects）。 */
+    val collects: Int? = null,
+    /** 评论数（stat.comments）。 */
+    val comments: Int? = null,
+    /** 详细资料表（身高/体重/出身地/引用来源/官方网站/Twitter 等）。 */
+    val infoBox: List<InfoBoxEntry> = emptyList(),
+    /** 参与人数统计：职位 → 作品数（本地聚合，见 PersonJobAnalyzer）。 */
+    val jobStats: List<PersonJobStat> = emptyList(),
+) {
+    /** 更多资料外链。 */
+    val moreInfoUrl: String get() = "https://bgm.tv/person/$id"
+}
+
+/** 职位统计（人物页「参与职位」区块）。 */
+data class PersonJobStat(
+    val job: String,
+    val count: Int,
 )
 
 /** 人物/角色参与的作品条目（staff 为参与身份或角色名）。 */
@@ -155,6 +191,14 @@ data class SubjectRelationInfo(
     val imageUrl: String?,
 )
 
+/** 人物/角色参与作品展示名降级（中文名空串时回退原名）。 */
+val PersonSubjectInfo.displayTitle: String
+    get() = TitleResolver.resolve(titleCN, title).primary.ifBlank { "未命名作品" }
+
+/** 关联条目展示名降级（中文名空串时回退原名）。 */
+val SubjectRelationInfo.displayTitle: String
+    get() = TitleResolver.resolve(titleCN, title).primary.ifBlank { "未命名作品" }
+
 /** 放送日历条目：某星期几的放送作品列表。 */
 data class CalendarDaySchedule(
     val dayOfWeek: DayOfWeek,
@@ -165,4 +209,30 @@ data class CalendarDaySchedule(
 data class InfoBoxEntry(
     val key: String,
     val value: String,
+)
+
+/**
+ * 单个数据源的失败记录（第 6 轮 F5）。
+ *
+ * 之前链条只把失败写进日志，上层拿到的是「空列表」——于是「网络失败」与
+ * 「确实没有结果」在 UI 上完全无法区分。这里把失败本身变成可传递的数据。
+ */
+data class PluginFailure(
+    val pluginId: String,
+    val reason: String,
+)
+
+/**
+ * 全部数据源均失败（第 6 轮 F5）。
+ *
+ * searchWithTotal 只在「所有被调用过的插件都抛错」时抛出本异常；
+ * 只要有一个插件正常返回（哪怕是空列表），就说明是「确实没有结果」，不抛。
+ * 上层据此显示「网络失败 + 重试」，而不是「未找到相关作品」。
+ */
+class AllPluginsFailedException(
+    val failures: List<PluginFailure>,
+) : Exception(
+    "所有数据源均失败：" + failures.joinToString("; ") { failure ->
+        failure.pluginId + "=" + failure.reason
+    }
 )

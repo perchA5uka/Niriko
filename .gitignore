@@ -31,13 +31,36 @@ local.properties
 # Kotlin
 .kotlin/
 
+# 签名材料：绝不入库（release 签名由发布者自备）
+*.jks
+*.keystore
+*.p12
+keystore.properties
+
 # 本地工具 / AI 助手状态目录（非项目源码）
 .codewhale/
 .kun-design/
 .kunsdd/
 .reasonix/
+.agent-teams/
+.graphflow-cache/
+graphflow-out/
+reasonix.toml
 
-# 临时数据样本（根目录 JSON 抓包/导出文件）
-*.json
+# 编辑器 / AI 工具的临时备份
+*.bak
+*.reasonix-tx-*
+
+# 临时数据样本：只忽略仓库根目录的抓包 / 导出 JSON
+# （早先的全局 *.json 规则会把 app/src/main/assets 与测试 fixture 一起吞掉，导致
+#  内置放送数据与 B 站站点映射进不了版本库——务必保持「只忽略根目录」的写法）
+/*.json
+
+# 例外：必须随仓库提交的数据
 !app/schemas/**/*.json
+!app/src/main/assets/**/*.json
+!app/src/test/resources/**/*.json
 !gradle/*.json
+
+# 验证/构建日志（AgentTeams 跑验收 gate 的产物，不进版本库）
+verify-*.log

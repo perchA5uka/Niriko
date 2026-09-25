@@ -36,12 +36,23 @@ fun SubjectEntity.toCardDisplayModel(steam: SteamGameEntity? = null): SubjectCar
 
     val secondaryInfo = when (type) {
         SubjectType.ANIME -> platform ?: if (totalEpisodes != null && totalEpisodes > 0) "${totalEpisodes} 集" else null
-        SubjectType.GAME -> platform
+        SubjectType.GAME -> {
+            // Steam 独占/已绑游戏：开发商 + 发行商（有则展示，Bangumi 平台字段兜底）
+            val devPub = steam?.let { s ->
+                buildList {
+                    if (s.developers.isNotEmpty()) add(s.developers.joinToString("/"))
+                    if (s.publishers.isNotEmpty() && s.publishers != s.developers) add(s.publishers.joinToString("/"))
+                }.joinToString(" · ")
+            }
+            devPub?.takeIf { it.isNotBlank() } ?: platform
+        }
         SubjectType.MUSIC -> platform
         SubjectType.BOOK, SubjectType.MANGA, SubjectType.REAL, SubjectType.PERSON, SubjectType.OTHER -> null
     }
 
+    // 简介：Bangumi summary 优先；Steam 独占/已绑游戏用 Steam 商店简介兜底（与 Bangumi 卡片同级展示）
     val description = summary?.takeIf { it.isNotBlank() }?.take(120)
+        ?: steam?.shortDescription?.takeIf { it.isNotBlank() }?.take(120)
 
     // Steam 补充信息（已绑定游戏卡）：价格 + 当前在线
     val steamInfoText = steam?.takeIf { type == SubjectType.GAME }?.let { s ->

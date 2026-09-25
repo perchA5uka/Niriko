@@ -114,9 +114,14 @@ class SteamLibraryMatcher(
         val name = game.name ?: ""
         if (name.isNotBlank()) {
             val candidates = runCatching { searchBangumiGame(name) }.getOrDefault(emptyList())
+            // 只接受游戏词条（Bangumi 搜索可能命中书籍/动画等同名词条，如 Terraria 的设定集）
             val best = candidates
+                .filter { it.type == SubjectType.GAME && it.subjectId > 0 }
                 .mapNotNull { candidate ->
-                    val score = SteamTitleMatcher.confidence(name, candidate.titleCN ?: candidate.title)
+                    val score = SteamTitleMatcher.bestConfidence(
+                        queryTitles = listOf(name),
+                        candidateTitles = listOfNotNull(candidate.title, candidate.titleCN),
+                    )
                     if (score >= MIN_CONFIDENCE) candidate to score else null
                 }
                 .maxByOrNull { it.second }
@@ -132,7 +137,7 @@ class SteamLibraryMatcher(
                     isPlaceholder = false,
                     shared = shared,
                     alreadyInCollection = inCollection(best.subjectId),
-                    localSubjectTitle = best.titleCN ?: best.title,
+                    localSubjectTitle = best.displayTitle,
                     selected = true,
                 )
             }

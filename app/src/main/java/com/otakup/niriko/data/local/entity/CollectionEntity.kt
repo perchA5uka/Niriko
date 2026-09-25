@@ -29,6 +29,10 @@ data class CollectionEntity(
     val subjectId: Long,
     val status: WatchStatus,
     val watchedEpisodes: Int? = null,
+    /** 卷进度（书籍/漫画；动画/三次元用 watchedEpisodes）。阶段 B。 */
+    val watchedVolumes: Int? = null,
+    /** 私密收藏标记：仅本地可见，导出/备份时排除（阶段 B）。 */
+    val isPrivate: Boolean = false,
     val rating: Float? = null,
     val startDate: LocalDate? = null,
     val finishDate: LocalDate? = null,

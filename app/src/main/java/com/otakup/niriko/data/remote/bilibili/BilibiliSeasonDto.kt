@@ -25,6 +25,35 @@ data class BilibiliSeasonResultDto(
     val mediaIdSnake: Long? = null,
     val rating: BilibiliRatingDto? = null,
     val rights: BilibiliRightsDto? = null,
+    /**
+     * 分集列表（阶段 D）。
+     *
+     * 此前这个接口**只解析了 rating**，把整段 episodes[] 丢掉了——
+     * 而每集的 cover 正是动画剧照最正当、最省事的来源（免 key、已有 UA/Referer）。
+     */
+    val episodes: List<BilibiliEpisodeDto> = emptyList(),
+    /** 番剧总封面。 */
+    val cover: String? = null,
+)
+
+/** 分集信息（pgc/view/web/season 的 result.episodes[]）。 */
+@Serializable
+data class BilibiliEpisodeDto(
+    val id: Long = 0,
+    @SerialName("ep_id")
+    val epId: Long = 0,
+    /** 分集序号（第几话）。 */
+    val title: String? = null,
+    /** 分集副标题。 */
+    @SerialName("long_title")
+    val longTitle: String? = null,
+    /** 分集封面（剧照）。 */
+    val cover: String? = null,
+    /** 发布时间戳（秒）。 */
+    @SerialName("pub_time")
+    val pubTime: Long? = null,
+    /** 时长（秒）。 */
+    val duration: Long? = null,
 )
 
 @Serializable

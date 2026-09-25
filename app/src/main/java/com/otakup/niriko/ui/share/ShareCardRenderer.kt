@@ -83,6 +83,54 @@ class ShareBitmapHost {
         }
     }
 
+    /** 渲染 AniShelf 海报风分享卡（预览/导出共用）。 */
+    suspend fun renderPoster(
+        context: Context,
+        data: ShareCardData,
+        showRating: Boolean = true,
+        showProgress: Boolean = true,
+        showTags: Boolean = true,
+        rounded: Boolean = true,
+    ): Bitmap = withContext(Dispatchers.Main) {
+        val activity = context.findActivity() ?: return@withContext errorBitmap()
+        val container = (activity.window?.decorView as? ViewGroup)
+            ?: return@withContext errorBitmap()
+        val composeView = ComposeView(activity).apply {
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                    SharePosterCard(
+                        data = data,
+                        showRating = showRating,
+                        showProgress = showProgress,
+                        showTags = showTags,
+                        rounded = rounded,
+                    )
+                }
+            }
+        }
+        val params = FrameLayout.LayoutParams(
+            ShareCardRenderer.WIDTH,
+            ShareCardRenderer.HEIGHT,
+        ).apply {
+            leftMargin = -ShareCardRenderer.WIDTH - 200
+            topMargin = -ShareCardRenderer.HEIGHT - 200
+        }
+        container.addView(composeView, params)
+        try {
+            withFrameNanos { }
+            withFrameNanos { }
+            val spec = View.MeasureSpec.makeMeasureSpec(ShareCardRenderer.WIDTH, View.MeasureSpec.EXACTLY)
+            val hSpec = View.MeasureSpec.makeMeasureSpec(ShareCardRenderer.HEIGHT, View.MeasureSpec.EXACTLY)
+            composeView.measure(spec, hSpec)
+            composeView.layout(0, 0, ShareCardRenderer.WIDTH, ShareCardRenderer.HEIGHT)
+            val bitmap = Bitmap.createBitmap(ShareCardRenderer.WIDTH, ShareCardRenderer.HEIGHT, Bitmap.Config.ARGB_8888)
+            composeView.draw(Canvas(bitmap))
+            bitmap
+        } finally {
+            container.removeView(composeView)
+        }
+    }
+
     /** 失败兜底：返回一张 #101410 纯色位图，避免分享流程崩溃/白图。 */
     private fun errorBitmap(): Bitmap =
         Bitmap.createBitmap(

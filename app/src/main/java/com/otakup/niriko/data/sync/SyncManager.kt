@@ -10,6 +10,7 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.WorkType
+import com.otakup.niriko.util.AsyncSerialQueue
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -23,7 +24,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
 
 private const val TAG = "SyncManager"
-private const val SYNC_VERSION = 1
+private const val SYNC_VERSION = 2
 
 /**
  * 同步结果。 */
@@ -54,6 +55,17 @@ class SyncManager(
         isLenient = true
     }
 
+    /**
+     * 所有远端读写串行化（参考 Kazumi `WebDav._webDavOperationQueue`）。
+     *
+     * 自动同步接入后，后台的「下载合并 + 上传」可能与设置页的手动同步同时发生；
+     * 两者都是「读远端 → 合并 → 写远端」，交错执行会让后一次基于过期快照覆盖前一次的结果。
+     */
+    private val queue = AsyncSerialQueue()
+
+    /** 当前是否有同步在执行（自动路径可据此跳过）。 */
+    val isBusy: Boolean get() = queue.isBusy
+
     companion object {
         const val REMOTE_DIR = "/niriko"
         const val REMOTE_FILE = "$REMOTE_DIR/sync.json"
@@ -62,13 +74,17 @@ class SyncManager(
     // ==================== 上传 ====================
 
     /** 上传本地数据到 WebDAV。 */
-    suspend fun upload(baseUrl: String, user: String, pass: String): SyncResult {
+    suspend fun upload(baseUrl: String, user: String, pass: String): SyncResult =
+        queue.run { uploadLocked(baseUrl, user, pass) }
+
+    private suspend fun uploadLocked(baseUrl: String, user: String, pass: String): SyncResult {
         try {
             // 确保远程目录存在
             webDavClient.mkcol("$baseUrl$REMOTE_DIR", user, pass)
 
             // 构建同步 JSON
-            val collections = database.collectionDao().getAll()
+            // 阶段 B：私密收藏不跟随 WebDAV 同步
+            val collections = database.collectionDao().getAll().filter { !it.isPrivate }
             val workItems = database.workDao().getAll()
             val history = database.searchHistoryDao().getAll()
 
@@ -90,7 +106,10 @@ class SyncManager(
     // ==================== 下载与合并 ====================
 
     /** 下载远程数据并与本地 LWW 合并。 */
-    suspend fun download(baseUrl: String, user: String, pass: String): SyncResult {
+    suspend fun download(baseUrl: String, user: String, pass: String): SyncResult =
+        queue.run { downloadLocked(baseUrl, user, pass) }
+
+    private suspend fun downloadLocked(baseUrl: String, user: String, pass: String): SyncResult {
         try {
             val remoteJson = webDavClient.get("$baseUrl$REMOTE_FILE", user, pass)
                 ?: return SyncResult(success = true, message = "远程无同步数据")
@@ -234,6 +253,7 @@ class SyncManager(
     }
 
     private fun collectionToJson(c: CollectionEntity): JsonObject = buildJsonObject {
+        put("id", JsonPrimitive(c.id))
         put("subjectId", JsonPrimitive(c.subjectId))
         put("status", JsonPrimitive(c.status.name))
         c.watchedEpisodes?.let { put("watchedEpisodes", JsonPrimitive(it)) }
@@ -245,11 +265,15 @@ class SyncManager(
         }
         c.personalImpression?.let { put("personalImpression", JsonPrimitive(it)) }
         c.remark?.let { put("remark", JsonPrimitive(it)) }
+        if (c.watchedTrackIds.isNotEmpty()) {
+            put("watchedTrackIds", buildJsonArray { c.watchedTrackIds.forEach { add(JsonPrimitive(it)) } })
+        }
         put("createTime", JsonPrimitive(c.createTime))
         put("updateTime", JsonPrimitive(c.updateTime))
     }
 
     private fun workItemToJson(w: WorkItem): JsonObject = buildJsonObject {
+        put("id", JsonPrimitive(w.id))
         put("title", JsonPrimitive(w.title))
         put("type", JsonPrimitive(w.type.name))
         put("status", JsonPrimitive(w.status.name))
@@ -278,6 +302,7 @@ class SyncManager(
             val o = obj.jsonObject
             try {
                 CollectionEntity(
+                    id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
                     subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null,
                     status = WatchStatus.valueOf(o["status"]?.jsonPrimitive?.content ?: return@mapNotNull null),
                     watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
@@ -287,6 +312,7 @@ class SyncManager(
                     personalTags = parseStringList(o["personalTags"]),
                     personalImpression = o["personalImpression"]?.jsonPrimitive?.content,
                     remark = o["remark"]?.jsonPrimitive?.content,
+                    watchedTrackIds = parseLongList(o["watchedTrackIds"]),
                     createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
                     updateTime = o["updateTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
                 )
@@ -300,6 +326,7 @@ class SyncManager(
             val o = obj.jsonObject
             try {
                 WorkItem(
+                    id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
                     title = o["title"]?.jsonPrimitive?.content ?: return@mapNotNull null,
                     type = WorkType.valueOf(o["type"]?.jsonPrimitive?.content ?: return@mapNotNull null),
                     status = WatchStatus.valueOf(o["status"]?.jsonPrimitive?.content ?: return@mapNotNull null),
@@ -333,5 +360,10 @@ class SyncManager(
     private fun parseStringList(element: JsonElement?): List<String> {
         val arr = element as? JsonArray ?: return emptyList()
         return arr.mapNotNull { (it as? JsonPrimitive)?.content }
+    }
+
+    private fun parseLongList(element: JsonElement?): List<Long> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { (it as? JsonPrimitive)?.content?.toLongOrNull() }
     }
 }

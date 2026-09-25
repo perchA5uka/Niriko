@@ -2,5 +2,11 @@
 <resources>
     <!-- 启动主题：与 Compose 绿色主色一致 -->
     <color name="ic_launcher_background">#1B5E20</color>
+    <!--
+      应用图标（第 5 轮）：新图标自带白色底，因此自适应图标的背景层用白色。
+      刻意**不复用** ic_launcher_background —— 那个颜色同时是开屏背景（windowSplashScreenBackground），
+      把它改成白色会让 SplashExitOverlay 的白色 N 隐形。
+    -->
+    <color name="ic_launcher_art_background">#FFFFFFFF</color>
     <color name="seed_green">#2E7D32</color>
 </resources>

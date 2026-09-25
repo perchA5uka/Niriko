@@ -75,22 +75,56 @@ object BilibiliRatingClient {
      * 抓取某 season 的社区评分。
      * @return 有评分返回 [Rating], 无评分/请求失败返回 null(不抛异常)
      */
-    suspend fun fetchRating(seasonId: Long): Rating? {
+    suspend fun fetchRating(seasonId: Long): Rating? = fetchSeason(seasonId)?.rating
+
+    /**
+     * 抓取整季详情（阶段 D：评分 + **分集封面**）。
+     *
+     * 这是本项目里唯一「完全正当、免 key、已具备 UA/Referer」的动画剧照来源，
+     * 而此前 DTO 只解析了 rating、把 episodes[] 整个丢掉了。
+     */
+    suspend fun fetchSeason(seasonId: Long): SeasonDetail? {
         if (seasonId <= 0L) return null
         return try {
             val resp = service.getSeasonDetail(seasonId)
             if (resp.code != 0) return null
             val result = resp.result ?: return null
-            val rating = result.rating ?: return null
-            if (rating.count <= 0 && rating.score <= 0.0) return null
-            Rating(
-                score = rating.score,
-                count = rating.count,
-                areaLimited = result.areaLimited,
+            val rating = result.rating
+            val hasRating = rating != null && (rating.count > 0 || rating.score > 0.0)
+            SeasonDetail(
+                rating = if (hasRating) {
+                    Rating(
+                        score = rating!!.score,
+                        count = rating.count,
+                        areaLimited = result.areaLimited,
+                    )
+                } else null,
+                episodes = result.episodes,
+                cover = result.cover,
             )
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** 整季详情（评分可空：部分港澳台条目无评分但有分集封面）。 */
+    data class SeasonDetail(
+        val rating: Rating?,
+        val episodes: List<BilibiliEpisodeDto>,
+        val cover: String?,
+    )
+
+    /**
+     * 便捷方法：给定 bgmId，查映射 → 抓整季详情（大陆优先，回退港澳台）。
+     */
+    suspend fun fetchSeasonByBgmId(
+        context: Context,
+        bgmId: Long,
+    ): SeasonDetail? {
+        val seasonId = BilibiliSiteMap.seasonId(context, bgmId, BilibiliSiteMap.Region.MAINLAND)
+            ?: BilibiliSiteMap.seasonId(context, bgmId, BilibiliSiteMap.Region.HK_MO_TW)
+            ?: return null
+        return fetchSeason(seasonId.toLong())
     }
 
     /**

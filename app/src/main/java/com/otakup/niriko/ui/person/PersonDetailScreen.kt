@@ -104,6 +104,7 @@ fun PersonDetailScreen(
                         detail = detail,
                         subjects = state.subjects,
                         characters = state.characters,
+                        jobStats = state.jobStats,
                         onSubjectClick = onSubjectClick,
                         onCharacterClick = onCharacterClick,
                         sharedTransitionScope = sharedTransitionScope,
@@ -122,6 +123,7 @@ private fun PersonDetailBody(
     detail: PersonDetailInfo,
     subjects: List<PersonSubjectInfo>,
     characters: List<CharacterInfo>,
+    jobStats: List<com.otakup.niriko.data.remote.PersonJobStat>,
     onSubjectClick: (Long) -> Unit,
     onCharacterClick: (Long) -> Unit,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -164,6 +166,73 @@ private fun PersonDetailBody(
             }
             Spacer(Modifier.height(12.dp))
         }
+
+        // ===== 基本信息（阶段 6：这些字段一直存在于 Bangumi API，此前映射时被丢弃） =====
+        val basicRows = buildList {
+            detail.gender?.let { add("性别" to genderLabel(it)) }
+            detail.birthday?.let { add("生日" to it) }
+            detail.bloodType?.let { add("血型" to it) }
+            detail.infoBox.forEach { add(it.key to it.value) }
+        }
+        if (basicRows.isNotEmpty()) {
+            Text("基本信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            basicRows.forEach { (label, value) ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(88.dp),
+                    )
+                    Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+
+        // ===== 职位统计（本地聚合，零额外请求） =====
+        if (jobStats.isNotEmpty()) {
+            Text("参与职位", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                jobStats.take(14).forEach { stat ->
+                    FilterChip(
+                        selected = false,
+                        onClick = {},
+                        label = {
+                            Text(
+                                "${stat.job} ${stat.count}",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+
+        // ===== 收藏数 / 更多资料 =====
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = buildList {
+                    detail.collects?.let { add("收藏 ${formatCount(it)}") }
+                    detail.comments?.let { add("评论 ${formatCount(it)}") }
+                }.joinToString(" · ").ifBlank { "—" },
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PortalLink("Bangumi 人物页", detail.moreInfoUrl)
+            PortalLink("TA 的合作", "https://bgm.tv/person/${detail.id}/collabs")
+        }
+        Spacer(Modifier.height(18.dp))
 
         // 简介（可折叠）
         if (!detail.summary.isNullOrBlank()) {
@@ -292,6 +361,34 @@ private fun CharacterCard(
             character.roleName?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
     }
+}
+
+/** 外链小胶囊（复用 PortalLauncher 统一的三级降级由系统浏览器兜底）。 */
+@Composable
+private fun PortalLink(label: String, url: String) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+            .clickable { runCatching { uriHandler.openUri(url) } }
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
+}
+
+private fun genderLabel(raw: String): String = when (raw.lowercase()) {
+    "male", "m" -> "男"
+    "female", "f" -> "女"
+    else -> raw
+}
+
+private fun formatCount(value: Int): String = when {
+    value >= 10_000 -> "%.1f万".format(value / 10_000f)
+    value >= 1_000 -> "%.1fk".format(value / 1_000f)
+    else -> value.toString()
 }
 
 private fun careerLabel(career: String): String = when (career) {

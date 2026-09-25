@@ -3,19 +3,14 @@ package com.otakup.niriko.ui.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -92,29 +87,16 @@ fun KazumiImportSection(
         }
     }
 
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(enabled = !isLoading) { filePicker.launch(arrayOf("*/*")) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Download,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
-        Spacer(Modifier.width(16.dp))
-        Column(Modifier.weight(1f)) {
-            Text(text = "从 Kazumi 导入收藏", style = MaterialTheme.typography.bodyLarge)
-            Text(
-                text = "选择 Kazumi 备份文件 collectibles.hive（仅导入动画）",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    SettingsActionRow(
+        icon = Icons.Outlined.Download,
+        title = "从 Kazumi 导入收藏",
+        description = "选择 Kazumi 备份文件 collectibles.hive（仅导入动画）",
+        isLoading = isLoading,
+        enabled = !isLoading,
+        showChevron = false,
+        onClick = { filePicker.launch(arrayOf("*/*")) },
+        modifier = modifier,
+    )
 
     // ==== 预览确认对话框 ====
     previewEntries?.let { entries ->

@@ -23,5 +23,7 @@ data class CharacterDetailDto(
     val birthDay: Int? = null,
     @SerialName("blood_type")
     val bloodType: Int? = null,
+    /** 详细资料表（别名/身高/体重/出身地等）。 */
+    val infobox: List<SubInfoboxItem>? = null,
     val stat: SubjectStatDto? = null,
 )

@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.otakup.niriko.data.local.entity.SteamGameEntity
@@ -38,7 +39,8 @@ fun CollectionCard(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
-    val model = subject.toCardDisplayModel(steam)
+    // 仅 subject/steam 变化时重建展示模型，避免滚动/重组时每项重复映射（Card 在 Lazy 列表中稳定）
+    val model = remember(subject, steam) { subject.toCardDisplayModel(steam) }
     // game 时长存于 watchedEpisodes
     val isGame = subject.type == SubjectType.GAME
 
@@ -56,6 +58,8 @@ fun CollectionCard(
         sharedElementKey = sharedElementKey,
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
+        subjectId = subject.subjectId,
+        isCollectionCard = true,
         modifier = modifier,
     )
 }

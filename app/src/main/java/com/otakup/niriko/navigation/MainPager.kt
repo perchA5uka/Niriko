@@ -17,12 +17,8 @@ import com.otakup.niriko.ui.screens.LibraryScreen
 import com.otakup.niriko.ui.screens.StatsScreen
 import com.otakup.niriko.ui.settings.SettingsScreen
 import com.otakup.niriko.ui.subject.SubjectSearchScreen
-import com.otakup.niriko.viewmodel.BackupViewModel
-import com.otakup.niriko.viewmodel.BackupViewModelFactory
 import com.otakup.niriko.viewmodel.CollectionViewModel
 import com.otakup.niriko.viewmodel.CollectionViewModelFactory
-import com.otakup.niriko.viewmodel.SettingsViewModel
-import com.otakup.niriko.viewmodel.SettingsViewModelFactory
 import com.otakup.niriko.viewmodel.SubjectSearchViewModel
 import com.otakup.niriko.viewmodel.SubjectSearchViewModelFactory
 import kotlinx.coroutines.launch
@@ -85,12 +81,16 @@ fun MainPager(
                         searchHistoryDao = app.searchHistoryDao,
                         steamRepository = app.steamRepository,
                         subjectDao = app.subjectDao,
+                        settingsDataStore = app.settingsDataStore,
+                        refreshCoordinator = app.refreshCoordinator,
+                        seasonalTrendingRepository = app.seasonalTrendingRepository,
                     ),
                 )
                 SubjectSearchScreen(
                     viewModel = searchViewModel,
                     onSubjectClick = { subjectId -> navController.navigate("subject_detail/$subjectId") },
                     onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
+                    // 第 6 轮 §5/§6：DiscoverViewModel（找条目 + 评分月刊）已整体删除
                     sharedTransitionScope = pageSharedScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
@@ -101,6 +101,8 @@ fun MainPager(
                         collectionRepository = app.collectionRepository,
                         broadcastFetcher = app.broadcastFetcher,
                         seasonalFetcher = app.seasonalFetcher,
+                        episodeRepository = app.episodeRepository,
+                        refreshCoordinator = app.refreshCoordinator,
                     ),
                 )
                 StatsScreen(
@@ -115,17 +117,9 @@ fun MainPager(
                 )
             }
             TopLevelDestination.Settings -> {
-                val settingsViewModel = viewModel<SettingsViewModel>(
-                    factory = SettingsViewModelFactory(app.settingsDataStore, app.pluginManager, app.syncManager, app.bangumiSyncManager),
-                )
-                val backupViewModel = viewModel<BackupViewModel>(
-                    factory = BackupViewModelFactory(app.backupManager, app.settingsDataStore),
-                )
+                // 设置主页 = 分类导航；各分类页的 ViewModel 由 NirikoNavHost 二级路由自建
                 SettingsScreen(
-                    viewModel = settingsViewModel,
-                    backupViewModel = backupViewModel,
-                    onNavigateToBilibiliSync = { navController.navigate("bilibili_sync") },
-                    onNavigateToSteamSync = { navController.navigate("steam_sync") },
+                    onNavigateToCategory = { route -> navController.navigate(route) },
                 )
             }
         }

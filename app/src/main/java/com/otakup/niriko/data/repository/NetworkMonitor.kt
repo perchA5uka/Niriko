@@ -24,10 +24,14 @@ class NetworkMonitor(private val context: Context) {
         get() {
             val network = connectivityManager.activeNetwork ?: return false
             val caps = connectivityManager.getNetworkCapabilities(network) ?: return false
-            // NET_CAPABILITY_INTERNET 在某些设备/VPN下可能不准确，有 activeNetwork 即认为在线
-            return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                    || caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            return hasInternet(caps)
         }
+
+    /** 统一联网判定：与 [connectivity] Flow 保持一致。 */
+    private fun hasInternet(caps: NetworkCapabilities): Boolean =
+        // NET_CAPABILITY_INTERNET 在某些设备/VPN下可能不准确，VALIDATED 也视为在线
+        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 
     /** 实时网络状态变化 Flow。 */
     val connectivity: Flow<Boolean> = callbackFlow {
@@ -44,7 +48,7 @@ class NetworkMonitor(private val context: Context) {
                 network: Network,
                 caps: NetworkCapabilities,
             ) {
-                trySend(caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
+                trySend(hasInternet(caps))
             }
         }
 

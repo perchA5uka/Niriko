@@ -27,6 +27,13 @@ enum class SearchMode(val label: String) {
 
 /** 作品类型（Bangumi subjectType 的 UI 镜像）。 */
 enum class ContentType(val label: String) {
+    /**
+     * 未指定类型（不按类型过滤）。
+     *
+     * 第 5 轮 D21 修正：第 4 轮曾把它从类型行里删掉，理由是「`filter.type` 是精确枚举，
+     * 没有『全部』这个能力」——但那是**误读**：不传 type 就是合法的「不限类型」，
+     * 用户也确实需要它（想跨类型找作品时）。**它已经回到类型行里**。
+     */
     ALL("全部"),
     ANIME("动画"),
     BOOK("书籍"),
@@ -58,6 +65,29 @@ enum class ContentType(val label: String) {
         }
     }
 }
+
+/**
+ * **搜索菜单**类型行里可点的类型（含 [ContentType.ALL]）。
+ *
+ * ## 第 5 轮 D21：这里曾经被改坏过
+ *
+ * 第 4 轮的目标是「去掉**发现页**的『全部』tab」，但改的却是本常量 ——
+ * 而它**只被搜索菜单**（`IosStyleSearchComponent`）使用：「找条目」当时用的是
+ * 自己的 SUPPORTED_TYPES（第 6 轮已随模块删除）。于是发现页没被改对，
+ * **搜索菜单的「全部」反而被误删**。
+ *
+ * 第 6 轮 §6.4 之后只剩搜索菜单一个入口：「找条目」与它的
+ * FindSubjectsRepository.SUPPORTED_TYPES 已被删除，能力并进「历史排名」的 BrowseFilter
+ * （类型维度用它的 46 词表）。这里因此只保留搜索的常量。
+ */
+val SELECTABLE_CONTENT_TYPES: List<ContentType> = listOf(
+    ContentType.ALL,
+    ContentType.ANIME,
+    ContentType.BOOK,
+    ContentType.GAME,
+    ContentType.MUSIC,
+    ContentType.REAL,
+)
 
 /**
  * 搜索前端状态快照。

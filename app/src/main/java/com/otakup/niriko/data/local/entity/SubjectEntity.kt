@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.util.TitleResolver
 
 /**
  * 作品元数据（来自 Bangumi 或其他元数据源）。
@@ -27,6 +28,12 @@ data class SubjectEntity(
     val volumes: Int? = null,
     val airDate: String? = null,
     val airWeekday: Int? = null,
+    /** 精确放送时刻（0-1439 分钟，来自 onair 静态数据）。阶段 A。 */
+    val airTimeMinutes: Int? = null,
+    /** 放送时区标识（"CN" / "JP" / "LOCAL"），默认 CN。阶段 A。 */
+    val airTimeZone: String? = null,
+    /** 拼音搜索键（阶段 D：标题/中文名全拼音小写，SQL LIKE 命中用）。 */
+    val pinyinKey: String? = null,
     val ratingScore: Float? = null,
     val ratingTotal: Int? = null,
     /** Bangumi 排名（rating.rank），1 为最高。历史排名/榜单用。 */
@@ -56,4 +63,8 @@ data class SubjectEntity(
      */
     val isSteamPlaceholder: Boolean
         get() = sourceKey?.startsWith("steam:") == true
+
+    /** 展示名降级：中文名非空用中文名，否则用原名；原名也为空时用「未命名作品」。 */
+    val displayTitle: String
+        get() = TitleResolver.resolve(titleCN, title).primary.ifBlank { "未命名作品" }
 }

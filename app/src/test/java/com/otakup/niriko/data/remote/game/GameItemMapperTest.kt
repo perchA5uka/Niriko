@@ -69,7 +69,8 @@ class GameItemMapperTest {
         assertEquals(4.5f, subject.ratingScore ?: 0f, 0f)
         assertEquals(1000, subject.ratingTotal)
         assertEquals("2013-07-09", subject.airDate)
-        assertNull(subject.sourceKey) // toSubject 不写 sourceKey（由落库方决定）
+        // toSubject 写入 sourceKey（详情刷新/去重/占位判定依赖），格式 {sourceId}:{sourceGameId}
+        assertEquals("steam:570", subject.sourceKey)
     }
 
     @Test
@@ -135,9 +136,29 @@ class GameItemMapperTest {
         )
     }
 
+    // ==================== Steam 合辑过滤（bundle/sub 不入库） ====================
+
+    @Test
+    fun steamSearchFiltersBundleAndSub() {
+        // 复刻 SteamGameDataSource.search 的过滤谓词：只保留独立游戏 App。
+        // bundle（合集包）/sub（捆绑/DLC 组合）会以"合集重复添加"污染搜索与本地库。
+        val acceptsApp = SteamGameDataSourceStub.ACCEPT_APP_PREDICATE("app")
+        val acceptsNull = SteamGameDataSourceStub.ACCEPT_APP_PREDICATE(null)
+        val rejectsBundle = SteamGameDataSourceStub.ACCEPT_APP_PREDICATE("bundle")
+        val rejectsSub = SteamGameDataSourceStub.ACCEPT_APP_PREDICATE("sub")
+        assertTrue(acceptsApp)
+        assertTrue(acceptsNull)
+        assertFalse(rejectsBundle)
+        assertFalse(rejectsSub)
+    }
+
     private class SteamGameDataSourceStub(
         override val id: String,
     ) : GameDataSource {
+        companion object {
+            /** 与 SteamGameDataSource.search 保持一致的独立 App 判定。 */
+            val ACCEPT_APP_PREDICATE: (String?) -> Boolean = { t -> t.isNullOrBlank() || t == "app" }
+        }
         override val displayName: String = id
         override val capabilities: GameDataSourceCapabilities = GameDataSourceCapabilities(
             supportsSearch = true,

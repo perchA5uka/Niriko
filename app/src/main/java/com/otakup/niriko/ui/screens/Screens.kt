@@ -25,19 +25,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -57,8 +64,13 @@ import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.ui.components.UniversalSearchBar
 import com.otakup.niriko.ui.library.CollectionCard
+import com.otakup.niriko.ui.animation.RevealOnScroll
+import com.otakup.niriko.ui.library.LibraryGalleryCard
+import com.otakup.niriko.ui.library.LibraryViewStyle
+import com.otakup.niriko.ui.library.PosterGridCard
 import com.otakup.niriko.ui.library.CollectionDashboard
 import com.otakup.niriko.ui.library.PersonCollectionSection
 import com.otakup.niriko.data.model.collection.CollectionFilter
@@ -94,6 +106,8 @@ fun LibraryScreen(
         onTagFilter = { tags -> viewModel.updateFilter { it.copy(selectedTags = tags) } },
         onSubjectClick = onSubjectClick,
         onPersonClick = onPersonClick,
+        onBatchUpdateStatus = viewModel::batchUpdateStatus,
+        onBatchDelete = viewModel::batchDelete,
         onNavigateToSearch = onNavigateToSearch,
         onStatusQuickSet = viewModel::updateStatus,
         sharedTransitionScope = sharedTransitionScope,
@@ -115,11 +129,22 @@ private fun LibraryScreenContent(
     onPersonClick: (Long) -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onStatusQuickSet: (Long, WatchStatus) -> Unit = { _, _ -> },
+    onBatchUpdateStatus: ((List<Long>, WatchStatus) -> Unit)? = null,
+    onBatchDelete: ((List<Long>) -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
     var showSortMenu by remember { mutableStateOf(false) }
+    var showViewMenu by remember { mutableStateOf(false) }
+    // 收藏页视图样式（阶段 A：列表 / 海报网格 / 画廊大卡），保存跨旋转
+    var viewStyle by rememberSaveable { mutableStateOf(LibraryViewStyle.GRID) }
+    // 阶段 H：多选批量操作
+    var multiSelect by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
+    fun toggleSelect(id: Long) {
+        selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+    }
     var showTagFilters by remember { mutableStateOf(false) }
     var localQuery by rememberSaveable(state.filter.keyword) { mutableStateOf(state.filter.keyword) }
 
@@ -132,16 +157,20 @@ private fun LibraryScreenContent(
         )
         Spacer(Modifier.height(4.dp))
 
-        // Dashboard
-        CollectionDashboard(stats = state.stats)
+        // Dashboard（入场：淡入+上移）
+        RevealOnScroll {
+            CollectionDashboard(stats = state.stats)
+        }
         Spacer(Modifier.height(4.dp))
 
         // 人物收藏分区（独立于作品收藏，无观看状态）
         if (personCollections.isNotEmpty() && state.filter.keyword.isBlank() && state.filter.status == null) {
-            PersonCollectionSection(
-                persons = personCollections,
-                onPersonClick = onPersonClick,
-            )
+            RevealOnScroll(staggerIndex = 1) {
+                PersonCollectionSection(
+                    persons = personCollections,
+                    onPersonClick = onPersonClick,
+                )
+            }
             Spacer(Modifier.height(4.dp))
         }
 
@@ -238,9 +267,86 @@ private fun LibraryScreenContent(
                     }
                 }
             }
+
+            Spacer(Modifier.width(4.dp))
+
+            // 视图切换（阶段 A：列表 / 海报网格 / 画廊）
+            Box {
+                FilterChip(
+                    selected = false,
+                    onClick = { showViewMenu = true },
+                    label = { Text(viewStyle.label) },
+                    leadingIcon = {
+                        Icon(
+                            when (viewStyle) {
+                                LibraryViewStyle.GRID -> Icons.Filled.Apps
+                                LibraryViewStyle.GALLERY -> Icons.Filled.Collections
+                                LibraryViewStyle.LIST -> Icons.Filled.List
+                            },
+                            contentDescription = "切换视图",
+                            modifier = Modifier.size(16.dp),
+                        )
+                    },
+                )
+                DropdownMenu(
+                    expanded = showViewMenu,
+                    onDismissRequest = { showViewMenu = false },
+                ) {
+                    LibraryViewStyle.entries.forEach { style ->
+                        DropdownMenuItem(
+                            text = { Text(style.label) },
+                            onClick = { viewStyle = style; showViewMenu = false },
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            // 多选（阶段 H）
+            FilterChip(
+                selected = multiSelect,
+                onClick = { multiSelect = !multiSelect; if (!multiSelect) selectedIds = emptySet() },
+                label = { Text("多选") },
+            )
         }
 
-        Spacer(Modifier.height(4.dp))
+        // 多选批量操作栏（阶段 H）
+        if (multiSelect && state.items.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("已选 " + selectedIds.size, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                WatchStatus.entries.forEach { status ->
+                    FilterChip(
+                        selected = false,
+                        onClick = {
+                            onBatchUpdateStatus?.invoke(selectedIds.toList(), status)
+                            selectedIds = emptySet()
+                            multiSelect = false
+                        },
+                        label = { Text(status.label) },
+                        modifier = Modifier.padding(start = 2.dp),
+                    )
+                }
+                FilterChip(
+                    selected = false,
+                    onClick = {
+                        onBatchDelete?.invoke(selectedIds.toList())
+                        selectedIds = emptySet()
+                        multiSelect = false
+                    },
+                    label = { Text("删除") },
+                    modifier = Modifier.padding(start = 2.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        labelColor = MaterialTheme.colorScheme.error,
+                    ),
+                )
+            }
+        }
 
         // 列表 / 空状态
         if (state.items.isEmpty()) {
@@ -269,7 +375,9 @@ private fun LibraryScreenContent(
                 }
             }
         } else {
-            LazyColumn(
+            when (viewStyle) {
+                LibraryViewStyle.LIST -> LazyColumn(
+                modifier = Modifier.reportBottomBarScroll(),
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -286,7 +394,7 @@ private fun LibraryScreenContent(
                             updateTime = item.collection.updateTime,
                             personalTags = item.collection.personalTags,
                             steam = state.steamGames[item.subject.subjectId],
-                            onClick = { onSubjectClick(item.subject.subjectId) },
+                            onClick = { if (multiSelect) toggleSelect(item.subject.subjectId) else onSubjectClick(item.subject.subjectId) },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 showStatusMenu = true
@@ -315,6 +423,47 @@ private fun LibraryScreenContent(
                                 )
                             }
                         }
+                    }
+                }
+            }
+                LibraryViewStyle.GRID -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier.reportBottomBarScroll(),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 120.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    gridItems(state.items, key = { it.collection.id }) { item ->
+                        PosterGridCard(
+                            subject = item.subject,
+                            collection = item.collection,
+                            totalEpisodes = item.subject.totalEpisodes,
+                            onClick = { if (multiSelect) toggleSelect(item.subject.subjectId) else onSubjectClick(item.subject.subjectId) },
+                            selected = item.subject.subjectId in selectedIds,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            modifier = Modifier.animateItem(),
+                        )
+                    }
+                }
+                LibraryViewStyle.GALLERY -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(1),
+                    modifier = Modifier.reportBottomBarScroll(),
+                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 120.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    gridItems(state.items, key = { it.collection.id }) { item ->
+                        LibraryGalleryCard(
+                            subject = item.subject,
+                            collection = item.collection,
+                            onClick = { if (multiSelect) toggleSelect(item.subject.subjectId) else onSubjectClick(item.subject.subjectId) },
+                            selected = item.subject.subjectId in selectedIds,
+                            sharedElementKey = "cover_" + item.subject.subjectId,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            modifier = Modifier.animateItem(),
+                        )
                     }
                 }
             }
@@ -392,5 +541,4 @@ private fun LibraryScreenPreview() {
         )
     }
 }
-
 

@@ -21,6 +21,11 @@ data class PersonDto(
     val birthMonth: Int? = null,
     @SerialName("birth_day")
     val birthDay: Int? = null,
+    /** 血型（Bangumi 用数字表示，1=A/2=B/3=O/4=AB）。 */
+    @SerialName("blood_type")
+    val bloodType: Int? = null,
+    /** 详细资料表（身高/体重/出身地/引用来源/官方网站/Twitter 等）。 */
+    val infobox: List<SubInfoboxItem>? = null,
     val stat: SubjectStatDto? = null,
 )
 

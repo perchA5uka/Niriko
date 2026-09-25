@@ -33,10 +33,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.graphics.Bitmap
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.model.StaffInfo
+import com.otakup.niriko.ui.components.GlassSectionCard
 import com.otakup.niriko.ui.components.appleGlassCard
+import top.yukonga.miuix.kmp.blur.Backdrop
 
 /** 角色横向滚动列表。 */
 @Composable
@@ -44,6 +47,9 @@ fun CharacterSection(
     characters: List<CharacterInfo>,
     onCharacterClick: (Long) -> Unit = {},
     onPersonClick: (Long) -> Unit = {},
+    blurredCover: Bitmap? = null,
+    glassBackdrop: Backdrop? = null,
+    isScrolling: Boolean = false,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
@@ -68,6 +74,9 @@ fun CharacterSection(
                     character = character,
                     onClick = { onCharacterClick(character.id) },
                     onActorClick = { actorId -> onPersonClick(actorId) },
+                    blurredCover = blurredCover,
+                    glassBackdrop = glassBackdrop,
+                    isScrolling = isScrolling,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
@@ -82,14 +91,22 @@ private fun CharacterCard(
     character: CharacterInfo,
     onClick: () -> Unit = {},
     onActorClick: (Long) -> Unit = {},
+    blurredCover: Bitmap? = null,
+    glassBackdrop: Backdrop? = null,
+    isScrolling: Boolean = false,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
+    GlassSectionCard(
+        backdrop = glassBackdrop,
+        isScrolling = isScrolling,
+        modifier = modifier.width(100.dp),
+        shape = RoundedCornerShape(20.dp),
+        contentPadding = 8.dp,
+    ) {
     Box(
-        modifier = modifier
-            .width(100.dp)
-            .appleGlassCard(shape = RoundedCornerShape(20.dp))
+        modifier = Modifier
             .clickable(onClick = onClick),
     ) {
         Column(
@@ -140,6 +157,7 @@ private fun CharacterCard(
             }
         }
     }
+    }
 }
 
 /** 制作人员横向滚动列表（与角色表一致的卡片样式）。
@@ -150,6 +168,9 @@ fun StaffSection(
     staff: List<StaffInfo>,
     onPersonClick: (Long) -> Unit = {},
     onViewAllClick: () -> Unit = {},
+    blurredCover: Bitmap? = null,
+    glassBackdrop: Backdrop? = null,
+    isScrolling: Boolean = false,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
@@ -176,6 +197,9 @@ fun StaffSection(
                 StaffCard(
                     person = person,
                     onClick = { onPersonClick(person.id) },
+                    blurredCover = blurredCover,
+                    glassBackdrop = glassBackdrop,
+                    isScrolling = isScrolling,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
@@ -183,7 +207,12 @@ fun StaffSection(
             // 末尾"查看全部"卡片（仅当总数超过展示上限）
             if (staff.size > displayLimit) {
                 item(key = "view_all") {
-                    ViewAllStaffCard(count = staff.size, onClick = onViewAllClick)
+                    ViewAllStaffCard(
+                        count = staff.size,
+                        onClick = onViewAllClick,
+                        glassBackdrop = glassBackdrop,
+                        isScrolling = isScrolling,
+                    )
                 }
             }
         }
@@ -195,14 +224,22 @@ fun StaffSection(
 private fun StaffCard(
     person: StaffInfo,
     onClick: () -> Unit = {},
+    blurredCover: Bitmap? = null,
+    glassBackdrop: Backdrop? = null,
+    isScrolling: Boolean = false,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
+    GlassSectionCard(
+        backdrop = glassBackdrop,
+        isScrolling = isScrolling,
+        modifier = modifier.width(100.dp),
+        shape = RoundedCornerShape(20.dp),
+        contentPadding = 8.dp,
+    ) {
     Box(
-        modifier = modifier
-            .width(100.dp)
-            .appleGlassCard(shape = RoundedCornerShape(20.dp))
+        modifier = Modifier
             .clickable(onClick = onClick),
     ) {
         Column(
@@ -240,6 +277,7 @@ private fun StaffCard(
             }
         }
     }
+    }
 }
 
 /** "查看全部 N 人"卡片。 */
@@ -247,32 +285,37 @@ private fun StaffCard(
 private fun ViewAllStaffCard(
     count: Int,
     onClick: () -> Unit = {},
+    glassBackdrop: Backdrop? = null,
+    isScrolling: Boolean = false,
 ) {
-    Box(
-        modifier = Modifier
-            .width(100.dp)
-            .appleGlassCard(shape = MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
+    GlassSectionCard(
+        backdrop = glassBackdrop,
+        isScrolling = isScrolling,
+        modifier = Modifier.width(100.dp),
+        shape = MaterialTheme.shapes.medium,
+        contentPadding = 8.dp,
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(130.dp)
-                .padding(8.dp),
-        ) {
-            Text(
-                text = "查看全部",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                text = "$count 人",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Box(Modifier.clickable(onClick = onClick)) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp)
+                    .padding(4.dp),
+            ) {
+                Text(
+                    text = "查看全部",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "$count 人",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

@@ -54,8 +54,16 @@ class BilibiliImporterTest {
         override suspend fun getById(id: Long): SubjectEntity? = subjects.find { it.subjectId == id }
         override suspend fun getBySourceKey(sourceKey: String): SubjectEntity? = subjects.find { it.sourceKey == sourceKey }
         override suspend fun getExistingIds(ids: List<Long>): List<Long> = subjects.map { it.subjectId }.filter { it in ids }
+
+        override suspend fun getByIds(ids: List<Long>): List<SubjectEntity> =
+            subjects.filter { it.subjectId in ids }
         override fun searchByKeyword(keyword: String): Flow<List<SubjectEntity>> = MutableStateFlow(emptyList())
+        override suspend fun searchByPinyin(keyword: String): List<SubjectEntity> = emptyList()
+        override suspend fun searchByPinyinPrefix(keyword: String): List<SubjectEntity> = emptyList()
         override suspend fun getAll(): List<SubjectEntity> = subjects.toList()
+        override suspend fun getRatingScoresByType(type: String): List<Float> =
+            subjects.filter { it.type.name == type && (it.ratingScore ?: 0f) > 0f }
+                .mapNotNull { it.ratingScore }
         override suspend fun clearAll() = subjects.clear()
         override suspend fun insertAll(subjects: List<SubjectEntity>) {
             this.subjects.addAll(subjects)

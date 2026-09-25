@@ -1,0 +1,27 @@
+# 统一换行，避免 Windows 作者 / Linux 贡献者之间产生整文件 diff
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF，否则某些环境下无法执行
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：不做任何换行与文本处理
+*.jar binary
+*.aar binary
+*.apk binary
+*.aab binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.mp4 binary
+*.webm binary
+*.ttf binary
+*.otf binary
+*.keystore binary
+*.jks binary
+
+# Hive / Kazumi 测试 fixture（二进制数据库，绝不能被换行处理）
+*.hive binary
+app/src/test/resources/kazumi/*.tmp binary

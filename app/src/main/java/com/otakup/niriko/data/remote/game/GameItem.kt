@@ -1,5 +1,7 @@
 package com.otakup.niriko.data.remote.game
 
+import com.otakup.niriko.data.model.SubjectType
+
 /**
  * 游戏数据源统一条目模型（数据源无关）。
  *
@@ -34,6 +36,11 @@ data class GameItem(
     val tags: List<String> = emptyList(),
     /** 发行日期（ISO-8601，如 "2023-08-03"）。 */
     val releaseDate: String? = null,
+    /**
+     * 落库类型。默认 GAME（Steam/VNDB 等纯游戏源）；AniList 等覆盖动画/漫画的源
+     * 按条目实际类型填充（ANIME/MANGA），避免被硬编码成 GAME 导致类型筛选/详情行为错位。
+     */
+    val type: SubjectType = SubjectType.GAME,
 )
 
 /**

@@ -8,6 +8,7 @@ import com.otakup.niriko.data.model.CollectionStats
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.SteamRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.launch
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -120,6 +122,8 @@ class CollectionViewModel(
                 )
             }
         }
+        // 收藏列表重算（含 Steam 补充查询）移到 Default 线程，避免阻塞主线程导致保存反馈延迟。
+        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
@@ -136,6 +140,25 @@ class CollectionViewModel(
         viewModelScope.launch {
             val existing = collectionRepository.getBySubjectId(subjectId) ?: return@launch
             collectionRepository.update(existing.copy(status = status))
+        }
+    }
+
+    /** 批量改收藏状态（阶段 H）。 */
+    fun batchUpdateStatus(subjectIds: List<Long>, status: WatchStatus) {
+        if (subjectIds.isEmpty()) return
+        viewModelScope.launch {
+            subjectIds.forEach { id ->
+                val existing = collectionRepository.getBySubjectId(id) ?: return@forEach
+                collectionRepository.update(existing.copy(status = status))
+            }
+        }
+    }
+
+    /** 批量删除收藏（阶段 H）。 */
+    fun batchDelete(subjectIds: List<Long>) {
+        if (subjectIds.isEmpty()) return
+        viewModelScope.launch {
+            subjectIds.forEach { id -> collectionRepository.deleteBySubjectId(id) }
         }
     }
 }

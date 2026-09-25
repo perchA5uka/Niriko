@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -150,7 +151,9 @@ fun BilibiliSyncScreen(
                 LoginWebView(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(300.dp),
+                        // 修复 R4：原来写死 300dp，登录页只能看到一小块。
+                        // 改为按屏幕比例给足高度（上限 560dp），并保留折叠开关。
+                        .heightIn(min = 360.dp, max = 560.dp),
                     reloadKey = reloadKey,
                     onMessage = viewModel::onBridgeMessage,
                 )

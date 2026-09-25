@@ -147,6 +147,7 @@ class SteamLibraryMatcherTest {
         override suspend fun getBindingBySubjectId(subjectId: Long) = null
         override suspend fun getBindingsBySubjectIds(subjectIds: List<Long>) = emptyList<SteamBindingEntity>()
         override suspend fun getBindingByAppId(appId: Int) = binding
+        override suspend fun getBindingsByAppIds(appIds: List<Int>) = listOf(binding).filter { it.steamAppId in appIds }
         override suspend fun insertBinding(binding: SteamBindingEntity) = 0L
         override suspend fun updateBinding(binding: SteamBindingEntity) = 0
         override suspend fun upsertBinding(binding: SteamBindingEntity) {}

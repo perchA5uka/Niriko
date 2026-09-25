@@ -49,6 +49,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -62,6 +63,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    // ProcessLifecycleOwner：进前台触发一轮受控刷新（onStop 取消前台任务）
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.activity.compose)
 
     // Compose BOM + Material 3
@@ -81,6 +84,11 @@ dependencies {
     // 0.9.0 需 Kotlin 2.3（本项目已升级）；0.9.2+ 需 Kotlin 2.4（KSP 无对应版本，不采用）
     implementation("top.yukonga.miuix.kmp:miuix-blur-android:0.9.0")
 
+    // Liquid Glass 进阶：kyant/backdrop（highlight/shadow/innerShadow + lens/vibrancy DSL）
+    // Route A：接入官方库。1.0.6 匹配 Kotlin 2.3.10 + Compose 1.10.3 + AGP 8.x；
+    // 2.0.1 需 AGP 9.1 / Compose 1.12，当前工程不兼容（阶段 1 先做静态卡三件套）。
+    implementation("io.github.kyant0:backdrop:1.0.6")
+
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
@@ -91,6 +99,22 @@ dependencies {
 
     // DataStore Preferences（设置持久化）
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // HCT 色彩空间：自定义主题色种子 → 完整 M3 配色方案
+    implementation(libs.material.color.utilities)
+
+    // Media3（动态壁纸：ExoPlayer 循环静音播放）
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.ui)
+
+    // 开屏动画（SplashScreen API 兼容层）
+    implementation(libs.core.splashscreen)
+
+    // WorkManager（放送提醒每日周期任务，阶段 J）
+    implementation(libs.androidx.work.runtime.ktx)
+
+    // pinyin4j（阶段 D：拼音搜索）
+    implementation(libs.pinyin4j)
 
     // 本地单元测试（JVM，无需设备）
     testImplementation("junit:junit:4.13.2")

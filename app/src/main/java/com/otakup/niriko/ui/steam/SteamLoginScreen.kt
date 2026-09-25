@@ -177,7 +177,35 @@ private fun SteamOpenIdWebView(
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                // 修复 R4：steamcommunity.com 的登录页是桌面版布局，缺下面这几项时会在
+                // 窄 WebView 里被压成极小一条（你反馈的「网页显示页面过小、登不上」）。
+                settings.useWideViewPort = true
+                settings.loadWithOverviewMode = true
+                settings.setSupportZoom(true)
+                settings.builtInZoomControls = true
+                settings.displayZoomControls = false
+                // Steam 的 SSO 依赖跨站 Cookie，默认策略会把它拒掉 → 登录后拿不到会话
+                android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                 webViewClient = object : WebViewClient() {
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: android.webkit.WebResourceError?,
+                    ) {
+                        // 失败必须可见：steamcommunity.com 在国区常不可达，改前失败后界面毫无提示
+                        if (request?.isForMainFrame == true) {
+                            view?.loadData(
+                                "<html><body style=\"font-family:sans-serif;padding:16px\">" +
+                                    "<b>无法加载 Steam 登录页</b><p>域名：steamcommunity.com</p>" +
+                                    "<p>该域名在部分网络环境下不可达。可改用下方的手动输入 SteamID64。</p>" +
+                                    "</body></html>",
+                                "text/html",
+                                "UTF-8",
+                            )
+                        }
+                    }
+
                     private var pendingCallback = false
 
                     override fun shouldOverrideUrlLoading(

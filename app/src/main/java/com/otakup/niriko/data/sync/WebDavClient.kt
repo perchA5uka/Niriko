@@ -63,9 +63,11 @@ class WebDavClient {
         }
     }
 
-    /** 检查远程文件是否存在。 */
+    /** 检查远程文件是否存在（用 HEAD 避免下载整个文件）。 */
     suspend fun exists(url: String, user: String, pass: String): Boolean {
-        return get(url, user, pass) != null
+        return execute(url, user, pass, "HEAD", null) { code ->
+            code in 200..299
+        }
     }
 
     /** 发送带 Basic 认证的 HTTP 请求，根据状态码判断成功与否。 */

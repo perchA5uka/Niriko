@@ -26,9 +26,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,7 +44,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.local.entity.PersonCollectionEntity
+import androidx.compose.ui.platform.LocalContext
+import com.otakup.niriko.ui.components.BlurredGlassSurface
 import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.components.liquidglass.loadBlurredCover
 
 /** 库页面"人物收藏"横向滚动分区。人物不参与观看状态，仅展示已收藏。标题可点击折叠/展开。 */
 @Composable
@@ -97,10 +103,20 @@ private fun PersonCollectionCard(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // 头像模糊玻璃底（复用 BlurredCoverCache：同 URL 只模糊一次；加载中回退静态玻璃）
+    val context = LocalContext.current
+    var blurredCover by remember(person.imageUrl) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(person.imageUrl) {
+        blurredCover = loadBlurredCover(context, person.imageUrl)
+    }
+    BlurredGlassSurface(
+        bitmap = blurredCover,
+        shape = RoundedCornerShape(20.dp),
+        borderCornerRadius = 20f,
+        modifier = modifier.width(100.dp),
+    ) {
     Box(
-        modifier = modifier
-            .width(100.dp)
-            .appleGlassCard(shape = RoundedCornerShape(20.dp))
+        modifier = Modifier
             .clickable(onClick = onClick),
     ) {
         Column(
@@ -136,6 +152,7 @@ private fun PersonCollectionCard(
                 )
             }
         }
+    }
     }
 }
 

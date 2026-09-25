@@ -87,9 +87,69 @@ class SteamTitleMatcherTest {
         assertTrue("无关标题应 <0.5,实际 $score", score < 0.5f)
     }
 
+    // ==================== 收紧：弱证据否决（用户反馈反例） ====================
+
+    @Test
+    fun confidence_cs2_vs_advanceWars2_isBelowThreshold() {
+        // 用户反馈反例：仅共享一个 "2"（且词序无关）不得绑定
+        val score = SteamTitleMatcher.confidence("Counter-Strike 2", "Advance Wars 2: Black Hole Rising")
+        assertTrue("仅共享数字的弱证据应低于阈值,实际 $score", score < SteamTitleMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test
+    fun confidence_shortTitleContainment_isBelowThreshold() {
+        // 短标题（<4 字符）仅靠包含关系不得高置信："2"、"cs" 单独出现不构成证据
+        assertTrue("仅一个数字不构成证据", SteamTitleMatcher.confidence("2", "Counter-Strike 2") < SteamTitleMatcher.MIN_CONFIDENCE)
+        assertTrue("短词包含应低于阈值", SteamTitleMatcher.confidence("cs", "Counter-Strike 2") < SteamTitleMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test
+    fun confidence_crossLanguage_fallbackLow_singleTitle() {
+        // 单标题跨语言（中文 vs 英文无字符重叠）→ 低分；跨语言需靠 bestConfidence 多标题
+        val score = SteamTitleMatcher.confidence("泰拉瑞亚", "Terraria")
+        assertTrue("中英文单标题重叠应低于阈值,实际 $score", score < SteamTitleMatcher.MIN_CONFIDENCE)
+        val score2 = SteamTitleMatcher.confidence("喵斯快跑", "Muse Dash")
+        assertTrue("喵斯快跑 vs Muse Dash 单标题应低于阈值,实际 $score2", score2 < SteamTitleMatcher.MIN_CONFIDENCE)
+    }
+
+    @Test
+    fun bestConfidence_crossLanguage_picksMaxPair() {
+        // 双标题集：其中一对精确命中 → 高分（Muse Dash 场景）
+        val score = SteamTitleMatcher.bestConfidence(
+            queryTitles = listOf("喵斯快跑", "Muse Dash"),
+            candidateTitles = listOf("Muse Dash", "喵斯快跑"),
+        )
+        assertEquals(1f, score, 0.001f)
+        val terraria = SteamTitleMatcher.bestConfidence(
+            queryTitles = listOf("泰拉瑞亚", "Terraria"),
+            candidateTitles = listOf("Terraria", "Terraria 官方中文版"),
+        )
+        assertTrue("Terraria 精确命中应 ≥0.85,实际 $terraria", terraria >= 0.85f)
+    }
+
+    @Test
+    fun bestMatch_longSubtitledCandidate_isPenalized() {
+        // 长副标题包短名：即使词边界包含 0.85，长度差 >50% 惩罚后应低于阈值（歧义拒绝）
+        val result = SteamTitleMatcher.bestMatch(
+            "Advance Wars 2",
+            listOf(candidate(1, "Advance Wars 2: Black Hole Rising")),
+        )
+        assertNull("歧义长副标题候选应被拒绝", result)
+    }
+
+    @Test
+    fun bestMatch_typeNullCandidate_isRejected() {
+        // type=null（旧接口缺省）不得参与绑定
+        val result = SteamTitleMatcher.bestMatch(
+            "黑神话：悟空",
+            listOf(candidate(2358720, "黑神话：悟空", type = null)),
+        )
+        assertNull("type 为 null 的候选应拒绝", result)
+    }
+
     // ==================== 最佳匹配 ====================
 
-    private fun candidate(id: Int, name: String, type: String = "app"): SteamStoreSearchItemDto =
+    private fun candidate(id: Int, name: String, type: String? = "app"): SteamStoreSearchItemDto =
         SteamStoreSearchItemDto(
             type = type,
             name = name,

@@ -25,6 +25,8 @@ data class PersonDetailUiState(
     val subjects: List<PersonSubjectInfo> = emptyList(),
     /** 声优时：演绎的角色列表。 */
     val characters: List<CharacterInfo> = emptyList(),
+    /** 职位统计（由参与作品的 staff 身份本地聚合，零额外请求）。 */
+    val jobStats: List<com.otakup.niriko.data.remote.PersonJobStat> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null,
     /** 是否已收藏（本地标记）。 */
@@ -108,8 +110,16 @@ class PersonDetailViewModel(
                         Triple(detailDeferred.await(), subjectsDeferred.await(), charactersDeferred.await())
                     }
                 }
+                val jobs = com.otakup.niriko.data.calculator.PersonJobAnalyzer
+                    .analyze(subjects.map { it.staff })
                 _uiState.update {
-                    it.copy(detail = detail, subjects = subjects, characters = characters, isLoading = false)
+                    it.copy(
+                        detail = detail,
+                        subjects = subjects,
+                        characters = characters,
+                        jobStats = jobs,
+                        isLoading = false,
+                    )
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "加载失败，请重试") }

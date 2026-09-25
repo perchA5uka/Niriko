@@ -7,6 +7,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,11 +27,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import com.otakup.niriko.nirikoApp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import coil.request.CachePolicy
@@ -60,7 +62,16 @@ fun CoverImage(
     // 可跳过 onSizeChanged 状态往返，避免“默认尺寸→实际尺寸”的双重解码。
     requestWidth: Int? = null,
     requestHeight: Int? = null,
+    // 阶段 E：条目 id，非空时优先读取用户封面覆盖（更换封面）。
+    subjectId: Long? = null,
 ) {
+    // 用户封面覆盖优先（CoverOverrideStore）
+    val app = LocalContext.current.nirikoApp
+    var overrideUrl by remember(subjectId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(subjectId) {
+        if (subjectId != null) overrideUrl = app.coverOverrideStore.overrideFor(subjectId)
+    }
+    val effectiveCoverUrl = overrideUrl ?: coverUrl
     // 共享元素：key 非空且 scope 齐备时挂 sharedElement（bounds 过渡 = 整个封面）
     val sharedModifier = if (sharedElementKey != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
@@ -72,30 +83,27 @@ fun CoverImage(
     } else {
         Modifier
     }
-    // 显示尺寸感知解码：按实际显示尺寸 ×2 超采样（cap 800×1000），降低内存放大。
-    // 有固定请求尺寸时（requestWidth != null）不再依赖 onSizeChanged 状态。
-    var displaySize by remember { mutableStateOf<IntSize?>(null) }
-    Box(
+    // 显示尺寸感知解码：从 BoxWithConstraints 一次取到显示尺寸（真实约束），
+    // 直接算出请求尺寸（×2 超采样，cap 800×1000），避免「默认 600×800 → onSizeChanged → 二次解码」的双重解码。
+    // 有固定请求尺寸时（requestWidth != null）直接使用，跳过约束推导。
+    BoxWithConstraints(
         modifier = modifier
             .then(sharedModifier)
             .aspectRatio(aspectRatio)
-            .then(
-                if (requestWidth == null) Modifier.onSizeChanged { displaySize = it } else Modifier,
-            )
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        if (coverUrl != null) {
+        if (effectiveCoverUrl != null) {
+            val maxWidthPx = constraints.maxWidth.takeIf { it > 0 && it != Constraints.Infinity }
             val reqW = requestWidth
-                ?: displaySize?.let { (it.width * 2f).roundToInt().coerceAtMost(800) }
-                ?: 600
+                ?: maxWidthPx?.let { (it * 2f).roundToInt().coerceAtMost(800) }
+                ?: 360
             val reqH = requestHeight
-                ?: displaySize?.let { (it.height * 2f).roundToInt().coerceAtMost(1000) }
-                ?: 800
+                ?: (reqW / aspectRatio).roundToInt().coerceAtMost(1000)
             SubcomposeAsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
-                    .data(coverUrl)
+                    .data(effectiveCoverUrl)
                     // crossfade 移除：Pager 滑动/预组合时多路并行淡入与手势争帧
                     .memoryCachePolicy(CachePolicy.ENABLED)
                     .diskCachePolicy(CachePolicy.ENABLED)
@@ -142,6 +150,7 @@ fun CoverThumbnail(
     sharedElementKey: String? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    subjectId: Long? = null,
 ) {
     // 固定请求尺寸：宽已知、高按 3:4 比例推算（与 CoverImage 的 ×2 超采样 + cap 逻辑一致），
     // 传入后跳过 onSizeChanged 状态往返，避免“默认尺寸→实际尺寸”的双重解码。
@@ -158,5 +167,6 @@ fun CoverThumbnail(
         sharedElementKey = sharedElementKey,
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
+        subjectId = subjectId,
     )
 }

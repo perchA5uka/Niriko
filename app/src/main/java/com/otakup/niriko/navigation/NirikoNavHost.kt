@@ -14,12 +14,27 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.animation.enterFromRight
+import com.otakup.niriko.ui.animation.enterSharedAxisZ
+import com.otakup.niriko.ui.animation.exitSharedAxisZ
 import com.otakup.niriko.ui.animation.exitToRight
 import com.otakup.niriko.ui.character.CharacterDetailScreen
+import com.otakup.niriko.ui.episode.EpisodeDetailScreen
 import com.otakup.niriko.ui.person.PersonDetailScreen
+import com.otakup.niriko.ui.settings.pages.AboutSettingsScreen
+import com.otakup.niriko.ui.settings.pages.AppearanceSettingsScreen
+import com.otakup.niriko.ui.settings.pages.DataSourceSettingsScreen
+import com.otakup.niriko.ui.settings.pages.LibrarySettingsScreen
+import com.otakup.niriko.ui.settings.pages.SearchSettingsScreen
+import com.otakup.niriko.ui.settings.pages.SyncBackupSettingsScreen
+import com.otakup.niriko.viewmodel.BackupViewModel
+import com.otakup.niriko.viewmodel.BackupViewModelFactory
+import com.otakup.niriko.viewmodel.SettingsViewModel
+import com.otakup.niriko.viewmodel.SettingsViewModelFactory
 import com.otakup.niriko.viewmodel.CharacterDetailViewModel
 import com.otakup.niriko.viewmodel.CharacterDetailViewModelFactory
 import com.otakup.niriko.viewmodel.PersonDetailViewModel
+import com.otakup.niriko.viewmodel.EpisodeDetailViewModel
+import com.otakup.niriko.viewmodel.EpisodeDetailViewModelFactory
 import com.otakup.niriko.viewmodel.PersonDetailViewModelFactory
 import com.otakup.niriko.ui.subject.SubjectDetailScreen
 import com.otakup.niriko.ui.subject.StaffListScreen
@@ -37,6 +52,15 @@ import com.otakup.niriko.viewmodel.SubjectSearchViewModelFactory
 
 /** 顶层页面路由：HorizontalPager 承载（见 [MainPager]）。 */
 const val MAIN_ROUTE = "main"
+
+// ===== 设置二级页路由（分类导航，见 ui/settings/SettingsScreen.kt 主页） =====
+const val SETTINGS_APPEARANCE_ROUTE = "settings_appearance"
+const val SETTINGS_LIBRARY_ROUTE = "settings_library"
+const val SETTINGS_SEARCH_ROUTE = "settings_search"
+const val SETTINGS_DATASOURCE_ROUTE = "settings_datasource"
+const val SETTINGS_SYNC_ROUTE = "settings_sync"
+const val SETTINGS_ABOUT_ROUTE = "settings_about"
+const val SETTINGS_REFRESH_ROUTE = "settings_refresh"
 
 /**
  * 导航宿主。顶层四页由 [MainPager]（HorizontalPager）承载，二级页面（详情/搜索等）走 NavHost 路由覆盖其上。
@@ -66,8 +90,8 @@ fun NirikoNavHost(
         }
         composable(
             "subject_search",
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) {
             val context = LocalContext.current
             val app = context.nirikoApp
@@ -77,6 +101,12 @@ fun NirikoNavHost(
                     collectionRepository = app.collectionRepository,
                     searchHistoryDao = app.searchHistoryDao,
                     steamRepository = app.steamRepository,
+                    // 第 6 轮 F8：subject_search 路由此前漏了 subjectDao ——
+                    // 于是这条入口的本地建议/标签能力比发现页弱（同一功能两套能力）。
+                    subjectDao = app.database.subjectDao(),
+                    settingsDataStore = app.settingsDataStore,
+                    refreshCoordinator = app.refreshCoordinator,
+                    seasonalTrendingRepository = app.seasonalTrendingRepository,
                 ),
             )
             SubjectSearchScreen(
@@ -87,8 +117,8 @@ fun NirikoNavHost(
         }
         composable(
             "bilibili_sync",
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) {
             val context = LocalContext.current
             val app = context.nirikoApp
@@ -107,8 +137,8 @@ fun NirikoNavHost(
         }
         composable(
             "steam_sync",
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) {
             val context = LocalContext.current
             val app = context.nirikoApp
@@ -128,8 +158,8 @@ fun NirikoNavHost(
         composable(
             "subject_detail/{subjectId}",
             arguments = listOf(navArgument("subjectId") { type = NavType.LongType }),
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) { backStackEntry ->
             val subjectId = backStackEntry.arguments?.getLong("subjectId") ?: return@composable
             val context = LocalContext.current
@@ -143,6 +173,13 @@ fun NirikoNavHost(
                     context = context,
                     steamRepository = app.steamRepository,
                     vndbRepository = app.vndbRepository,
+                    anilistRepository = app.anilistRepository,
+                    anitabiRepository = app.anitabiRepository,
+                    externalRatingRepository = app.externalRatingRepository,
+                    episodeRatingRepository = app.episodeRatingRepository,
+                    tmdbRepository = app.tmdbRepository,
+                    externalIdRepository = app.externalIdRepository,
+                    manualAwardRepository = app.manualAwardRepository,
                 ),
             )
             SubjectDetailScreen(
@@ -152,6 +189,9 @@ fun NirikoNavHost(
                 onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
                 onRelationClick = { subjectId -> navController.navigate("subject_detail/$subjectId") },
                 onViewAllStaffClick = { navController.navigate("staff_list/$subjectId") },
+                onOpenEpisodeDetail = { epId ->
+                    navController.navigate("episode_detail/$subjectId/$epId")
+                },
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = this@composable,
             )
@@ -159,8 +199,8 @@ fun NirikoNavHost(
         composable(
             "staff_list/{subjectId}",
             arguments = listOf(navArgument("subjectId") { type = NavType.LongType }),
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) { backStackEntry ->
             val subjectId = backStackEntry.arguments?.getLong("subjectId") ?: return@composable
             val context = LocalContext.current
@@ -178,10 +218,39 @@ fun NirikoNavHost(
             )
         }
         composable(
+            "episode_detail/{subjectId}/{epId}",
+            arguments = listOf(
+                navArgument("subjectId") { type = NavType.LongType },
+                navArgument("epId") { type = NavType.LongType },
+            ),
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) { backStackEntry ->
+            val subjectId = backStackEntry.arguments?.getLong("subjectId") ?: return@composable
+            val epId = backStackEntry.arguments?.getLong("epId") ?: return@composable
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val viewModel = viewModel<EpisodeDetailViewModel>(
+                factory = EpisodeDetailViewModelFactory(
+                    episodeDao = app.database.episodeDao(),
+                    externalRatingDao = app.database.externalRatingDao(),
+                    subjectDao = app.database.subjectDao(),
+                    collectionDao = app.database.collectionDao(),
+                    episodeRepository = app.episodeRepository,
+                    subjectId = subjectId,
+                    epId = epId,
+                ),
+            )
+            EpisodeDetailScreen(
+                viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
             "character_detail/{characterId}",
             arguments = listOf(navArgument("characterId") { type = NavType.LongType }),
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) { backStackEntry ->
             val characterId = backStackEntry.arguments?.getLong("characterId") ?: return@composable
             val context = LocalContext.current
@@ -203,8 +272,8 @@ fun NirikoNavHost(
         composable(
             "person_detail/{personId}",
             arguments = listOf(navArgument("personId") { type = NavType.LongType }),
-            enterTransition = { enterFromRight() },
-            exitTransition = { exitToRight() },
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
         ) { backStackEntry ->
             val personId = backStackEntry.arguments?.getLong("personId") ?: return@composable
             val context = LocalContext.current
@@ -223,6 +292,131 @@ fun NirikoNavHost(
                 onCharacterClick = { characterId -> navController.navigate("character_detail/$characterId") },
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = this@composable,
+            )
+        }
+
+        // ===== 设置二级页（分类导航，Kazumi 模式） =====
+        composable(
+            SETTINGS_APPEARANCE_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val vm = viewModel<SettingsViewModel>(
+                factory = SettingsViewModelFactory(
+                        app.settingsDataStore, app.pluginManager, app.syncManager,
+                        app.bangumiSyncManager, app.refreshCoordinator,
+                    ),
+            )
+            AppearanceSettingsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            SETTINGS_LIBRARY_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val vm = viewModel<SettingsViewModel>(
+                factory = SettingsViewModelFactory(
+                        app.settingsDataStore, app.pluginManager, app.syncManager,
+                        app.bangumiSyncManager, app.refreshCoordinator,
+                    ),
+            )
+            LibrarySettingsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            SETTINGS_SEARCH_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val vm = viewModel<SettingsViewModel>(
+                factory = SettingsViewModelFactory(
+                        app.settingsDataStore, app.pluginManager, app.syncManager,
+                        app.bangumiSyncManager, app.refreshCoordinator,
+                    ),
+            )
+            SearchSettingsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            SETTINGS_DATASOURCE_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val vm = viewModel<SettingsViewModel>(
+                factory = SettingsViewModelFactory(
+                        app.settingsDataStore, app.pluginManager, app.syncManager,
+                        app.bangumiSyncManager, app.refreshCoordinator,
+                    ),
+            )
+            DataSourceSettingsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onNavigateToBilibiliSync = { navController.navigate("bilibili_sync") },
+                onNavigateToSteamSync = { navController.navigate("steam_sync") },
+            )
+        }
+        composable(
+            SETTINGS_SYNC_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val vm = viewModel<SettingsViewModel>(
+                factory = SettingsViewModelFactory(
+                        app.settingsDataStore, app.pluginManager, app.syncManager,
+                        app.bangumiSyncManager, app.refreshCoordinator,
+                    ),
+            )
+            val backupVm = viewModel<BackupViewModel>(
+                factory = BackupViewModelFactory(app.backupManager, app.settingsDataStore),
+            )
+            SyncBackupSettingsScreen(
+                viewModel = vm,
+                backupViewModel = backupVm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            SETTINGS_REFRESH_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            val context = LocalContext.current
+            val app = context.nirikoApp
+            val vm = viewModel<SettingsViewModel>(
+                factory = SettingsViewModelFactory(
+                        app.settingsDataStore, app.pluginManager, app.syncManager,
+                        app.bangumiSyncManager, app.refreshCoordinator,
+                    ),
+            )
+            com.otakup.niriko.ui.settings.pages.RefreshDiagnosticsScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            SETTINGS_ABOUT_ROUTE,
+            enterTransition = { enterSharedAxisZ() },
+            exitTransition = { exitSharedAxisZ() },
+        ) {
+            AboutSettingsScreen(
+                onBack = { navController.popBackStack() },
             )
         }
     }

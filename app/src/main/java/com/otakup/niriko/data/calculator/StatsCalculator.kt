@@ -2,12 +2,14 @@ package com.otakup.niriko.data.calculator
 
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.stats.AiringSubject
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
 import com.otakup.niriko.data.model.stats.CalendarMode
 import com.otakup.niriko.data.model.stats.MonthlyStats
+import com.otakup.niriko.data.model.stats.MosaicItem
 import com.otakup.niriko.data.model.stats.RatingComparison
 import com.otakup.niriko.data.model.stats.RatingDistribution
 import com.otakup.niriko.data.model.stats.StatusDistItem
@@ -117,6 +119,7 @@ object StatsCalculator {
             bangumiRatingDistribution = bangumiRatingDist,
             yearlyStats = yearlyStats, currentYearStats = currentYearStats,
             tagStats = tagStats, ratingComparison = comparison, timelineEvents = timelineEvents,
+            mosaic = computeMosaic(items),
         )
     }
 
@@ -126,6 +129,22 @@ object StatsCalculator {
         val buckets = IntArray(10) { 0 }
         ratings.forEach { r -> val idx = (r.toInt()).coerceIn(0, 9); buckets[idx]++ }
         return buckets.mapIndexed { index, count -> RatingDistribution(range = "${index}-${index + 1}", count = count) }
+    }
+
+    /** 照片墙（阶段 E）：有封面的收藏按收藏时间倒序取前 N 个。 */
+    fun computeMosaic(items: List<CollectionWithSubject>, limit: Int = 120): List<MosaicItem> {
+        return items.mapNotNull { item ->
+            val cover = item.subject.coverUrl ?: return@mapNotNull null
+            val createDate = Instant.ofEpochMilli(item.collection.createTime).atZone(ZoneId.systemDefault()).toLocalDate()
+            MosaicItem(
+                subjectId = item.subject.subjectId,
+                title = TitleResolver.resolve(item.subject.titleCN, item.subject.title).primary,
+                coverUrl = cover,
+                type = item.subject.type,
+                status = item.collection.status,
+                createDate = createDate,
+            )
+        }.sortedByDescending { it.createDate }.take(limit)
     }
 
     /**
@@ -347,7 +366,7 @@ object StatsCalculator {
                 date = createdDate,
                 action = TimelineAction.ADDED,
                 collectionWithSubject = item,
-                actionLabel = "收藏了 ${s.titleCN ?: s.title}",
+                actionLabel = "收藏了 ${s.displayTitle}",
             ))
 
             c.startDate?.let { sd ->
@@ -355,7 +374,7 @@ object StatsCalculator {
                     date = sd,
                     action = TimelineAction.STARTED,
                     collectionWithSubject = item,
-                    actionLabel = "${actionText(c.status)} ${s.titleCN ?: s.title}",
+                    actionLabel = "${actionText(c.status)} ${s.displayTitle}",
                 ))
             }
 
@@ -364,11 +383,63 @@ object StatsCalculator {
                     date = fd,
                     action = TimelineAction.COMPLETED,
                     collectionWithSubject = item,
-                    actionLabel = "看过了 ${s.titleCN ?: s.title}",
+                    actionLabel = "看过了 ${s.displayTitle}",
                 ))
             }
         }
 
         return events.sortedByDescending { it.date }
     }
+
+    /**
+     * 根据每集数据计算「已播到第几集 / 总集数 / 下一集 / 每集讨论热度」。
+     * 每集无数据时回退 [subjectTotalEpisodes]；两者都无则返回空态（UI 显示集数未知）。
+     */
+    fun computeEpisodeAirState(
+        episodes: List<EpisodeInfo>,
+        subjectTotalEpisodes: Int?,
+        today: LocalDate = LocalDate.now(),
+    ): EpisodeAirState {
+        val main = episodes
+            .filter { it.type == 0 && it.sort > 0 }
+            .sortedBy { it.sort }
+        val total = if (main.isNotEmpty()) {
+            main.maxOf { it.sort }.toInt().coerceAtLeast(subjectTotalEpisodes ?: 0)
+        } else {
+            subjectTotalEpisodes ?: 0
+        }
+        val aired = main.count { ep ->
+            if (ep.status == "Air" || ep.status == "Today") true
+            else {
+                val d = ep.airdate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                d != null && !d.isAfter(today)
+            }
+        }
+        val nextAirDate = main.firstOrNull { ep ->
+            !(ep.status == "Air" || ep.status == "Today") &&
+                ep.airdate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }?.let { it.isAfter(today) } == true
+        }?.airdate
+        val comments = main.map { it.comment }
+        val maxC = comments.maxOrNull() ?: 0
+        val minC = comments.minOrNull() ?: 0
+        val heat = if (maxC > minC) {
+            comments.map { (it - minC).toFloat() / (maxC - minC) }
+        } else {
+            comments.map { 0f }
+        }
+        return EpisodeAirState(
+            airedCount = aired,
+            totalCount = total,
+            nextAirDate = nextAirDate,
+            heat = heat,
+        )
+    }
 }
+
+/** 每集播出/热力状态（统计页放送条目）。 */
+data class EpisodeAirState(
+    val airedCount: Int = 0,
+    val totalCount: Int = 0,
+    val nextAirDate: String? = null,
+    val heat: List<Float> = emptyList(),
+)

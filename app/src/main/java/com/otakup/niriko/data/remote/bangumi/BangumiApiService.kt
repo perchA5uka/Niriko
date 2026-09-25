@@ -133,6 +133,21 @@ interface BangumiApiService {
         @Path("personId") personId: Long,
     ): List<CharacterDto>
 
+    /**
+     * 旧版关键词搜索（免 token；**会返回 NSFW 条目**）。
+     *
+     * 仅用于 v0 搜索因 `nsfw=true` 缺 token 而失败的兜底场景。
+     * 注意：旧版接口的路径没有 v0 前缀。
+     */
+    @GET("search/subject/{keywords}")
+    suspend fun legacySearchSubjects(
+        @Path("keywords") keywords: String,
+        @Query("type") type: Int? = null,
+        @Query("responseGroup") responseGroup: String = "large",
+        @Query("max_results") maxResults: Int = 25,
+        @Query("start") start: Int = 0,
+    ): com.otakup.niriko.data.remote.bangumi.dto.LegacySearchResponseDto
+
     /** 获取条目关联（前后传/版本/系列等）。 */
     @GET("v0/subjects/{subjectId}/subjects")
     suspend fun getSubjectRelations(

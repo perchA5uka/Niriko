@@ -103,7 +103,7 @@ fun SuggestionDropdown(
                     }
                     is SuggestionItem.LocalSubject -> {
                         SubjectSuggestionRow(
-                            title = item.subject.titleCN ?: item.subject.title,
+                            title = item.subject.displayTitle,
                             subtitle = item.subject.title.takeIf { item.subject.titleCN != null },
                             typeLabel = item.subject.type.label,
                             imageUrl = item.subject.coverUrl,
@@ -112,7 +112,7 @@ fun SuggestionDropdown(
                     }
                     is SuggestionItem.RemoteSuggestion -> {
                         SubjectSuggestionRow(
-                            title = item.subject.titleCN ?: item.subject.title,
+                            title = item.subject.displayTitle,
                             subtitle = item.subject.title.takeIf { item.subject.titleCN != null },
                             typeLabel = item.subject.type.label,
                             imageUrl = item.subject.coverUrl,

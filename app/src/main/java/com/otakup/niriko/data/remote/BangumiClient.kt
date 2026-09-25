@@ -32,6 +32,9 @@ object BangumiClient {
     /** 官方图片图床域（Bangumi 返回的封面 URL 前缀）。 */
     private const val OFFICIAL_IMAGE_HOST = "lain.bgm.tv"
 
+    /** 官方 API 域：只有这个域才允许注入 Authorization（反代域绝不注入）。 */
+    const val OFFICIAL_API_HOST = "api.bgm.tv"
+
     /** 反代图片图床域（对应 PROXY_BASE_URL 的图片反代）。 */
     private const val PROXY_IMAGE_HOST = "bgmimg.anibt.net"
 
@@ -99,18 +102,33 @@ object BangumiClient {
     /** 授权凭据（对应 Bangumi-master accessToken 的 token_type/access_token 双字段）。 */
     data class AuthToken(val tokenType: String = "Bearer", val accessToken: String)
 
-    /** 为官方域 v0/oauth 请求附加 Authorization（Kazumi: Bearer 条件注入；Bangumi-master: `{token_type} {access_token}`）。 */
-    private val authInterceptor = Interceptor { chain ->
-        val token = authTokenProvider?.invoke()
-        if (token == null || token.accessToken.isBlank()) {
-            return@Interceptor chain.proceed(chain.request())
-        }
-        val headerValue = if (token.tokenType.isBlank()) {
+    /**
+     * 认证头注入策略（第 6 轮 F6，纯函数便于单测）。
+     *
+     * 只有**官方 API 域**（[OFFICIAL_API_HOST]）才可能拿到用户的 token：
+     * 反代/镜像域不注入，避免把凭据交给第三方。无 token 或 token 为空 → 不注入。
+     */
+    internal fun authHeaderValue(host: String, token: AuthToken?): String? {
+        if (host != OFFICIAL_API_HOST) return null
+        if (token == null || token.accessToken.isBlank()) return null
+        return if (token.tokenType.isBlank()) {
             "Bearer ${token.accessToken}"
         } else {
             "${token.tokenType} ${token.accessToken}"
         }
-        chain.proceed(chain.request().newBuilder().header("Authorization", headerValue).build())
+    }
+
+    /**
+     * 为官方域 v0/oauth 请求附加 Authorization
+     *（Kazumi: Bearer 条件注入；Bangumi-master: token_type + access_token）。
+     */
+    internal val authInterceptor = Interceptor { chain ->
+        val request = chain.request()
+        val headerValue = authHeaderValue(request.url.host, authTokenProvider?.invoke())
+        if (headerValue == null) {
+            return@Interceptor chain.proceed(request)
+        }
+        chain.proceed(request.newBuilder().header("Authorization", headerValue).build())
     }
 
     private val userAgentInterceptor = Interceptor { chain ->
@@ -145,7 +163,11 @@ object BangumiClient {
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .addInterceptor(userAgentInterceptor)
+            // 先重写域名（官方/反代切换），再按**重写后的域名**决定是否注入 token
             .addInterceptor(baseUrlInterceptor)
+            // 第 6 轮 F6：主 client 也要带 token，否则 nsfw=true 的 v0 检索永远缺 Authorization。
+            // 拦截器内部按域名白名单（只认官方 api.bgm.tv）注入，反代域拿不到用户凭据。
+            .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
@@ -186,6 +208,18 @@ object BangumiClient {
     /** v0 用户/收藏写接口，固定官方域（参考计划 2.5 风险条款：auth 一律走官方域）。 */
     val authApiService: com.otakup.niriko.data.remote.bangumi.BangumiAuthApi =
         authRetrofit.create(com.otakup.niriko.data.remote.bangumi.BangumiAuthApi::class.java)
+
+    /**
+     * 供 OAuth token 端点复用的 OkHttp 实例。
+     *
+     * `/oauth/access_token` 返回的是 **form/纯文本**（非 JSON），因此不能走 Retrofit 的
+     * kotlinx-serialization 转换器；但又要复用「固定官方域 + User-Agent」这套配置，
+     * 所以直接暴露 auth client 而不是另建一个。
+     */
+    val authOkHttpClient: OkHttpClient get() = authHttpClient
+
+    /** 通用 OkHttp 实例（灰色通道探针复用其超时/日志配置）。 */
+    val sharedOkHttpClient: OkHttpClient get() = okHttpClient
 
     /** OkHttp 的 HttpUrl 解析（用于合法性校验），不合法时返回 null。 */
     private fun String.parseHttpUrl(): okhttp3.HttpUrl? =

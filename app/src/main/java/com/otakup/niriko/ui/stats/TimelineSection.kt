@@ -76,8 +76,8 @@ fun TimelineSection(
             .map { cws ->
                 TimelineCardData(
                     subjectId = cws.subject.subjectId,
-                    primaryTitle = cws.subject.titleCN ?: cws.subject.title,
-                    secondaryTitle = if (cws.subject.titleCN != null) cws.subject.title else null,
+                    primaryTitle = cws.subject.displayTitle,
+                    secondaryTitle = cws.subject.title.takeIf { it.isNotBlank() && it != cws.subject.displayTitle },
                     coverUrl = cws.subject.coverUrl,
                     startDate = cws.collection.startDate,
                     finishDate = cws.collection.finishDate,

@@ -3,7 +3,10 @@
 package com.otakup.niriko.ui.stats
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,9 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.data.calculator.StatsCalculator
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.components.CoverImage
@@ -54,6 +59,7 @@ private val dateFormat = DateTimeFormatter.ofPattern("yyyy年M月d日")
 fun CalendarDaySheet(
     date: LocalDate,
     events: CalendarDayEvents,
+    episodesBySubject: Map<Long, List<EpisodeInfo>> = emptyMap(),
     onDismiss: () -> Unit,
     onSubjectClick: (Long) -> Unit,
 ) {
@@ -127,6 +133,7 @@ fun CalendarDaySheet(
                         subject = subject,
                         onClick = { onSubjectClick(subject.subjectId) },
                         episodeNumber = estimateEpisode(date, subject),
+                        episodes = episodesBySubject[subject.subjectId].orEmpty(),
                     )
                 }
             }
@@ -144,6 +151,7 @@ fun CalendarDaySheet(
                         subject = subject,
                         onClick = { onSubjectClick(subject.subjectId) },
                         episodeNumber = estimateEpisode(date, subject),
+                        episodes = episodesBySubject[subject.subjectId].orEmpty(),
                     )
                 }
             }
@@ -194,7 +202,7 @@ private fun PersonalEventItem(
     ) {
         CoverImage(
             coverUrl = subject.coverUrl,
-            contentDescription = "${subject.titleCN ?: subject.title} 封面",
+            contentDescription = "${subject.displayTitle} 封面",
             shape = RoundedCornerShape(6.dp),
             aspectRatio = 1f,
             modifier = Modifier.size(48.dp),
@@ -252,8 +260,10 @@ private fun BroadcastEventItem(
     subject: SubjectEntity,
     onClick: () -> Unit,
     episodeNumber: Int? = null,
+    episodes: List<EpisodeInfo> = emptyList(),
 ) {
     val titleInfo = TitleResolver.resolve(subject.titleCN, subject.title)
+    val airState = StatsCalculator.computeEpisodeAirState(episodes, subject.totalEpisodes)
 
     val statusLabel = when (AiringStatus.getPhase(subject)) {
         AiringStatus.AiringPhase.UPCOMING -> "即将开播"
@@ -268,82 +278,115 @@ private fun BroadcastEventItem(
         AiringStatus.AiringPhase.UNKNOWN -> androidx.compose.ui.graphics.Color(0xFF90A4AE)
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CoverImage(
-            coverUrl = subject.coverUrl,
-            contentDescription = "${subject.titleCN ?: subject.title} 封面",
-            shape = RoundedCornerShape(6.dp),
-            aspectRatio = 1f,
-            modifier = Modifier.size(48.dp),
-        )
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = titleInfo.primary,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CoverImage(
+                coverUrl = subject.coverUrl,
+                contentDescription = "${subject.displayTitle} 封面",
+                shape = RoundedCornerShape(6.dp),
+                aspectRatio = 1f,
+                modifier = Modifier.size(48.dp),
             )
-            // 元信息行（按 SubjectType 分支，复用 SubjectMetaSection 的模式）
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // 第 N 话
-                episodeNumber?.let { ep ->
-                    Text(
-                        text = "第${ep}话",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = subject.type.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = CalendarTypeColors[subject.type] ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = titleInfo.primary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                // 评分
-                subject.ratingScore?.let { score ->
-                    Spacer(Modifier.width(6.dp))
+                // 元信息行（按 SubjectType 分支，复用 SubjectMetaSection 的模式）
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 第 N 话 / 已播 X / 总 Y（有每集数据时优先展示精确播出状态）
+                    if (airState.totalCount > 0) {
+                        Text(
+                            text = "已播 ${airState.airedCount} / ${airState.totalCount}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    } else {
+                        episodeNumber?.let { ep ->
+                            Text(
+                                text = "第${ep}话",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                    }
+                    // 阶段 A：精确放送时刻
+                    subject.airTimeMinutes?.let { m ->
+                        Text(
+                            text = "%02d:%02d 放送".format(m / 60, m % 60),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                    }
                     Text(
-                        text = "%.1f".format(score),
+                        text = subject.type.label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = CalendarTypeColors[subject.type] ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // 评分
+                    subject.ratingScore?.let { score ->
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "%.1f".format(score),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // 类型专属信息
+                    Spacer(Modifier.width(6.dp))
+                    SubjectSecondaryInfo(subject = subject, episodes = episodes)
                 }
-                // 类型专属信息
-                Spacer(Modifier.width(6.dp))
-                SubjectSecondaryInfo(subject = subject)
             }
+
+            // 状态标签
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = statusColor,
+            )
         }
 
-        // 状态标签
-        Text(
-            text = statusLabel,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = statusColor,
-        )
+        // 每集热力图（评论热度：颜色越深讨论越热）
+        if (airState.heat.isNotEmpty()) {
+            EpisodeHeatStrip(
+                heat = airState.heat,
+                airedCount = airState.airedCount,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+        }
     }
 }
 
 /** 按 SubjectType 显示辅助信息（集数/卷数/平台等），详情页 SubjectMetaSection 风格。 */
 @Composable
-private fun SubjectSecondaryInfo(subject: SubjectEntity) {
+private fun SubjectSecondaryInfo(
+    subject: SubjectEntity,
+    episodes: List<EpisodeInfo> = emptyList(),
+) {
     val parts = mutableListOf<String>()
+    val airState = StatsCalculator.computeEpisodeAirState(episodes, subject.totalEpisodes)
     when (subject.type) {
         SubjectType.ANIME -> {
             subject.platform?.let { parts.add(it) }
-            if (subject.totalEpisodes != null && subject.totalEpisodes > 0) {
-                parts.add("${subject.totalEpisodes}集")
-            } else {
-                parts.add("集数未知")
+            when {
+                airState.totalCount > 0 -> parts.add("已播 ${airState.airedCount} / ${airState.totalCount}")
+                subject.totalEpisodes != null && subject.totalEpisodes > 0 -> parts.add("${subject.totalEpisodes}集")
+                else -> parts.add("集数未知")
             }
         }
         SubjectType.BOOK, SubjectType.MANGA -> {
@@ -357,10 +400,10 @@ private fun SubjectSecondaryInfo(subject: SubjectEntity) {
             subject.platform?.let { parts.add(it) }
         }
         SubjectType.REAL -> {
-            if (subject.totalEpisodes != null && subject.totalEpisodes > 0) {
-                parts.add("${subject.totalEpisodes}集")
-            } else {
-                parts.add("集数未知")
+            when {
+                airState.totalCount > 0 -> parts.add("已播 ${airState.airedCount} / ${airState.totalCount}")
+                subject.totalEpisodes != null && subject.totalEpisodes > 0 -> parts.add("${subject.totalEpisodes}集")
+                else -> parts.add("集数未知")
             }
         }
         SubjectType.PERSON, SubjectType.OTHER -> {}
@@ -375,6 +418,38 @@ private fun SubjectSecondaryInfo(subject: SubjectEntity) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+/** 每集讨论热力条：每集一格，颜色深浅与评论数成正比。 */
+@Composable
+private fun EpisodeHeatStrip(
+    heat: List<Float>,
+    airedCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (heat.isEmpty()) return
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        heat.forEachIndexed { index, value ->
+            val heatAlpha = value.coerceIn(0f, 1f)
+            val base = if (index < airedCount) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        base.copy(alpha = (0.18f + heatAlpha * 0.72f).coerceIn(0.18f, 0.9f)),
+                    ),
+            )
+        }
     }
 }
 

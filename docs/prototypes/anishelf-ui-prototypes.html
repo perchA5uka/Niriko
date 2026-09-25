@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Niriko UI 改动原型（AniShelf 借鉴）</title>
+<style>
+:root{
+  --bg:#eef3ea; --bg2:#e7efe3; --ink:#1a1c19; --ink-2:#4a4f47; --ink-3:#7a8174;
+  --green:#2e7d32; --green-soft:#e4f0e3; --green-deep:#1b5e20;
+  --card:rgba(255,255,255,.72); --card-solid:#ffffff;
+  --line:rgba(27,46,27,.10);
+  --watching:#f59e0b; --watched:#22c55e; --plan:#9ca3af; --hold:#8b5cf6;
+  --rate:#fbbf24; --ep:#3b82f6; --fav:#ef4444;
+  --shadow:0 10px 30px rgba(27,46,27,.10);
+}
+*{box-sizing:border-box; margin:0; padding:0; font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;}
+body{background:linear-gradient(160deg,#e9f1e4,#dfe9d8 60%,#e6efe0); color:var(--ink); padding:32px 20px; min-height:100vh;}
+.wrap{max-width:1340px; margin:0 auto;}
+.head{max-width:1340px; margin:0 auto 26px;}
+.head h1{font-size:26px; letter-spacing:.5px;}
+.head p{color:var(--ink-2); margin-top:8px; line-height:1.7; font-size:14px;}
+.legend{display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;}
+.chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--card); border:1px solid var(--line); backdrop-filter:blur(8px); font-size:12px; font-weight:600;}
+.dot{width:9px;height:9px;border-radius:50%; display:inline-block;}
+/* ---- 布局 ---- */
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:26px; justify-items:center;}
+.proto{width:100%; max-width:400px; display:flex; flex-direction:column; gap:12px;}
+.ptitle{font-size:15px; font-weight:700;}
+.pdesc{font-size:12.5px; color:var(--ink-2); line-height:1.6;}
+.pdesc b{color:var(--ink);}
+.tag{display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; background:var(--green-soft); color:var(--green-deep); margin-right:6px;}
+/* ---- 手机框 ---- */
+.phone{width:100%; aspect-ratio:390/844; background:var(--card-solid); border-radius:44px; border:6px solid #10140f; box-shadow:var(--shadow); overflow:hidden; position:relative; display:flex; flex-direction:column;}
+.notch{position:absolute; top:12px; left:50%; transform:translateX(-50%); width:110px; height:26px; background:#10140f; border-radius:999px; z-index:6;}
+.pbody{flex:1; background:linear-gradient(180deg,#f4f8f0,#eef4ea); position:relative; overflow:hidden; display:flex; flex-direction:column;}
+/* 背景玻璃海报（详情页/统计页用） */
+.wall{position:absolute; inset:0; filter:blur(0px); }
+.scrim{position:absolute; inset:0; background:rgba(255,255,255,.45);}
+/* 浮动胶囊底栏 */
+.pillbar{position:absolute; left:50%; bottom:18px; transform:translateX(-50%); background:rgba(255,255,255,.8); backdrop-filter:blur(16px); border-radius:999px; border:1px solid rgba(255,255,255,.7); box-shadow:0 8px 24px rgba(27,46,27,.14); display:flex; align-items:center; gap:6px; padding:8px 12px; z-index:5;}
+.pillbar .seg{display:flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-size:11px; font-weight:600; color:var(--ink-2);}
+.pillbar .seg.on{background:var(--green-soft); color:var(--green-deep);}
+.pillbar .divider{width:1px; height:16px; background:var(--line);}
+/* 卡片 */
+.gcard{background:var(--card); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,.75); border-radius:20px; box-shadow:0 4px 16px rgba(27,46,27,.06);}
+/* 封面占位（渐变模拟） */
+.cover{border-radius:12px; position:relative; overflow:hidden;}
+.cover::after{content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(255,255,255,.25),transparent 40%,rgba(0,0,0,.12));}
+/* 徽标 */
+.badge{position:absolute; display:inline-flex; align-items:center; gap:4px; padding:4px 8px; border-radius:999px; font-size:10.5px; font-weight:700; color:#fff; backdrop-filter:blur(6px);}
+.badge i{width:8px; height:8px; border-radius:50%; display:block;}
+/* 顶部栏 */
+.appbar{display:flex; align-items:center; justify-content:space-between; padding:52px 16px 10px;}
+.appbar .ttl{font-size:22px; font-weight:800;}
+.phoneless{box-sizing:border-box;}
+.icbtn{width:34px; height:34px; border-radius:999px; background:var(--card); border:1px solid rgba(255,255,255,.75); display:flex; align-items:center; justify-content:center; backdrop-filter:blur(10px);}
+svg{display:block;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="head">
+  <h1>Niriko · UI 改动原型（AniShelf 借鉴）</h1>
+  <p>以下为各改动点的真机样式 mockup（HTML/CSS 模拟，封面以渐变占位）。配色沿用 Niriko 绿色主题，徽标/卡片配色对齐 AniShelf。</p>
+  <div class="legend">
+    <span class="chip"><span class="dot" style="background:var(--watching)"></span>在看</span>
+    <span class="chip"><span class="dot" style="background:var(--watched)"></span>看过</span>
+    <span class="chip"><span class="dot" style="background:var(--plan)"></span>想看</span>
+    <span class="chip"><span class="dot" style="background:var(--hold)"></span>搁置</span>
+    <span class="chip"><span class="dot" style="background:var(--rate)"></span>评分 ★</span>
+    <span class="chip"><span class="dot" style="background:var(--ep)"></span>集数 S1E·</span>
+    <span class="chip"><span class="dot" style="background:var(--fav)"></span>收藏 ♥</span>
+  </div>
+</div>
+<div class="grid">
+
+
+<!-- 1. 收藏页 - 海报网格视图 -->
+<div class="proto">
+  <div class="ptitle">① 收藏页 · 海报网格视图 <span class="tag">新增视图</span></div>
+  <div class="phone"><div class="notch"></div><div class="pbody">
+    <div class="appbar"><div class="ttl">收藏 <span style="font-size:13px;color:var(--ink-3);font-weight:600;">56 部</span></div>
+      <div style="display:flex;gap:8px;">
+        <span class="icbtn" title="视图切换"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+        <span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a4f47" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg></span>
+      </div>
+    </div>
+    <div style="flex:1;padding:2px 10px 90px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;overflow:hidden;align-content:start;">
+      <!-- 海报卡生成器 -->
+      <div style="position:relative;">
+        <div class="cover" style="aspect-ratio:2/3;background:linear-gradient(135deg,#f6b6c1,#f9e27d 60%,#a1e3d5);"></div>
+        <span class="badge" style="top:6px;left:6px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--watching)"></i></span>
+        <span class="badge" style="top:6px;right:6px;background:rgba(255,255,255,.85);color:var(--fav);padding:4px 6px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="#ef4444"><path d="M12 21s-7.5-4.8-9.7-9C.7 9 2 5.5 5 4.5 7 3.9 9 4.8 12 7c3-2.2 5-3.1 7-2.5 3 1 4.3 4.5 2.7 7.5-2.2 4.2-9.7 9-9.7 9z"/></svg></span>
+        <span class="badge" style="bottom:24px;left:6px;background:rgba(251,191,36,.95);">★ 9</span>
+        <div style="position:absolute;bottom:6px;left:6px;right:6px;height:4px;background:rgba(255,255,255,.5);border-radius:99px;"><div style="width:75%;height:100%;background:var(--green);border-radius:99px;"></div></div>
+        <div style="font-size:11px;font-weight:700;margin-top:5px;line-height:1.2;">葬送的芙莉莲</div>
+      </div>
+      <div style="position:relative;">
+        <div class="cover" style="aspect-ratio:2/3;background:linear-gradient(135deg,#b3c8f7,#e5c7f9 60%,#f9e6c7);"></div>
+        <span class="badge" style="top:6px;left:6px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--watched)"></i></span>
+        <span class="badge" style="bottom:24px;left:6px;background:rgba(251,191,36,.95);">★ 8</span>
+        <div style="position:absolute;bottom:6px;left:6px;right:6px;height:4px;background:rgba(255,255,255,.5);border-radius:99px;"><div style="width:100%;height:100%;background:var(--green);border-radius:99px;"></div></div>
+        <div style="font-size:11px;font-weight:700;margin-top:5px;line-height:1.2;">孤独摇滚！</div>
+      </div>
+      <div style="position:relative;">
+        <div class="cover" style="aspect-ratio:2/3;background:linear-gradient(135deg,#f9d0b6,#f7b6c1 60%,#e0a3d9);"></div>
+        <span class="badge" style="top:6px;left:6px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--watching)"></i></span>
+        <div style="position:absolute;bottom:6px;left:6px;right:6px;height:4px;background:rgba(255,255,255,.5);border-radius:99px;"><div style="width:40%;height:100%;background:var(--green);border-radius:99px;"></div></div>
+        <div style="font-size:11px;font-weight:700;margin-top:5px;line-height:1.2;">药屋少女的呢喃</div>
+      </div>
+      <div style="position:relative;">
+        <div class="cover" style="aspect-ratio:2/3;background:linear-gradient(135deg,#c2e5d9,#9fd8ef 60%,#b6c8f7);"></div>
+        <span class="badge" style="top:6px;left:6px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--watched)"></i></span>
+        <span class="badge" style="top:6px;right:6px;background:rgba(255,255,255,.85);color:var(--fav);padding:4px 6px;"><svg width="10" height="10" viewBox="0 0 24 24" fill="#ef4444"><path d="M12 21s-7.5-4.8-9.7-9C.7 9 2 5.5 5 4.5 7 3.9 9 4.8 12 7c3-2.2 5-3.1 7-2.5 3 1 4.3 4.5 2.7 7.5-2.2 4.2-9.7 9-9.7 9z"/></svg></span>
+        <span class="badge" style="bottom:24px;left:6px;background:rgba(251,191,36,.95);">★ 10</span>
+        <div style="position:absolute;bottom:6px;left:6px;right:6px;height:4px;background:rgba(255,255,255,.5);border-radius:99px;"><div style="width:100%;height:100%;background:var(--green);border-radius:99px;"></div></div>
+        <div style="font-size:11px;font-weight:700;margin-top:5px;line-height:1.2;">进击的巨人</div>
+      </div>
+      <div style="position:relative;">
+        <div class="cover" style="aspect-ratio:2/3;background:linear-gradient(135deg,#f7e2b6,#f2c1b6 60%,#f7b6c1);"></div>
+        <span class="badge" style="top:6px;left:6px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--plan)"></i></span>
+        <div style="font-size:11px;font-weight:700;margin-top:5px;line-height:1.2;">迷宫饭</div>
+      </div>
+      <div style="position:relative;">
+        <div class="cover" style="aspect-ratio:2/3;background:linear-gradient(135deg,#c7b6f2,#b6d8f7 60%,#a9e0c1);"></div>
+        <span class="badge" style="top:6px;left:6px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--watching)"></i></span>
+        <span class="badge" style="bottom:24px;left:6px;background:rgba(59,130,246,.95);">S2E3</span>
+        <div style="position:absolute;bottom:6px;left:6px;right:6px;height:4px;background:rgba(255,255,255,.5);border-radius:99px;"><div style="width:55%;height:100%;background:var(--green);border-radius:99px;"></div></div>
+        <div style="font-size:11px;font-weight:700;margin-top:5px;line-height:1.2;">怪兽8号</div>
+      </div>
+    </div>
+    <!-- 悬浮胶囊工具栏 -->
+    <div class="pillbar">
+      <span class="seg on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>网格</span>
+      <span class="seg"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/></svg>列表</span>
+      <span class="divider"></span>
+      <span class="seg"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M6 12h12M10 18h4"/></svg>筛选</span>
+      <span class="seg"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16l4-9 4 9M8.5 13h5"/></svg>排序</span>
+    </div>
+  </div></div>
+  <div class="pdesc"><b>改动：</b>收藏页新增「海报网格」视图（2:3 竖卡）。徽标叠加：左上状态点（彩色）、右上收藏心、底部进度条、左下评分胶囊。底部为页面级悬浮胶囊（视图切换 / 筛选 / 排序），液态玻璃材质与底栏一致。</div>
+</div>
+
+<!-- 2. 收藏页 - 画廊大卡视图 -->
+<div class="proto">
+  <div class="ptitle">② 收藏页 · 画廊大卡视图 <span class="tag">新增视图</span></div>
+  <div class="phone"><div class="notch"></div><div class="pbody">
+    <div class="appbar"><div class="ttl">收藏 <span style="font-size:13px;color:var(--ink-3);font-weight:600;">56 部</span></div>
+      <span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+    </div>
+    <!-- 日期胶囊 -->
+    <div style="margin:0 16px 10px; display:flex; justify-content:space-between; background:var(--card); border:1px solid rgba(255,255,255,.75); backdrop-filter:blur(10px); border-radius:999px; padding:8px 18px; font-size:12px;">
+      <span style="color:var(--ink-3);">开始日 <b style="color:var(--ink);">2026/4/21</b></span>
+      <span style="color:var(--ink-3);">结束日 <b style="color:var(--ink);">—</b></span>
+    </div>
+    <!-- 画廊大卡 -->
+    <div style="margin:0 16px; position:relative; border-radius:24px; overflow:hidden; box-shadow:var(--shadow); border:1px solid rgba(255,255,255,.7);">
+      <div class="cover" style="height:340px; border-radius:0; background:linear-gradient(135deg,#f9c1d9,#c7b6f2 40%,#a9d8ef 70%,#f7e2b6);"></div>
+      <!-- 拼贴分隔线模拟 -->
+      <div style="position:absolute; inset:0; background:
+        linear-gradient(90deg,transparent 49.6%,rgba(255,255,255,.5) 50%,transparent 50.4%),
+        linear-gradient(0deg,transparent 33%,rgba(255,255,255,.5) 33.4%,transparent 33.8%,transparent 66%,rgba(255,255,255,.5) 66.4%,transparent 66.8%);"></div>
+      <span class="badge" style="top:12px;left:12px;background:rgba(255,255,255,.85);color:var(--watching);"><i style="background:var(--watching)"></i>在看</span>
+      <span class="badge" style="top:12px;right:12px;background:rgba(255,255,255,.85);color:var(--fav);padding:5px 7px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444"><path d="M12 21s-7.5-4.8-9.7-9C.7 9 2 5.5 5 4.5 7 3.9 9 4.8 12 7c3-2.2 5-3.1 7-2.5 3 1 4.3 4.5 2.7 7.5-2.2 4.2-9.7 9-9.7 9z"/></svg></span>
+      <div style="position:absolute; bottom:0; left:0; right:0; padding:16px; background:linear-gradient(0deg,rgba(15,20,15,.55),transparent);">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="badge" style="position:static; background:rgba(251,191,36,.95);">★ 9</span>
+          <div style="font-size:16px; font-weight:800; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.3);">葬送的芙莉莲</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:auto;"></div>
+    <div class="pillbar">
+      <span class="seg"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>网格</span>
+      <span class="seg on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="3"/></svg>画廊</span>
+      <span class="seg"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/></svg>列表</span>
+    </div>
+  </div></div>
+  <div class="pdesc"><b>改动：</b>「画廊」模式——单张沉浸式大卡（角色多图拼贴，非拼贴时取封面大图）。卡头起止日期胶囊、左上状态胶囊、右上收藏心、底部评分胶囊 + 标题。底部胶囊切换三视图。</div>
+</div>
+
+<!-- 3. 详情页 - 统计卡网格 -->
+<div class="proto">
+  <div class="ptitle">③ 详情页 · 统计卡网格 <span class="tag">新增区块</span></div>
+  <div class="phone"><div class="notch"></div><div class="pbody">
+    <!-- 整页封面背景墙（Niriko 现状：模糊封面大图 + scrim） -->
+    <div class="wall" style="background:linear-gradient(135deg,#f6c8d0,#e3d0f0 45%,#b8d4e8 75%,#f2dfc0); filter:blur(26px) saturate(1.15); transform:scale(1.15);"></div>
+    <div class="scrim"></div>
+    <div class="appbar" style="position:relative;">
+      <span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1c19" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></span>
+      <div class="ttl" style="font-size:16px;">作品详情</div>
+      <span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1c19" stroke-width="2"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+    </div>
+    <div style="position:relative; flex:1; overflow:hidden; padding:2px 16px 90px;">
+      <!-- 正文顶部：大封面卡（全宽 3:4 大图，Niriko 现状 item cover） -->
+      <div class="cover" style="width:100%; aspect-ratio:3/4; border-radius:20px; box-shadow:0 10px 28px rgba(0,0,0,.18); background:linear-gradient(150deg,#f7b9c9,#f6d6a8 40%,#a9c8ea 75%,#a0d8b8); margin-bottom:10px;"></div>
+      <!-- 大标题（TitleResolver 主标题） -->
+      <div style="font-size:22px; font-weight:800; line-height:1.25;">葬送的芙莉莲</div>
+      <div style="font-size:12px; color:var(--ink-2); margin-top:4px;">2023年10月 · 28集 · 奇幻 · 冒险</div>
+      <!-- 状态胶囊 -->
+      <div style="margin-top:10px; display:flex; gap:6px;">
+        <span class="badge" style="position:static; background:rgba(245,158,11,.95);">在看</span>
+        <span class="badge" style="position:static; background:rgba(59,130,246,.95);">S1E21</span>
+        <span class="badge" style="position:static; background:rgba(251,191,36,.95);">★ 8.9</span>
+      </div>
+      <!-- 统计卡网格（新增，置于标题/状态与评分分布之间） -->
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px;">
+        <div class="gcard" style="padding:14px 12px; text-align:center;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" style="margin:0 auto 6px;"><path d="M12 2l2.6 5.9 6.4.6-4.8 4.3 1.4 6.2L12 15.9 6.4 19l1.4-6.2L3 8.5l6.4-.6z"/></svg>
+          <div style="font-size:20px; font-weight:800;">8.9</div>
+          <div style="font-size:10px; color:var(--ink-3); margin-top:2px;">Bangumi 评分</div>
+        </div>
+        <div class="gcard" style="padding:14px 12px; text-align:center;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" style="margin:0 auto 6px;"><polygon points="6,4 20,12 6,20"/></svg>
+          <div style="font-size:20px; font-weight:800;">28</div>
+          <div style="font-size:10px; color:var(--ink-3); margin-top:2px;">总集数</div>
+        </div>
+        <div class="gcard" style="padding:14px 12px; text-align:center;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2" style="margin:0 auto 6px;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <div style="font-size:20px; font-weight:800;">24分</div>
+          <div style="font-size:10px; color:var(--ink-3); margin-top:2px;">平均时长</div>
+        </div>
+      </div>
+      <!-- 评分分布（现有） -->
+      <div class="gcard" style="padding:14px; margin-top:12px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:10px;">评分分布</div>
+        <div style="display:flex; align-items:flex-end; gap:8px; height:70px;">
+          <div style="flex:1; background:var(--green-soft); border-radius:4px 4px 0 0; height:20%;"></div>
+          <div style="flex:1; background:var(--green-soft); border-radius:4px 4px 0 0; height:35%;"></div>
+          <div style="flex:1; background:#a5d6a7; border-radius:4px 4px 0 0; height:60%;"></div>
+          <div style="flex:1; background:var(--green); border-radius:4px 4px 0 0; height:85%;"></div>
+          <div style="flex:1; background:#66bb6a; border-radius:4px 4px 0 0; height:50%;"></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="pdesc"><b>改动：</b>保留现有详情页「整页模糊封面背景 + 顶部大封面卡 + 大标题」视觉，仅在标题/状态胶囊下方、评分分布上方**插入一行 3 张统计小卡**（白玻璃圆角，可点击跳转）。头部布局零改动。</div>
+</div>
+
+<!-- 4. 详情页 - 收藏管理折叠卡 -->
+<div class="proto">
+  <div class="ptitle">④ 详情页 · 收藏管理折叠卡 <span class="tag">交互重构</span></div>
+  <div class="phone"><div class="notch"></div><div class="pbody">
+    <div class="wall" style="background:linear-gradient(135deg,#f6c8d0,#e3d0f0 45%,#b8d4e8 75%,#f2dfc0); filter:blur(26px) saturate(1.15); transform:scale(1.15);"></div>
+    <div class="scrim"></div>
+    <div class="appbar" style="position:relative;">
+      <span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1c19" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></span>
+      <div class="ttl" style="font-size:16px;">作品详情</div>
+      <span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1c19" stroke-width="2"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg></span>
+    </div>
+    <div style="position:relative; flex:1; overflow:hidden; padding:2px 16px 90px;">
+      <!-- 顶部大封面 + 标题（现状） -->
+      <div class="cover" style="width:100%; aspect-ratio:3/4; border-radius:20px; box-shadow:0 10px 28px rgba(0,0,0,.18); background:linear-gradient(150deg,#f7b9c9,#f6d6a8 40%,#a9c8ea 75%,#a0d8b8); margin-bottom:10px;"></div>
+      <div style="font-size:22px; font-weight:800; line-height:1.25;">葬送的芙莉莲</div>
+      <div style="font-size:12px; color:var(--ink-2); margin-top:4px;">2023年10月 · 28集 · 奇幻</div>
+      <!-- 收藏管理折叠卡（展开态）—— 字段均来自现有收藏编辑 -->
+      <div class="gcard" style="padding:16px; margin-top:14px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div style="display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>收藏管理</div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7a8174" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg>
+        </div>
+        <div style="font-size:11px; color:var(--ink-3); margin:12px 0 6px;">观看状态</div>
+        <div style="display:flex; gap:0; background:#eef2ea; border-radius:999px; padding:4px;">
+          <div style="flex:1; text-align:center; padding:7px 0; font-size:12px; font-weight:600; color:var(--ink-3); border-radius:999px;">想看</div>
+          <div style="flex:1; text-align:center; padding:7px 0; font-size:12px; font-weight:700; color:#fff; background:var(--watching); border-radius:999px;">在看</div>
+          <div style="flex:1; text-align:center; padding:7px 0; font-size:12px; font-weight:600; color:var(--ink-3); border-radius:999px;">看过</div>
+          <div style="flex:1; text-align:center; padding:7px 0; font-size:12px; font-weight:600; color:var(--ink-3); border-radius:999px;">搁置</div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:14px;">
+          <div style="flex:1;">
+            <div style="font-size:11px;color:var(--ink-3); margin-bottom:4px;">开始日期</div>
+            <div style="background:#eef2ea; border-radius:999px; padding:7px 12px; font-size:12px; text-align:center;">2023/10/8</div>
+          </div>
+          <div style="display:flex; align-items:center; color:var(--ink-3); padding-bottom:14px;">…</div>
+          <div style="flex:1;">
+            <div style="font-size:11px;color:var(--ink-3); margin-bottom:4px;">完成日期</div>
+            <div style="background:#eef2ea; border-radius:999px; padding:7px 12px; font-size:12px; text-align:center;">—</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:11px;color:var(--ink-3); margin-bottom:6px;">个人感想</div>
+          <div style="background:#eef2ea; border-radius:12px; padding:12px; font-size:12px; color:var(--ink-3); min-height:56px;">写点观看感想…</div>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; align-items:center;">
+          <div style="flex:1; font-size:12px; color:var(--ink-2);">进度 <b style="color:var(--ink);">21 / 28</b> 集</div>
+          <div style="display:flex; align-items:center; gap:4px; font-size:12px;"><span style="color:var(--rate);">★</span> 4</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--ink-3);margin-top:10px;line-height:1.6;">状态 / 开始·完成日期 / 个人感想 / 进度 / 评分 / 个人标签 —— 均为现有收藏编辑字段。改动仅在「弹窗独立编辑 → 页内折叠卡」。</div>
+    </div>
+  </div></div>
+  <div class="pdesc"><b>改动：</b>头部（大封面+标题）保持现状。只把现有「收藏编辑」由弹窗改为**页内折叠卡**；开始/完成日期与个人感想字段 <b>已存在</b>，无需新增数据库字段或迁移。</div>
+</div>
+
+<!-- 5. 统计页 - 彩色概览卡 -->
+<div class="proto">
+  <div class="ptitle">⑤ 统计页 · 彩色概览卡 <span class="tag">重构</span></div>
+  <div class="phone"><div class="notch"></div><div class="pbody">
+    <div class="appbar"><div class="ttl">收藏统计</div><span class="icbtn">✕</span></div>
+    <div style="flex:1; overflow:hidden; padding:4px 16px 90px;">
+      <!-- 总作品大卡 -->
+      <div class="gcard" style="display:flex; align-items:center; gap:14px; padding:16px; margin-bottom:12px;">
+        <div class="cover" style="width:70px; aspect-ratio:3/4; background:linear-gradient(135deg,#b6c8f7,#e0a3d9); border-radius:14px;"></div>
+        <div><div style="font-size:34px; font-weight:800; line-height:1;">56</div><div style="font-size:12px; color:var(--ink-2); margin-top:4px;">收藏作品</div></div>
+      </div>
+      <!-- 2x2 彩色状态卡 -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+        <div style="background:#d9f2e1; border-radius:16px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#15803d; font-weight:600;">看过</span><span style="font-size:16px;">✅</span></div><div style="font-size:28px; font-weight:800; margin-top:6px; color:#166534;">110</div></div>
+        <div style="background:#fdeeda; border-radius:16px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#b45309; font-weight:600;">在看</span><span style="font-size:16px;">▶️</span></div><div style="font-size:28px; font-weight:800; margin-top:6px; color:#92400e;">2</div></div>
+        <div style="background:#fbe3e6; border-radius:16px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#be123c; font-weight:600;">收藏</span><span style="font-size:16px;">❤️</span></div><div style="font-size:28px; font-weight:800; margin-top:6px; color:#9f1239;">25</div></div>
+        <div style="background:#eceff1; border-radius:16px; padding:14px;"><div style="display:flex; justify-content:space-between; align-items:center;"><span style="font-size:12px; color:#546e7a; font-weight:600;">想看</span><span style="font-size:16px;">🔖</span></div><div style="font-size:28px; font-weight:800; margin-top:6px; color:#455a64;">2</div></div>
+      </div>
+      <!-- 分类明细 -->
+      <div class="gcard" style="padding:16px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:10px;">分类明细</div>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; gap:10px; font-size:13px;"><span style="width:16px; height:16px; border-radius:5px; background:#3b82f6;"></span>动画 <span style="margin-left:auto; color:var(--ink-2);">48</span></div>
+          <div style="display:flex; align-items:center; gap:10px; font-size:13px;"><span style="width:16px; height:16px; border-radius:5px; background:#8b5cf6;"></span>漫画 <span style="margin-left:auto; color:var(--ink-2);">6</span></div>
+          <div style="display:flex; align-items:center; gap:10px; font-size:13px;"><span style="width:16px; height:16px; border-radius:5px; background:#10b981;"></span>游戏 <span style="margin-left:auto; color:var(--ink-2);">2</span></div>
+          <div style="display:flex; align-items:center; gap:10px; font-size:13px;"><span style="width:16px; height:16px; border-radius:5px; background:#f59e0b;"></span>观看时长 <span style="margin-left:auto; color:var(--ink-2);">698h37m</span></div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div class="pdesc"><b>改动：</b>「收藏概览」由纯数字改为 AniShelf 式卡片组：总作品大卡（封面+大数字）、2x2 彩色状态卡（看过/在看/收藏/想看，各配浅底+大数字）、分类明细（动画/漫画/游戏条数 + 总时长）。</div>
+</div>
+
+<!-- 6. 海报选择器（换封面） -->
+<div class="proto">
+  <div class="ptitle">⑥ 海报选择器 · 更换封面 <span class="tag">新功能</span></div>
+  <div class="phone"><div class="notch"></div><div class="pbody">
+    <div class="appbar"><div class="ttl">更换封面</div><span class="icbtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1a1c19" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+    <div style="flex:1; overflow:hidden; padding:6px 16px 90px;">
+      <div style="font-size:11px; color:var(--ink-3); margin:0 0 10px;">从源站海报候选中选择，替换该条目封面（不污染元数据）</div>
+      <!-- 预览大图（选中态缩放） -->
+      <div style="display:flex; gap:14px; margin-bottom:14px;">
+        <div class="cover" style="width:118px; aspect-ratio:3/4; background:linear-gradient(135deg,#f6b6c1,#f9e27d,#a1e3d5); border:3px solid var(--green); box-shadow:0 8px 20px rgba(27,46,27,.15);"></div>
+        <div style="flex:1; font-size:12px; color:var(--ink-2); align-self:center;"><b style="color:var(--ink);">已选择</b><br>《葬送的芙莉莲》<br>适用于当前收藏条目</div>
+      </div>
+      <!-- 候选项网格 -->
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+        <div class="cover" style="aspect-ratio:2/3; background:linear-gradient(135deg,#f6b6c1,#f9e27d);"></div>
+        <div class="cover" style="aspect-ratio:2/3; background:linear-gradient(135deg,#b3c8f7,#e5c7f9);"></div>
+        <div class="cover" style="aspect-ratio:2/3; background:linear-gradient(135deg,#c2e5d9,#9fd8ef);"></div>
+        <div class="cover" style="aspect-ratio:2/3; background:linear-gradient(135deg,#f9d0b6,#f7b6c1);"></div>
+        <div class="cover" style="aspect-ratio:2/3; background:linear-gradient(135deg,#c7b6f2,#b6d8f7);"></div>
+        <div class="cover" style="aspect-ratio:2/3; background:linear-gradient(135deg,#f7e2b6,#f2c1b6);"></div>
+      </div>
+    </div>
+    <div class="pillbar">
+      <span class="seg on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M5 6h14M5 18h14"/></svg>全部</span>
+      <span class="seg">官方</span>
+      <span class="seg">角色</span>
+      <span class="seg" style="background:var(--green-soft); color:var(--green-deep);">应用</span>
+    </div>
+  </div></div>
+  <div class="pdesc"><b>改动：</b>新增「更换封面」入口（收藏卡/详情页）。从 Bangumi 图片候选中选择，替换后本地落一份封面覆盖（新表或 DataStore），封面模糊玻璃底不变。选中态用 SharedTransition 缩放预览。</div>
+</div>
+
+<!-- 7. 徽标体系对照 -->
+<div class="proto">
+  <div class="ptitle">⑦ 徽标体系对照 <span class="tag">参考</span></div>
+  <div class="pdesc" style="margin-bottom:4px;">AniShelf 用彩色胶囊表达状态/集数/评分/收藏；Niriko 现为纯文本标签。下方为新徽标样式对照（改动后）。</div>
+  <div class="phoneless" style="background:var(--card); border:1px solid rgba(255,255,255,.75); backdrop-filter:blur(10px); border-radius:20px; padding:18px; box-shadow:var(--shadow); width:100%;">
+    <div style="font-size:12px;color:var(--ink-3);margin-bottom:10px;">状态胶囊</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <span class="badge" style="position:static;background:rgba(245,158,11,.95);">在看</span>
+      <span class="badge" style="position:static;background:rgba(34,197,94,.95);">看过</span>
+      <span class="badge" style="position:static;background:rgba(156,163,175,.95);">想看</span>
+      <span class="badge" style="position:static;background:rgba(139,92,246,.95);">搁置</span>
+    </div>
+    <div style="font-size:12px;color:var(--ink-3);margin-bottom:10px;">集数 / 评分 / 收藏</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <span class="badge" style="position:static;background:rgba(59,130,246,.95);">S1E21</span>
+      <span class="badge" style="position:static;background:rgba(251,191,36,.95);">★ 9</span>
+      <span class="badge" style="position:static;background:rgba(255,255,255,.9);color:var(--fav);"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.8-9.7-9C.7 9 2 5.5 5 4.5 7 3.9 9 4.8 12 7c3-2.2 5-3.1 7-2.5 3 1 4.3 4.5 2.7 7.5-2.2 4.2-9.7 9-9.7 9z"/></svg>已收藏</span>
+      <span class="badge" style="position:static;background:rgba(255,255,255,.9);color:var(--green-deep);"><span style="width:8px;height:8px;border-radius:50%;background:var(--watching);display:block;"></span>在看</span>
+    </div>
+    <div style="font-size:12px;color:var(--ink-3);margin:16px 0 8px;">海报卡徽标叠加位置</div>
+    <div style="position:relative; width:120px; aspect-ratio:3/4; border-radius:12px; overflow:hidden; background:linear-gradient(135deg,#b6c8f7,#e0a3d9);">
+      <span class="badge" style="top:5px;left:5px;background:rgba(255,255,255,.85);color:#1a1c19;"><i style="background:var(--watching)"></i></span>
+      <span class="badge" style="top:5px;right:5px;background:rgba(255,255,255,.85);color:var(--fav);padding:3px 5px;"><svg width="9" height="9" viewBox="0 0 24 24" fill="#ef4444"><path d="M12 21s-7.5-4.8-9.7-9C.7 9 2 5.5 5 4.5 7 3.9 9 4.8 12 7c3-2.2 5-3.1 7-2.5 3 1 4.3 4.5 2.7 7.5-2.2 4.2-9.7 9-9.7 9z"/></svg></span>
+      <span class="badge" style="bottom:22px;left:5px;background:rgba(251,191,36,.95);">★ 9</span>
+      <div style="position:absolute;bottom:5px;left:5px;right:5px;height:4px;background:rgba(255,255,255,.5);border-radius:99px;"><div style="width:70%;height:100%;background:#fff;border-radius:99px;"></div></div>
+    </div>
+  </div>
+  <div class="pdesc"><b>说明：</b>所有徽标为轻量彩色胶囊（半透明底 + 图标/色点），可复用于海报网格、列表行、详情页。改动后取代现有纯文本状态标签。</div>
+</div>
+</div>
+<p style="text-align:center;color:#7a8174;font-size:12px;margin:30px 0 10px;">原型仅用于 UI 视觉确认；实现细节见 docs/anishelf-reference-plan.md</p>
+</div>
+</body>
+</html>

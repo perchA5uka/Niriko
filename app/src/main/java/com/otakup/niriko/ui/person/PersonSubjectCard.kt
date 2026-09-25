@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.remote.PersonSubjectInfo
+import com.otakup.niriko.data.remote.displayTitle
 import com.otakup.niriko.ui.components.appleGlassCard
 
 /** 参与作品横滑卡片：封面 + 标题 + staff 参与身份标签 + type 徽标。 */
@@ -61,7 +62,7 @@ fun PersonSubjectCard(
             }
             AsyncImage(
                 model = subject.imageUrl,
-                contentDescription = subject.titleCN ?: subject.title,
+                contentDescription = subject.displayTitle,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(100.dp)
@@ -73,7 +74,7 @@ fun PersonSubjectCard(
             Spacer(Modifier.height(6.dp))
             // 标题
             Text(
-                text = subject.titleCN ?: subject.title,
+                text = subject.displayTitle,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,

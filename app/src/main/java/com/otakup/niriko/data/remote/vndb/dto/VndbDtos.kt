@@ -78,6 +78,43 @@ data class VndbVisualNovelDto(
     val languages: List<String> = emptyList(),
     /** 截图。 */
     val screenshots: List<VndbScreenshotDto> = emptyList(),
+
+    // ===== 第 4 轮 E：VNDB 差异化字段（Bangumi 没有的） =====
+
+    /**
+     * 人气（VNDB 的 popularity，0-100 的相对值）。
+     *
+     * 与 [rating] 的区别：[rating] 是**贝叶斯加权**后的质量分（少票条目会被拉向均值），
+     * popularity 只反映「多少人标记过」。两个一起看才能区分「冷门佳作」与「热门平庸」。
+     */
+    val popularity: Double? = null,
+
+    /**
+     * 关联作品（前作 / 续作 / 同世界观 / 重制…）。
+     *
+     * 这是用户点名要的字段：《魔法少女的魔女审判》匹配不上，
+     * 但它的同世界观作匹配得上——有了 relations，就能从已匹配的条目**反查**到未匹配的。
+     */
+    val relations: List<VndbRelationDto> = emptyList(),
+)
+
+/**
+ * VNDB 关联作品。
+ *
+ * @param relation 关系类型：seq / preq / set / alt / char / side / par / ser / fan / orig
+ */
+@Serializable
+data class VndbRelationDto(
+    val id: String = "",
+    val relation: String = "",
+    /** 是否官方关系（false 为同人）。 */
+    @SerialName("relation_official")
+    val relationOfficial: Boolean = false,
+    /**
+     * VNDB 新版可能内联返回对方标题；旧版没有此字段时由调用方二次查询补齐。
+     * 两种都要能处理（否则关系列表会全是裸 id）。
+     */
+    val title: String? = null,
 )
 
 /** VNDB 多语言标题。 */

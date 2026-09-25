@@ -32,6 +32,9 @@ class SteamGameDataSource(
         return runCatching {
             apiService.searchApps(term = query, count = limit.coerceIn(1, 50))
                 .items
+                // 只接受独立游戏 App：bundle（合集包）/sub（捆绑/DLC 组合）不是可收藏的
+                // 独立游戏，会以"合集重复添加"的形式污染搜索结果与本地库，直接丢弃
+                .filter { it.type.isNullOrBlank() || it.type == "app" }
                 .map { it.toGameItem() }
         }.getOrDefault(emptyList())
     }

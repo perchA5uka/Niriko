@@ -11,7 +11,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -54,7 +53,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -77,6 +75,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
+import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.theme.NirikoTheme
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -237,9 +236,11 @@ fun IosStyleSearchComponent(
         val viewConfig = LocalViewConfiguration.current
         val touchSlop = viewConfig.touchSlop
 
-        // 沉浸态聚焦输入框（唤起软键盘与光标）
+        // 沉浸态聚焦输入框（唤起软键盘与光标）。
+        // 从保存态恢复的沉浸态（详情页返回/进程重建，suppressAutoFocus=true）不自动聚焦：
+        // 用户看完作品返回不应弹键盘重新搜索；仅用户主动展开（拖拽/点击）时聚焦。
         LaunchedEffect(phase) {
-            if (phase == SearchPhase.IMMERSIVE_SEARCH) {
+            if (phase == SearchPhase.IMMERSIVE_SEARCH && !viewModel.suppressAutoFocus) {
                 searchFocusRequester.requestFocus()
                 // 兜底：部分设备 requestFocus 后软键盘不自动弹出，显式唤起（用户反馈"无法输入"）
                 keyboardController?.show()
@@ -261,28 +262,9 @@ fun IosStyleSearchComponent(
                     // 仅保留内容淡入；尺寸由 requiredWidth/Height + animateDpAsState 驱动
                     alpha = if (isCollapsed) 1f else reveal.coerceIn(0f, 1f)
                 }
-                // 圆角裁剪：尺寸设置之后裁剪，菜单从 56dp 向下生长时下方内容像抽屉一样自然露出，
-                // 半途不会溢出到卡片外（Apple 流式展开）
-                .shadow(
-                    6.dp, RoundedCornerShape(28.dp),
-                    ambientColor = Color.Black.copy(alpha = if (isDark) 0.45f else 0.2f),
-                    spotColor = Color.Black.copy(alpha = if (isDark) 0.45f else 0.2f),
-                )
-                .clip(RoundedCornerShape(28.dp))
-                .background(
-                    // 不透明白背景：alpha 0.95/0.9 遮挡下方列表文字（原 0.85/0.65 半透明导致穿透重叠）
-                    Brush.verticalGradient(
-                        listOf(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-                        )
-                    )
-                )
-                .border(
-                    1.dp,
-                    color = if (isDark) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.6f),
-                    shape = RoundedCornerShape(28.dp),
-                )
+                // 液态玻璃表面：appleGlassCard（真折射/静态玻璃自动降级）。
+                // 额外在内容层下方垫一层近不透明 surface，保证展开菜单叠在滚动列表上仍可读。
+                .appleGlassCard(shape = RoundedCornerShape(28.dp))
                 // 手势挂在不移动的卡片容器上（非锚点）：position 相对卡片稳定，dx 即手指真实位移，
                 // 1:1 跟手（修复"锚点参考系漂移 → 半速跟手/50% 封顶"的根因）。
                 // down 时校验手指落在右侧锚点区域才处理拖拽/短按，其余区域放行给模式/类型点击。
@@ -369,6 +351,13 @@ fun IosStyleSearchComponent(
                     } else Modifier
                 ),
         ) {
+            // 垫层：展开菜单压在滚动列表上时保证可读性（玻璃之上、内容之下）
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
+            ) {}
+
             // ===== 内容列（COLLAPSED 时整体淡出） =====
             // 自顶向下排布：Arrangement.Top 使第一行紧贴卡片顶部，卡片从 56dp 向下生长时
             // 第一行位置零移动（"从搜索按钮向下吐出"）；行 2/3/4 用固定高度+padding，不均分
@@ -396,13 +385,7 @@ fun IosStyleSearchComponent(
                             .fillMaxSize()
                             .padding(vertical = 4.dp)
                             .graphicsLayer { alpha = fakeAlpha }
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(Color.White.copy(alpha = if (isDark) 0.06f else 0.5f))
-                            .border(
-                                1.dp,
-                                Color.White.copy(alpha = if (isDark) 0.18f else 0.75f),
-                                RoundedCornerShape(24.dp),
-                            ),
+                            .appleGlassCard(shape = RoundedCornerShape(24.dp)),
                     )
                     // 假输入框占位文字（仅非沉浸态）：提示左划解锁
                     if (!isImmersive) {
@@ -521,9 +504,17 @@ fun IosStyleSearchComponent(
                         .padding(top = 4.dp, start = 12.dp)
                         .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
                 )
-                // ---- 行 4：类型（一行 5 个；默认无选中，全部隐含） ----
-                // 固定高度承接剩余空间（menuH 200 - 上下 colPad 16 - 行1 56 - 行2 44 - 行3 22 - 行4 顶部间距 4），
-                // 不做 weight 均分 → 卡片变高时第一行不因重测偏移
+                // ---- 行 4：类型（含「全部」；横向可滚动） ----
+                // 第 5 轮 D21/D22：
+                //  - **「全部」回来了**。第 4 轮为了去掉「发现页的『全部』」删掉了
+                //    SELECTABLE_CONTENT_TYPES 里的 ALL，但那个常量**只被本组件使用**
+                //    （当时「找条目」另有自己的类型常量；第 6 轮它已并入历史排名并被删除），
+                //    结果发现页没改对、搜索菜单的「全部」反而被误删。
+                //    搜索场景下「不按类型过滤」是真实需求，必须保留。
+                //  - **改回 SpaceEvenly 均分**（第 5 轮返工）。
+                //    中间那版为了塞下 6 个类型改成了横向滚动 + spacedBy，结果每个 cell
+                //    缩成内容宽：图标看起来变小、右侧留出一大片空白 —— 用户明确反馈了这两点。
+                //    6 个 cell 在 360dp 下每个约 60dp，放得下 20dp 图标 + 3 字标签。
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -533,14 +524,15 @@ fun IosStyleSearchComponent(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ContentType.entries.forEach { type ->
+                    SELECTABLE_CONTENT_TYPES.forEach { type ->
                         TypeCell(
                             label = type.label,
                             type = type,
                             selected = viewModel.contentType == type,
                             onClick = {
-                                if (viewModel.contentType == type) {
-                                    onTypeSelected(ContentType.ALL) // 再点一次取消 → 全部
+                                // 「全部」本身就是合法选择；其余类型再点一次取消 → 回到「全部」
+                                if (type != ContentType.ALL && viewModel.contentType == type) {
+                                    onTypeSelected(ContentType.ALL)
                                 } else {
                                     onTypeSelected(type)
                                 }
@@ -562,43 +554,13 @@ fun IosStyleSearchComponent(
                         // 避免双重状态源冲突导致的抽搐闪回（单一驱动源）
                         alpha = if (isCollapsed) 1f else 0.95f
                     }
-                    // 凸起玻璃按钮（对齐原型 .anchor box-shadow: var(--shadow-float)）：
-                    // MENU/DRAGGING 态与 fake-track 拉出层级差，消除两层浅色玻璃的边框混叠
+                    // 凸起玻璃按钮：MENU/DRAGGING 态与 fake-track 拉出层级差
                     .then(
                         if (!isCollapsed && !isImmersive) {
-                            Modifier.shadow(
-                                elevation = 6.dp,
-                                // MENU/DRAGGING 态与轨道胶囊一致(24.dp 全圆角)
-                                shape = RoundedCornerShape(24.dp),
-                                ambientColor = Color(0xFF1E3C1E).copy(alpha = 0.16f),
-                                spotColor = Color(0xFF1E3C1E).copy(alpha = 0.08f),
-                            )
-                        } else Modifier
-                    )
-                    // 圆角：collapsed 18.dp(主页胶囊形态)；展开态 24.dp 与轨道胶囊一致
-                    .clip(RoundedCornerShape(if (isCollapsed) 18.dp else 24.dp))
-                    .background(
-                        when {
-                            isCollapsed -> SolidColor(Color.Transparent) // 表面即按钮
-                            phase == SearchPhase.IMMERSIVE_SEARCH -> SolidColor(Color.Transparent) // 前导图标
-                            // 对齐原型 anchor 渐变：亮 0.85→0.55 白 / 暗 0.22→0.14 白
-                            else -> Brush.verticalGradient(
-                                if (isDark) {
-                                    listOf(Color.White.copy(alpha = 0.22f), Color.White.copy(alpha = 0.14f))
-                                } else {
-                                    listOf(Color.White.copy(alpha = 0.85f), Color.White.copy(alpha = 0.55f))
-                                }
-                            )
+                            Modifier.appleGlassCard(shape = RoundedCornerShape(24.dp))
+                        } else {
+                            Modifier.clip(RoundedCornerShape(if (isCollapsed) 18.dp else 24.dp))
                         }
-                    )
-                    .border(
-                        1.dp,
-                        color = when {
-                            isCollapsed -> Color.Transparent
-                            phase == SearchPhase.IMMERSIVE_SEARCH -> Color.Transparent
-                            else -> Color.White.copy(alpha = if (isDark) 0.3f else 0.8f)
-                        },
-                        shape = RoundedCornerShape(if (isCollapsed) 18.dp else 24.dp),
                     ),
                 contentAlignment = Alignment.Center,
             ) {
@@ -625,13 +587,7 @@ fun IosStyleSearchComponent(
                 Box(
                     modifier = Modifier
                         .size(anchorSmall)
-                        .clip(RoundedCornerShape(anchorSmall / 2))
-                        .background(Color.Black.copy(alpha = if (isDark) 0.18f else 0.05f))
-                        .border(
-                            1.dp,
-                            Color.White.copy(alpha = 0.6f),
-                            RoundedCornerShape(anchorSmall / 2),
-                        )
+                        .appleGlassCard(shape = RoundedCornerShape(anchorSmall / 2))
                         .clickable {
                             focusManager.clearFocus()
                             // 清空已输入内容（同步 SubjectSearchViewModel 与 SearchViewModel 镜像），

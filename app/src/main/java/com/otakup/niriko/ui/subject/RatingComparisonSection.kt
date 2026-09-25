@@ -35,6 +35,10 @@ fun RatingComparisonSection(
     modifier: Modifier = Modifier,
     glassBackdrop: Backdrop? = null,
     isScrolling: Boolean = false,
+    /** 争议度标签（评分分布标准差 → 「异口同声…厨黑大战」）。 */
+    disputeLabel: String? = null,
+    /** 本地库内同类型百分位（0-100）。口径是"你的收藏库"，不是全网排名。 */
+    localPercentile: Int? = null,
 ) {
     val bgmRating = subject.ratingScore
     val biliRating = subject.biliScore
@@ -112,6 +116,30 @@ fun RatingComparisonSection(
                         }
                     }
                 }
+
+                // 阶段 7：争议度 + 本地库内百分位（都是纯本地计算，零请求）
+                val insights = buildList {
+                    disputeLabel?.let { add("评分争议度：$it") }
+                    localPercentile?.let { add("本地库内百分位：$it%") }
+                }
+                if (insights.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    insights.forEach { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    if (localPercentile != null) {
+                        Text(
+                            text = "百分位基于你自己的收藏库同类作品，非全站排名",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
@@ -122,6 +150,8 @@ fun RatingComparisonSection(
 fun RatingDistributionChart(
     distribution: Map<Int, Int>, // key: 分数(1-10), value: 票数
     modifier: Modifier = Modifier,
+    /** 嵌入横滑卡片时为 true：不自带标题、不加 16dp 横向边距。 */
+    compact: Boolean = false,
 ) {
     if (distribution.isEmpty()) return
 
@@ -131,14 +161,20 @@ fun RatingDistributionChart(
     // Paint 复用（每帧 new Paint 产生 GC 尖峰；实例在 composable 层 remember 一次）
     val labelPaint = remember { android.graphics.Paint() }
 
-    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "评分分布",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Medium,
-        )
-        Spacer(Modifier.height(8.dp))
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (compact) Modifier else Modifier.padding(horizontal = 16.dp)),
+    ) {
+        if (!compact) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "评分分布",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.height(8.dp))
+        }
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()

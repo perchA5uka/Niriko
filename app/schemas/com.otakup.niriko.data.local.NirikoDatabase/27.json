@@ -1,0 +1,1308 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 27,
+    "identityHash": "6bbab98d1ece43da8434837eeca7c174",
+    "entities": [
+      {
+        "tableName": "work_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `type` TEXT NOT NULL, `status` TEXT NOT NULL, `totalEpisodes` INTEGER, `watchedEpisodes` INTEGER, `rating` REAL, `startDate` INTEGER, `finishDate` INTEGER, `tags` TEXT NOT NULL, `coverPath` TEXT, `remark` TEXT, `createTime` INTEGER NOT NULL, `updateTime` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalEpisodes",
+            "columnName": "totalEpisodes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "watchedEpisodes",
+            "columnName": "watchedEpisodes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "startDate",
+            "columnName": "startDate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finishDate",
+            "columnName": "finishDate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tags",
+            "columnName": "tags",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "coverPath",
+            "columnName": "coverPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "remark",
+            "columnName": "remark",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updateTime",
+            "columnName": "updateTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "subjects",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `title` TEXT NOT NULL, `titleCN` TEXT, `type` TEXT NOT NULL, `summary` TEXT, `coverUrl` TEXT, `totalEpisodes` INTEGER, `platform` TEXT, `volumes` INTEGER, `airDate` TEXT, `airWeekday` INTEGER, `airTimeMinutes` INTEGER, `airTimeZone` TEXT, `pinyinKey` TEXT, `ratingScore` REAL, `ratingTotal` INTEGER, `rank` INTEGER, `biliScore` REAL, `biliRatingTotal` INTEGER, `biliSeasonId` INTEGER, `series` INTEGER, `tags` TEXT NOT NULL, `lastSyncTime` INTEGER NOT NULL, `sourceId` TEXT NOT NULL, `sourceKey` TEXT, PRIMARY KEY(`subjectId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleCN",
+            "columnName": "titleCN",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "coverUrl",
+            "columnName": "coverUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "totalEpisodes",
+            "columnName": "totalEpisodes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "platform",
+            "columnName": "platform",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "volumes",
+            "columnName": "volumes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "airDate",
+            "columnName": "airDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "airWeekday",
+            "columnName": "airWeekday",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "airTimeMinutes",
+            "columnName": "airTimeMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "airTimeZone",
+            "columnName": "airTimeZone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "pinyinKey",
+            "columnName": "pinyinKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "ratingScore",
+            "columnName": "ratingScore",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "ratingTotal",
+            "columnName": "ratingTotal",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "rank",
+            "columnName": "rank",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "biliScore",
+            "columnName": "biliScore",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "biliRatingTotal",
+            "columnName": "biliRatingTotal",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "biliSeasonId",
+            "columnName": "biliSeasonId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "series",
+            "columnName": "series",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tags",
+            "columnName": "tags",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncTime",
+            "columnName": "lastSyncTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceKey",
+            "columnName": "sourceKey",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_subjects_sourceKey",
+            "unique": true,
+            "columnNames": [
+              "sourceKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_subjects_sourceKey` ON `${TABLE_NAME}` (`sourceKey`)"
+          }
+        ]
+      },
+      {
+        "tableName": "collections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subjectId` INTEGER NOT NULL, `status` TEXT NOT NULL, `watchedEpisodes` INTEGER, `watchedVolumes` INTEGER, `isPrivate` INTEGER NOT NULL, `rating` REAL, `startDate` INTEGER, `finishDate` INTEGER, `personalTags` TEXT NOT NULL, `personalImpression` TEXT, `remark` TEXT, `watchedTrackIds` TEXT NOT NULL, `createTime` INTEGER NOT NULL, `updateTime` INTEGER NOT NULL, FOREIGN KEY(`subjectId`) REFERENCES `subjects`(`subjectId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "watchedEpisodes",
+            "columnName": "watchedEpisodes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "watchedVolumes",
+            "columnName": "watchedVolumes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isPrivate",
+            "columnName": "isPrivate",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rating",
+            "columnName": "rating",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "startDate",
+            "columnName": "startDate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "finishDate",
+            "columnName": "finishDate",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "personalTags",
+            "columnName": "personalTags",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personalImpression",
+            "columnName": "personalImpression",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "remark",
+            "columnName": "remark",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "watchedTrackIds",
+            "columnName": "watchedTrackIds",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updateTime",
+            "columnName": "updateTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_collections_subjectId",
+            "unique": true,
+            "columnNames": [
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_collections_subjectId` ON `${TABLE_NAME}` (`subjectId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "subjects",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "subjectId"
+            ],
+            "referencedColumns": [
+              "subjectId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "search_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `keyword` TEXT NOT NULL, `createTime` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "keyword",
+            "columnName": "keyword",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "person_collections",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`personId` INTEGER NOT NULL, `name` TEXT NOT NULL, `nameCn` TEXT, `imageUrl` TEXT, `career` TEXT NOT NULL, `createTime` INTEGER NOT NULL, PRIMARY KEY(`personId`))",
+        "fields": [
+          {
+            "fieldPath": "personId",
+            "columnName": "personId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nameCn",
+            "columnName": "nameCn",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imageUrl",
+            "columnName": "imageUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "career",
+            "columnName": "career",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "personId"
+          ]
+        }
+      },
+      {
+        "tableName": "bilibili_sync_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mediaId` INTEGER NOT NULL, `seasonId` INTEGER, `bgmSubjectId` INTEGER, `title` TEXT NOT NULL, `cover` TEXT, `followStatus` INTEGER NOT NULL, `progress` INTEGER, `totalEpisodes` INTEGER, `biliScore` REAL, `biliComment` TEXT, `imported` INTEGER NOT NULL, `importTime` INTEGER NOT NULL, PRIMARY KEY(`mediaId`))",
+        "fields": [
+          {
+            "fieldPath": "mediaId",
+            "columnName": "mediaId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "seasonId",
+            "columnName": "seasonId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "bgmSubjectId",
+            "columnName": "bgmSubjectId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cover",
+            "columnName": "cover",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "followStatus",
+            "columnName": "followStatus",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "progress",
+            "columnName": "progress",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "totalEpisodes",
+            "columnName": "totalEpisodes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "biliScore",
+            "columnName": "biliScore",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "biliComment",
+            "columnName": "biliComment",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "imported",
+            "columnName": "imported",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importTime",
+            "columnName": "importTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "mediaId"
+          ]
+        }
+      },
+      {
+        "tableName": "steam_games",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `appId` INTEGER NOT NULL, `name` TEXT NOT NULL, `shortDescription` TEXT, `developers` TEXT NOT NULL, `publishers` TEXT NOT NULL, `priceCents` INTEGER, `currency` TEXT, `metacriticScore` INTEGER, `currentPlayers` INTEGER, `steamTags` TEXT NOT NULL, `screenshots` TEXT NOT NULL, `headerImage` TEXT, `releaseDate` TEXT, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`subjectId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appId",
+            "columnName": "appId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortDescription",
+            "columnName": "shortDescription",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "developers",
+            "columnName": "developers",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publishers",
+            "columnName": "publishers",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceCents",
+            "columnName": "priceCents",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "metacriticScore",
+            "columnName": "metacriticScore",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "currentPlayers",
+            "columnName": "currentPlayers",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "steamTags",
+            "columnName": "steamTags",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screenshots",
+            "columnName": "screenshots",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "headerImage",
+            "columnName": "headerImage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "releaseDate",
+            "columnName": "releaseDate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId"
+          ]
+        }
+      },
+      {
+        "tableName": "steam_bindings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `steamAppId` INTEGER NOT NULL, `matchMethod` TEXT NOT NULL, `confidence` REAL NOT NULL, `createTime` INTEGER NOT NULL, PRIMARY KEY(`subjectId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "steamAppId",
+            "columnName": "steamAppId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchMethod",
+            "columnName": "matchMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId"
+          ]
+        }
+      },
+      {
+        "tableName": "steam_library_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`appId` INTEGER NOT NULL, `steamId64` TEXT NOT NULL, `name` TEXT NOT NULL, `coverUrl` TEXT, `playtimeForeverMinutes` INTEGER NOT NULL, `playtime2WeeksMinutes` INTEGER, `bgmSubjectId` INTEGER, `isPlaceholder` INTEGER NOT NULL, `shared` INTEGER NOT NULL, `imported` INTEGER NOT NULL, `importTime` INTEGER NOT NULL, PRIMARY KEY(`appId`))",
+        "fields": [
+          {
+            "fieldPath": "appId",
+            "columnName": "appId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "steamId64",
+            "columnName": "steamId64",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "coverUrl",
+            "columnName": "coverUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "playtimeForeverMinutes",
+            "columnName": "playtimeForeverMinutes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playtime2WeeksMinutes",
+            "columnName": "playtime2WeeksMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "bgmSubjectId",
+            "columnName": "bgmSubjectId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isPlaceholder",
+            "columnName": "isPlaceholder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shared",
+            "columnName": "shared",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imported",
+            "columnName": "imported",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "importTime",
+            "columnName": "importTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "appId"
+          ]
+        }
+      },
+      {
+        "tableName": "vndb_bindings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `vndbId` TEXT NOT NULL, `matchMethod` TEXT NOT NULL, `confidence` REAL NOT NULL, `createTime` INTEGER NOT NULL, PRIMARY KEY(`subjectId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "vndbId",
+            "columnName": "vndbId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchMethod",
+            "columnName": "matchMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId"
+          ]
+        }
+      },
+      {
+        "tableName": "anilist_bindings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `anilistId` INTEGER NOT NULL, `matchMethod` TEXT NOT NULL, `confidence` REAL NOT NULL, `createTime` INTEGER NOT NULL, PRIMARY KEY(`subjectId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "anilistId",
+            "columnName": "anilistId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "matchMethod",
+            "columnName": "matchMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId"
+          ]
+        }
+      },
+      {
+        "tableName": "anitabi_points",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `city` TEXT NOT NULL, `pointsLength` INTEGER NOT NULL, `imagesLength` INTEGER NOT NULL, `litePointsJson` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`subjectId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "city",
+            "columnName": "city",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pointsLength",
+            "columnName": "pointsLength",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imagesLength",
+            "columnName": "imagesLength",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "litePointsJson",
+            "columnName": "litePointsJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId"
+          ]
+        }
+      },
+      {
+        "tableName": "episodes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epId` INTEGER NOT NULL, `subjectId` INTEGER NOT NULL, `sort` REAL NOT NULL, `ep` REAL NOT NULL, `name` TEXT NOT NULL, `nameCn` TEXT, `description` TEXT, `airdate` TEXT, `duration` TEXT, `durationSeconds` INTEGER NOT NULL, `type` INTEGER NOT NULL, `disc` INTEGER NOT NULL, `status` TEXT, `comment` INTEGER NOT NULL, `stillUrl` TEXT, `lastSyncTime` INTEGER NOT NULL, PRIMARY KEY(`epId`))",
+        "fields": [
+          {
+            "fieldPath": "epId",
+            "columnName": "epId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sort",
+            "columnName": "sort",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ep",
+            "columnName": "ep",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nameCn",
+            "columnName": "nameCn",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "desc",
+            "columnName": "description",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "airdate",
+            "columnName": "airdate",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "duration",
+            "columnName": "duration",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "durationSeconds",
+            "columnName": "durationSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "disc",
+            "columnName": "disc",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "comment",
+            "columnName": "comment",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "stillUrl",
+            "columnName": "stillUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastSyncTime",
+            "columnName": "lastSyncTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "epId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_episodes_subjectId",
+            "unique": false,
+            "columnNames": [
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episodes_subjectId` ON `${TABLE_NAME}` (`subjectId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "subject_external_ids",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `provider` TEXT NOT NULL, `externalId` TEXT NOT NULL, `titleSnapshot` TEXT, `confidence` REAL NOT NULL, `bindMethod` TEXT NOT NULL, `subKey` TEXT, `boundAt` INTEGER NOT NULL, PRIMARY KEY(`subjectId`, `provider`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provider",
+            "columnName": "provider",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalId",
+            "columnName": "externalId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleSnapshot",
+            "columnName": "titleSnapshot",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bindMethod",
+            "columnName": "bindMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subKey",
+            "columnName": "subKey",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "boundAt",
+            "columnName": "boundAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId",
+            "provider"
+          ]
+        }
+      },
+      {
+        "tableName": "subject_external_ratings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`subjectId` INTEGER NOT NULL, `sourceId` TEXT NOT NULL, `label` TEXT NOT NULL, `score` REAL, `nativeScore` REAL, `scoreMax` REAL NOT NULL, `voteCount` INTEGER, `sourceUrl` TEXT, `extraJson` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`subjectId`, `sourceId`))",
+        "fields": [
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "nativeScore",
+            "columnName": "nativeScore",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "scoreMax",
+            "columnName": "scoreMax",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voteCount",
+            "columnName": "voteCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "sourceUrl",
+            "columnName": "sourceUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "extraJson",
+            "columnName": "extraJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "subjectId",
+            "sourceId"
+          ]
+        }
+      },
+      {
+        "tableName": "episode_ratings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epId` INTEGER NOT NULL, `subjectId` INTEGER NOT NULL, `sourceId` TEXT NOT NULL, `score` REAL, `scoreMax` REAL NOT NULL, `voteCount` INTEGER, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`epId`, `sourceId`))",
+        "fields": [
+          {
+            "fieldPath": "epId",
+            "columnName": "epId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "scoreMax",
+            "columnName": "scoreMax",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voteCount",
+            "columnName": "voteCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "epId",
+            "sourceId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_episode_ratings_subjectId",
+            "unique": false,
+            "columnNames": [
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episode_ratings_subjectId` ON `${TABLE_NAME}` (`subjectId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "episode_my_ratings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epId` INTEGER NOT NULL, `subjectId` INTEGER NOT NULL, `score` REAL NOT NULL, `comment` TEXT, `rewatch` INTEGER NOT NULL, `ratedAt` INTEGER NOT NULL, PRIMARY KEY(`epId`))",
+        "fields": [
+          {
+            "fieldPath": "epId",
+            "columnName": "epId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "comment",
+            "columnName": "comment",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rewatch",
+            "columnName": "rewatch",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ratedAt",
+            "columnName": "ratedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "epId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_episode_my_ratings_subjectId",
+            "unique": false,
+            "columnNames": [
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_episode_my_ratings_subjectId` ON `${TABLE_NAME}` (`subjectId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "manual_awards",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subjectId` INTEGER NOT NULL, `sourceId` TEXT NOT NULL, `score` REAL, `scoreMax` REAL NOT NULL, `rankPosition` INTEGER, `note` TEXT, `url` TEXT, `createTime` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectId",
+            "columnName": "subjectId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceId",
+            "columnName": "sourceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "score",
+            "columnName": "score",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "scoreMax",
+            "columnName": "scoreMax",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rankPosition",
+            "columnName": "rankPosition",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createTime",
+            "columnName": "createTime",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_manual_awards_subjectId",
+            "unique": false,
+            "columnNames": [
+              "subjectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_manual_awards_subjectId` ON `${TABLE_NAME}` (`subjectId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6bbab98d1ece43da8434837eeca7c174')"
+    ]
+  }
+}

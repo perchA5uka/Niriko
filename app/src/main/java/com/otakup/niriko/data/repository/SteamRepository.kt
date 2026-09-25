@@ -3,6 +3,7 @@ package com.otakup.niriko.data.repository
 import android.util.Log
 import androidx.room.withTransaction
 import com.otakup.niriko.data.local.NirikoDatabase
+import com.otakup.niriko.data.local.SubjectWriteGateway
 import com.otakup.niriko.data.local.dao.CollectionDao
 import com.otakup.niriko.data.local.dao.SteamDao
 import com.otakup.niriko.data.local.dao.SteamLibraryItemDao
@@ -23,6 +24,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 private const val TAG = "SteamRepo"
 
@@ -42,6 +48,8 @@ class SteamRepository(
     private val apiService: SteamApiService = SteamApiClient.apiService,
     /** 当前登录用户的 SteamID64（成就等用户维度接口用；未登录返回 null）。 */
     private val steamId64Provider: (() -> String?)? = null,
+    /** subjects 写入网关（store 域热销榜落库真实条目用；未注入则降级不落库，仅返回数据）。 */
+    private val writeGateway: SubjectWriteGateway? = null,
 ) {
 
     companion object {
@@ -57,6 +65,17 @@ class SteamRepository(
 
     /** 活跃排行缓存：全量排行 → (数据, 时间戳)。 */
     private var chartCache: Pair<Map<Int, SteamChartEntry>, Long>? = null
+
+    /**
+     * store 热销榜原始列表缓存（30 分钟）。
+     *
+     * 改造前 [fetchStoreTopSellers] **完全没有缓存**：启动预取拉一次，
+     * 用户切到发现页「Steam」标签时又拉一次（同一份榜单，两次网络请求 + 两次落库）。
+     */
+    private var storeTopSellersCache: Pair<List<StoreChartItem>, Long>? = null
+
+    /** store search json=1 响应解析用（宽松模式，未知字段忽略）。 */
+    private val chartJson = Json { ignoreUnknownKeys = true }
 
     // ==================== 匹配与绑定 ====================
 
@@ -77,14 +96,17 @@ class SteamRepository(
     /**
      * 对 GAME 条目执行 Steam 匹配并落库。
      *
-     * 仅处理 type=GAME 且尚未绑定的条目；每个条目并发调 storesearch，
-     * 标题匹配置信度 ≥ [SteamTitleMatcher.MIN_CONFIDENCE] 才绑定。
+     * 仅处理 type=GAME、非占位（sourceId=="bangumi" 的正式词条）且尚未绑定的条目；
+     * 每个条目并发调 storesearch，标题匹配置信度 ≥ [SteamTitleMatcher.MIN_CONFIDENCE] 才绑定。
+     * 匹配时同时用 title 与 titleCN 两个标题（原名 vs 中文名）搜商店并取最佳，
+     * 解决"喵斯快跑"↔"Muse Dash"这类跨语言同名游戏绑定失败的问题。
      * 任何失败静默跳过（不影响搜索主流程）。
      *
      * @return 新绑定成功的条目（subjectId → appId 已写入 steam_bindings）
      */
     suspend fun matchAndBind(subjects: List<SubjectEntity>): List<SteamBindingEntity> {
-        val games = subjects.filter { it.type == SubjectType.GAME }
+        // 排除占位条目（sourceId=="steam" 的独立作品无需再匹配 bangumi 词条）
+        val games = subjects.filter { it.type == SubjectType.GAME && !it.isSteamPlaceholder }
         if (games.isEmpty()) return emptyList()
 
         val alreadyBound = steamDao.getBindingsBySubjectIds(games.map { it.subjectId })
@@ -101,11 +123,20 @@ class SteamRepository(
                     batch.map { subject ->
                         async {
                             try {
-                                val title = subject.titleCN?.takeIf { it.isNotBlank() } ?: subject.title
-                                val search = apiService.searchApps(term = title, count = 8)
-                                val match = SteamTitleMatcher.bestMatch(title, search.items)
-                                if (match == null) null
-                                else subject to match
+                                // 双标题都搜：title（原名，如 "Muse Dash"）+ titleCN（中文名，如 "喵斯快跑"）
+                                // 评分时对每个候选用 bestMatchMulti（查询侧全标题集取最大置信度），
+                                // 解决中英文无字符重叠但另一方精确命中的跨语言场景
+                                val titles = listOfNotNull(subject.title, subject.titleCN)
+                                    .filter { it.isNotBlank() }.distinct()
+                                if (titles.isEmpty()) return@async null
+                                var best: SteamTitleMatcher.MatchResult? = null
+                                for (t in titles) {
+                                    val search = runCatching { apiService.searchApps(term = t, count = 8) }
+                                        .getOrElse { continue }
+                                    val m = SteamTitleMatcher.bestMatchMulti(titles, search.items)
+                                    if (m != null && (best == null || m.confidence > best.confidence)) best = m
+                                }
+                                if (best == null) null else subject to best
                             } catch (e: Exception) {
                                 Log.w(TAG, "match failed for ${subject.subjectId} ${subject.title}", e)
                                 null
@@ -167,17 +198,24 @@ class SteamRepository(
         return fetchDetailAndPersist(subjectId, binding.steamAppId) ?: cached
     }
 
+    /** 最近一次官方排行（GetMostPlayedGames）拉取失败原因；null = 最近一次成功或未尝试。诊断用。 */
+    @Volatile
+    var lastChartError: String? = null
+        private set
+
     /**
      * 获取全量活跃玩家排行（GetMostPlayedGames），appid → 排名信息。
      * 实测无需 key；30 分钟内存缓存。失败返回空 Map，不抛异常。
+     *
+     * @param forceRefresh 为 true 时绕过 30 分钟缓存强制拉取（用户主动下拉刷新时用）
      */
-    suspend fun getChartRanks(): Map<Int, SteamChartEntry> {
+    suspend fun getChartRanks(forceRefresh: Boolean = false): Map<Int, SteamChartEntry> {
         val cached = chartCache
-        if (cached != null && System.currentTimeMillis() - cached.second < ACHIEVEMENT_CACHE_TTL_MS) {
+        if (!forceRefresh && cached != null && System.currentTimeMillis() - cached.second < ACHIEVEMENT_CACHE_TTL_MS) {
             return cached.first
         }
         val fresh = withContext(Dispatchers.IO) {
-            runCatching {
+            try {
                 apiService.mostPlayedGames(
                     url = SteamApiClient.MOST_PLAYED_GAMES_URL,
                     // 排行接口实测无需 key；不附加避免 key 进入日志
@@ -190,13 +228,50 @@ class SteamRepository(
                             peakInGame = r.peakInGame,
                         )
                     }
-            }.getOrNull() ?: emptyMap()
+            } catch (e: Exception) {
+                // 诊断：区分 api 域不可达 / 超时 / 接口异常，便于定位"排行加载不出"根因
+                val reason = when (e) {
+                    is java.net.UnknownHostException -> "网络不可达（api.steampowered.com）"
+                    is java.net.SocketTimeoutException -> "连接超时（api.steampowered.com）"
+                    else -> "${e.javaClass.simpleName}: ${e.message ?: ""}"
+                }
+                lastChartError = reason
+                Log.w(TAG, "getChartRanks failed: $reason", e)
+                emptyMap()
+            }
         }
         if (fresh.isNotEmpty()) {
             chartCache = fresh to System.currentTimeMillis()
+            lastChartError = null
+            return fresh
         }
-        return fresh
+        // 拉取"成功"但响应为空 ranks（接口返回空/需 key 等）：同样记录，便于诊断
+        if (lastChartError == null) {
+            lastChartError = "接口返回空数据"
+            Log.w(TAG, "getChartRanks: 接口返回空 ranks")
+        }
+
+        // ===== 主源失败 → store 域降级（热销榜，无需 key、store 域一般可达） =====
+        // fetchStoreTopSellers 内部已把真实条目落库（sourceKey="steam:{appid}"），
+        // 排行榜组装时 localByAppId 直接命中展示，无需 appdetails 二次补全
+        val fallback = withContext(Dispatchers.IO) {
+            runCatching { fetchStoreTopSellers() }.getOrDefault(emptyList())
+        }
+        if (fallback.isNotEmpty()) {
+            val fallbackRanks = fallback.withIndex().associate { (i, item) ->
+                item.appId to SteamChartEntry(rank = i + 1)
+            }
+            chartCache = fallbackRanks to System.currentTimeMillis()
+            Log.w(TAG, "getChartRanks: 主源不可用，已降级 store 域热销榜 ${fallbackRanks.size} 条（${lastChartError}）")
+            return fallbackRanks
+        }
+
+        // 主源与降级均失败：回退旧缓存（若有），避免界面一片占位；从未成功过则返回空（UI 显示错误态）
+        return cached?.first ?: emptyMap()
     }
+
+    /** 排行榜是否曾成功拉取过（有缓存）。供 UI 区分"请求失败"与"正常但无数据"。 */
+    fun hasChartCache(): Boolean = chartCache != null
 
     /**
      * 获取某游戏的活跃玩家排名（GetMostPlayedGames）。
@@ -334,6 +409,211 @@ class SteamRepository(
 
     // ==================== 查询 ====================
 
+    /** 榜单条目元数据（appdetails 拉取结果，供卡片直接展示）。 */
+    data class ChartGameInfo(
+        val name: String,
+        val headerImage: String? = null,
+        val priceCents: Int? = null,
+        val currency: String? = null,
+        val shortDescription: String? = null,
+    )
+
+    /**
+     * 按 appid 反查已绑定的 Bangumi 词条（排行榜优先展示正确词条用）。
+     * 收藏库/详情页已正确绑定时，排行榜条目应展示该词条而非本地残留的 steam 占位。
+     * 返回 null 表示无绑定（或绑定向自身占位 PLACEHOLDER）。
+     */
+    suspend fun getBoundSubjectIdByAppId(appId: Int): Long? = withContext(Dispatchers.IO) {
+        runCatching {
+            val binding = steamDao.getBindingByAppId(appId) ?: return@withContext null
+            binding.subjectId.takeIf { it > 0 && binding.matchMethod != "PLACEHOLDER" }
+        }.getOrNull()
+    }
+
+    /**
+     * 批量按 appid 反查已绑定的 Bangumi 词条（发现页 Steam 榜单组装用）。
+     *
+     * 改造前是 `storeAppIds.mapNotNull { getBoundSubjectIdByAppId(it) }`：一次**串行** 100 次数据库查询。
+     * 现在一次 `IN (:appIds)` 查询。
+     */
+    suspend fun getBoundSubjectIdsByAppIds(appIds: List<Int>): Map<Int, Long> = withContext(Dispatchers.IO) {
+        if (appIds.isEmpty()) return@withContext emptyMap()
+        runCatching {
+            steamDao.getBindingsByAppIds(appIds.distinct())
+                .mapNotNull { binding ->
+                    binding.subjectId
+                        .takeIf { it > 0 && binding.matchMethod != "PLACEHOLDER" }
+                        ?.let { binding.steamAppId to it }
+                }
+                .toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+    /**
+     * 榜单条目元数据兜底：按 appid 批量拉取 appdetails（标题/封面/价格等）并落库。
+     * 用于发现页 Steam 榜单——GetMostPlayedGames 只返回 appid，
+     * 标题/封面/价格必须由 appdetails 补齐（分块并发，避免一次打满接口）。
+     *
+     * @return appid → 完整元数据（拉取成功且 name 非空才返回）；失败静默跳过
+     */
+    suspend fun fetchChartTopGameNames(appIds: List<Int>): Map<Int, ChartGameInfo> {
+        if (appIds.isEmpty()) return emptyMap()
+        val result = mutableMapOf<Int, ChartGameInfo>()
+        withContext(Dispatchers.IO) {
+            // 分块并发调小（每批 10）+ 批次间隔：Top 100 一次性 20/批连续请求易触发
+            // Steam appdetails 限流导致榜单条目元数据缺失（排行缺项），分批放缓显著降低限流概率
+            appIds.distinct().chunked(10).forEach { batch ->
+                val names = runCatching {
+                    apiService.appDetails(appIds = batch.joinToString(","))
+                }.getOrDefault(emptyMap())
+                val sparseRows = mutableListOf<SteamGameEntity>()
+                batch.forEach { appId ->
+                    val data = names[appId.toString()]?.data ?: return@forEach
+                    val name = data.name
+                    if (name.isNullOrBlank()) return@forEach
+                    val info = ChartGameInfo(
+                        name = name,
+                        headerImage = data.headerImage,
+                        priceCents = data.priceOverview?.final ?: data.priceOverview?.initial
+                            ?: if (data.isFree) 0 else null,
+                        currency = data.priceOverview?.currency,
+                        shortDescription = data.shortDescription,
+                    )
+                    result[appId] = info
+                    // 顺带落库 steam_games 稀疏行（详情页打开时会被完整详情刷新）
+                    sparseRows += SteamGameEntity(
+                        subjectId = GameItemMapper.deriveSubjectId("steam", appId.toString()),
+                        appId = appId,
+                        name = name,
+                        headerImage = data.headerImage,
+                        shortDescription = data.shortDescription,
+                        priceCents = info.priceCents,
+                        currency = info.currency,
+                        lastUpdated = 0L,
+                    )
+                }
+                // 改造前逐条 upsertGame（每批 10 次独立事务）；改为整批一次事务
+                if (sparseRows.isNotEmpty()) {
+                    runCatching { steamDao.upsertGames(sparseRows) }
+                }
+                if (batch.size >= 10) {
+                    // 批次间短间隔（约 120ms），避免连续高压请求触发限流
+                    kotlinx.coroutines.delay(120)
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * 榜单元数据（标题/封面）：appdetails 为主，不足时用 store search JSON 兜底补全。
+     *
+     * 用途：GetMostPlayedGames 返回的 appid 列表需 appdetails 补标题/封面；appdetails 在
+     * 批量请求下可能被限流/截断导致只补全部分（此前排行榜只显示元数据就绪的少数条目的根因）。
+     * store search（json=1，一次请求 100 条 name/logo）作为兜底，保证排行榜不因元数据缺失缺项。
+     */
+    suspend fun fetchChartTopGameNamesWithFallback(appIds: List<Int>): Map<Int, ChartGameInfo> {
+        val fromDetails = fetchChartTopGameNames(appIds)
+        if (fromDetails.size >= appIds.size) return fromDetails
+        val missing = appIds.filter { it !in fromDetails }
+        val storeItems = runCatching { fetchStoreTopSellers() }.getOrDefault(emptyList())
+            .associateBy { it.appId }
+        val filled = missing.mapNotNull { appId ->
+            storeItems[appId]?.let { item ->
+                appId to ChartGameInfo(name = item.title, headerImage = item.coverUrl)
+            }
+        }.toMap()
+        if (filled.isNotEmpty()) {
+            Log.i(TAG, "fetchChartTopGameNames: appdetails 补全 ${fromDetails.size}/${appIds.size}，store search JSON 再补全 ${filled.size}")
+            return fromDetails + filled
+        }
+        return fromDetails
+    }
+
+    /**
+     * store 域降级排行源：Steam 商店热销榜（filter=topsellers）。
+     *
+     * 用途：api.steampowered.com 的 GetMostPlayedGames 不可达（被墙/超时）时，
+     * 从 store 域（一般可达）拉取"热门游戏"前 100，保证 Steam 排行可加载。
+     * 解析搜索结果 HTML 行（data-ds-appid / 标题 / 封面），结果直接落库真实
+     * subjects 条目（sourceKey="steam:{appid}"，同 id 覆盖旧占位），供排行榜直接展示。
+     * 失败返回空列表（不抛异常）。
+     */
+    suspend fun fetchStoreTopSellers(forceRefresh: Boolean = false): List<StoreChartItem> {
+        if (!forceRefresh) {
+            val cached = storeTopSellersCache
+            if (cached != null && System.currentTimeMillis() - cached.second < PLAYER_CACHE_TTL_MS) {
+                return cached.first
+            }
+        }
+        // 第一页 US 区 topsellers：cc=US（非 CN）绕过中国区锁区过滤，取完整前 100；
+        // l=schinese 保留中文标题
+        val merged = buildList {
+            val page1 = fetchStoreTopSellersPage(start = 0)
+            addAll(page1)
+            // 极端兜底：单页仍不足 100 时拉第二页合并去重
+            if (page1.size < 100) {
+                addAll(fetchStoreTopSellersPage(start = 100))
+            }
+        }.distinctBy { it.appId }
+        if (merged.isEmpty()) return emptyList()
+        storeTopSellersCache = merged to System.currentTimeMillis()
+        // 改造前：100 条榜单**逐条** upsert = 100 个独立事务 = 100 次 Room 失效通知；
+        // 而作品库列表同时观察 subjects 表 → 打开一次 Steam 标签就把作品库全量重算 100 次。
+        // 现在：一次批量单事务 + 内容 diff（重复刷新同一份榜单时零写入）。
+        val gateway = writeGateway
+        if (gateway != null) {
+            runCatching {
+                gateway.upsertAll(
+                    merged.map { item ->
+                        SubjectEntity(
+                            subjectId = GameItemMapper.deriveSubjectId("steam", item.appId.toString()),
+                            title = item.title,
+                            titleCN = item.title,
+                            type = SubjectType.GAME,
+                            coverUrl = item.coverUrl,
+                            sourceId = "steam",
+                            sourceKey = "steam:${item.appId}",
+                        )
+                    }
+                )
+            }
+        }
+        return merged
+    }
+
+    /** 拉取一页 topsellers 结果并解析（start 为偏移）。 */
+    private suspend fun fetchStoreTopSellersPage(start: Int): List<StoreChartItem> {
+        val html = SteamApiClient.getRawHtml(
+            url = "https://store.steampowered.com/search/results/?json=1&filter=topsellers&category1=998&start=$start&count=100&cc=US&l=schinese",
+            userAgent = true,
+        ) ?: return emptyList()
+        val items = parseStoreSearchResults(html)
+        // 诊断：json=1 响应为纯 JSON，解析条数即有效条目数
+        Log.i(TAG, "fetchStoreTopSellers[$start]: 解析到 ${items.size} 条")
+        return items
+    }
+
+    /**
+     * 解析 store search 响应（json=1 时返回**纯 JSON** 而非 HTML）：
+     * `{"desc":"","items":[{"name":"...","logo":"https://.../apps/{appid}/...capsule_sm_120...jpg"}, ...]}`
+     * appid 无独立字段，从 logo URL 的 `/apps/{appid}/` 段提取；无 logo 的条目跳过。
+     */
+    private fun parseStoreSearchResults(raw: String): List<StoreChartItem> {
+        return runCatching {
+            val root = chartJson.parseToJsonElement(raw).jsonObject
+            val items = root["items"]?.jsonArray ?: return@runCatching emptyList()
+            items.mapNotNull { el ->
+                val obj = el.jsonObject
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val logo = obj["logo"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val appId = Regex("""/apps/(\d+)/""").find(logo)?.groupValues?.get(1)
+                    ?.toIntOrNull() ?: return@mapNotNull null
+                StoreChartItem(appId = appId, title = name, coverUrl = logo)
+            }
+        }.getOrDefault(emptyList())
+    }
+
     /** 查询绑定关系（无则 null）。 */
     suspend fun getBinding(subjectId: Long): SteamBindingEntity? =
         steamDao.getBindingBySubjectId(subjectId)
@@ -435,3 +715,10 @@ class SteamRepository(
         }
     }
 }
+
+/** store 域降级排行条目（商店热销榜解析结果：appid + 标题 + 封面）。 */
+data class StoreChartItem(
+    val appId: Int,
+    val title: String,
+    val coverUrl: String?,
+)

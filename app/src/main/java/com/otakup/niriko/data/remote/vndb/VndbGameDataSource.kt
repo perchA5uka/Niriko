@@ -1,5 +1,6 @@
 package com.otakup.niriko.data.remote.vndb
 
+import com.otakup.niriko.data.match.MatchScorer
 import com.otakup.niriko.data.remote.game.GameDataSource
 import com.otakup.niriko.data.remote.game.GameDataSourceCapabilities
 import com.otakup.niriko.data.remote.game.GameItem
@@ -46,15 +47,31 @@ class VndbGameDataSource(
 
     override suspend fun search(query: String, limit: Int): List<GameItem> {
         if (query.isBlank()) return emptyList()
+        // 第 4 轮 D：单查询串 → 多查询串 + 全标题集合打分。
+        // 用户可输入「中文名 / 罗马音」等任意串，这里把输入本身作为一个变体再补一个
+        // 归一化变体（去空格/标点），提升「标题里带副标题」时的命中率。
+        val queries = buildList {
+            val trimmed = query.trim()
+            add(trimmed)
+            val compact = trimmed.replace(Regex("[\\s\\u3000]+"), " ")
+            if (compact != trimmed) add(compact)
+            // 中文名与拉丁名混写的「A / B」形式，拆开各搜一次
+            trimmed.split('/', '／', '|').map { it.trim() }
+                .filter { it.isNotEmpty() && it != trimmed }
+                .forEach { add(it) }
+        }.distinct()
+
         return runCatching {
-            apiService.query(
-                VndbQueryRequest(
-                    filters = buildJsonArray { add("search"); add("="); add(query) },
-                    fields = detailFields,
-                    sort = "searchrank",
-                    results = limit.coerceIn(1, 20),
-                )
-            ).results.map { it.toGameItem() }
+            VndbSearchSupport.search(
+                apiService = apiService,
+                queries = queries,
+                perQuery = limit.coerceIn(1, 20),
+                maxQueries = 3,
+                limit = limit.coerceIn(1, 20),
+                // 无 Bangumi 上下文（这是「按关键词搜」入口），只按候选内部一致性打分：
+                // 标题互相之间不加权，直接给出 1.0，让 VNDB 的 searchrank 顺序保持主导。
+                scorer = { MatchScorer.ScoredMatch(1f, emptyList()) },
+            ).map { it.vn.toGameItem() }
         }.getOrDefault(emptyList())
     }
 
@@ -97,8 +114,9 @@ class VndbGameDataSource(
             platforms = platforms.mapNotNull { platformName(it) },
             developers = developers.map { it.name },
             publishers = emptyList(),
-            // VNDB rating 0-100 → 统一按 10 分制存（与 Bangumi 一致），保留一位小数
-            ratingScore = rating?.let { (it / 10f) },
+            // VNDB rating 0-100 → 统一按 10 分制存（与 Bangumi 一致），保留一位小数；
+            // 无评分（非名作稀疏字段）保持 null，UI 显示「暂无评分」
+            ratingScore = rating?.let { (it / 10f).let { f -> Math.round(f * 10) / 10f } },
             ratingCount = votecount,
             tags = tags.take(8).map { it.name },
             releaseDate = released?.takeIf { it != "TBA" && it != "unknown" },
@@ -129,13 +147,11 @@ class VndbGameDataSource(
         "nds" -> "NDS"
         "gba" -> "GBA"
         "gb" -> "GB"
-        "dvd" -> "DVD"
         "xbo" -> "Xbox"
         "x360" -> "Xbox 360"
         "xone" -> "Xbox One"
         "xsx" -> "Xbox Series"
         "dos" -> "DOS"
-        "win" -> "Windows"
         else -> code
     }
 

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niriko 详情页改造原型 · 现状 vs 改后</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #e8e8ea;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    gap: 48px;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 32px 24px;
+    flex-wrap: wrap;
+  }
+  h2 { font-size: 18px; margin-bottom: 4px; }
+  .note { font-size: 12px; color: #888; margin-bottom: 16px; }
+
+  /* ============ 手机框 ============ */
+  .phone {
+    width: 360px;
+    height: 720px;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #333;
+    flex-shrink: 0;
+  }
+  .scroll { position: absolute; inset: 0; overflow-y: auto; scrollbar-width: none; }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* 模拟冰菓封面：樱花粉 + 制服绿 */
+  .cover-art {
+    background:
+      radial-gradient(ellipse 90% 45% at 30% 12%, rgba(255,183,197,.95), transparent 70%),
+      radial-gradient(ellipse 70% 40% at 75% 20%, rgba(255,205,215,.8), transparent 65%),
+      radial-gradient(ellipse 80% 50% at 50% 85%, rgba(84,110,61,.9), transparent 75%),
+      linear-gradient(165deg, #f2c9d4 0%, #d8a8b8 30%, #7a8a5c 62%, #3d4a30 100%);
+  }
+  /* 模糊封面铺底（两侧都保持） */
+  .cover-blur {
+    position: absolute; inset: -40px;
+    filter: blur(42px) brightness(.42) saturate(.85);
+    transform: scale(1.15);
+  }
+
+  .topbar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    font-size: 17px; font-weight: 600;
+    text-shadow: 0 1px 6px rgba(0,0,0,.6);
+  }
+  .topbar .sp { flex: 1; }
+  .topbar .ic { opacity: .85; font-size: 15px; }
+
+  /* ============ 封面头（两侧相同，保持现状） ============ */
+  .hero-card {
+    margin: 4px 16px 0;
+    height: 300px;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    position: relative;
+  }
+  .title-block { padding: 16px 20px 4px; }
+  .title-block h1 { font-size: 24px; font-weight: 700; text-shadow: 0 1px 6px rgba(0,0,0,.5); }
+  .title-block .sub { font-size: 14px; color: rgba(255,255,255,.65); margin-top: 2px; }
+  .meta-lines { padding: 10px 20px; font-size: 13px; line-height: 1.9; color: rgba(255,255,255,.85); text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+  .meta-lines b { color: #81c784; }
+
+  .sec-title { font-size: 16px; font-weight: 700; padding: 18px 20px 10px; text-shadow: 0 1px 4px rgba(0,0,0,.5); }
+
+  /* ============ 现状（左）：区块浮在模糊背景上 ============ */
+  .before .stat-row { display: flex; gap: 10px; padding: 0 16px; }
+  .before .stat {
+    flex: 1; border-radius: 14px; padding: 14px 10px; text-align: center;
+    background: rgba(20,20,22,.55);
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .before .stat .v { font-size: 20px; font-weight: 700; }
+  .before .stat .v.g { color: #81c784; }
+  .before .stat .l { font-size: 11px; color: rgba(255,255,255,.55); margin-top: 4px; }
+
+  .before .tags { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px; }
+  .before .tag {
+    font-size: 12px; padding: 5px 12px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.28);
+    color: rgba(255,255,255,.75);
+  }
+
+  /* 地标卡（两侧共用结构；字幕保护仅右侧有） */
+  .land-row { display: flex; gap: 10px; padding: 0 16px; }
+  .land {
+    width: 130px; height: 90px; border-radius: 10px; flex-shrink: 0;
+    position: relative; overflow: hidden;
+    background: linear-gradient(150deg, #c8b299 0%, #8a9a70 55%, #5a6a4a 100%);
+  }
+  .land:nth-child(2) { background: linear-gradient(150deg, #b8c4d8 0%, #7a8a9a 55%, #4a5a68 100%); }
+  .land .cap { position: absolute; left: 8px; bottom: 6px; font-size: 10.5px; color: #fff; z-index: 1; }
+  .after .land::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 46%;
+    background: linear-gradient(transparent, rgba(0,0,0,.62));
+  }
+
+  /* 现状：底部实心绿横条 */
+  .before .dock {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: #66bb6a;
+    color: #0b2a0e;
+    text-align: center;
+    padding: 16px;
+    font-size: 15px; font-weight: 700;
+  }
+
+  /* ============ 改后（右）：磨砂瓷容器卡 ============ */
+  .after .card {
+    margin: 14px 16px 0;
+    background: #1b1b1f;
+    border-radius: 20px;
+    padding: 16px 18px;
+    border-top: 1px solid rgba(255,255,255,.07);
+    box-shadow: 0 2px 8px rgba(0,0,0,.35), 0 4px 3px rgba(0,0,0,.2);
+    position: relative;
+  }
+  .after .card .sec-title { padding: 0 0 10px; text-shadow: none; font-size: 15px; }
+  .after .stat-row { display: flex; gap: 10px; }
+  .after .stat {
+    flex: 1; border-radius: 12px; padding: 12px 8px; text-align: center;
+    background: #242429;
+  }
+  .after .stat .v { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .after .stat .v.g { color: #a5d6a7; }
+  .after .stat .l { font-size: 11px; color: rgba(255,255,255,.5); margin-top: 3px; }
+
+  /* 改后：tonal 填充标签 */
+  .after .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .after .tag {
+    font-size: 12px; padding: 6px 12px; border-radius: 9px;
+    background: rgba(165,214,167,.13);
+    color: #b9dec0;
+  }
+  .after .land-row { padding: 0; }
+
+  /* 改后：底部悬浮玻璃胶囊 dock */
+  .after .dock {
+    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+    z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 24px;
+    border-radius: 999px;
+    background: rgba(28,28,32,.55);
+    -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    backdrop-filter: blur(22px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 8px 28px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+    font-size: 14px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .after .dock .star { color: #a5d6a7; }
+  .after .dock .dot { color: rgba(255,255,255,.35); }
+  .after .dock .rate { color: rgba(255,255,255,.6); font-weight: 400; font-size: 12.5px; }
+
+  /* 编号标注 */
+  .badge {
+    position: absolute; z-index: 20;
+    min-width: 24px; height: 24px; border-radius: 999px;
+    padding: 0 6px;
+    background: #ffb300; color: #1a1200;
+    font-size: 13px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+  }
+  .badge.keep { background: #546e7a; color: #eceff1; font-size: 11px; font-weight: 600; }
+  .legend { width: 360px; margin-top: 18px; font-size: 13px; line-height: 1.85; color: #bbb; }
+  .legend b { color: #ffb300; margin-right: 6px; }
+  .legend .keep { color: #90a4ae; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ================= 现状 ================= -->
+<div>
+  <h2>现状</h2>
+  <div class="note">区块直接浮在模糊封面背景上 · 细线透明标签 · 底部实心绿条</div>
+  <div class="phone before">
+    <div class="cover-art cover-blur"></div>
+    <div class="scroll">
+      <div class="topbar">‹ 作品详情 <span class="sp"></span> <span class="ic">⤴ ⬈</span></div>
+      <div class="hero-card cover-art"></div>
+      <div class="title-block">
+        <h1>冰菓</h1>
+        <div class="sub">氷菓</div>
+      </div>
+      <div class="meta-lines">
+        <b>动画</b>　评分：<b>8.2</b><br>
+        TV · 26集<br>
+        2012-04-22
+      </div>
+      <div class="sec-title">评分</div>
+      <div class="stat-row">
+        <div class="stat"><div class="v">未评分</div><div class="l">我的评分</div></div>
+        <div class="stat"><div class="v g">8.2</div><div class="l">Bangumi</div></div>
+        <div class="stat"><div class="v" style="color:#80deea">9.8</div><div class="l">Bilibili</div></div>
+      </div>
+      <div class="sec-title">标签</div>
+      <div class="tags">
+        <span class="tag">京阿尼</span><span class="tag">校园</span><span class="tag">推理</span>
+        <span class="tag">青春</span><span class="tag">日常</span><span class="tag">小说改</span>
+      </div>
+      <div class="sec-title">取景地标</div>
+      <div class="land-row">
+        <div class="land"><span class="cap">上学道 EP1·00:03</span></div>
+        <div class="land"><span class="cap">神山高校 EP1·00:14</span></div>
+      </div>
+      <div style="height:90px"></div>
+    </div>
+    <div class="dock">★ 想看 · 未评分</div>
+  </div>
+</div>
+
+<!-- ================= 改后 ================= -->
+<div>
+  <h2>改后</h2>
+  <div class="note">封面与信息布局保持现状 · 区块收进不透明容器卡 · 底部悬浮玻璃胶囊</div>
+  <div class="phone after">
+    <div class="cover-art cover-blur"></div>
+    <div class="scroll">
+      <div class="topbar">‹ 作品详情 <span class="sp"></span> <span class="ic">⤴ ⬈</span></div>
+      <div class="hero-card cover-art">
+        <span class="badge keep" style="top:10px; right:10px">保持现状</span>
+      </div>
+      <div class="title-block">
+        <h1>冰菓</h1>
+        <div class="sub">氷菓</div>
+      </div>
+      <div class="meta-lines">
+        <b>动画</b>　评分：<b>8.2</b><br>
+        TV · 26集<br>
+        2012-04-22
+      </div>
+
+      <div class="card">
+        <div class="sec-title">评分</div>
+        <div class="stat-row">
+          <div class="stat"><div class="v">–</div><div class="l">我的评分</div></div>
+          <div class="stat"><div class="v g">8.2</div><div class="l">Bangumi 3.3万人</div></div>
+          <div class="stat"><div class="v" style="color:#a8e6ec">9.8</div><div class="l">Bilibili 8.4万人</div></div>
+        </div>
+        <div class="badge" style="top:-10px; right:10px">1</div>
+      </div>
+
+      <div class="card">
+        <div class="sec-title">标签</div>
+        <div class="tags">
+          <span class="tag">京阿尼</span><span class="tag">校园</span><span class="tag">推理</span>
+          <span class="tag">青春</span><span class="tag">日常</span><span class="tag">小说改</span>
+        </div>
+        <div class="badge" style="top:-10px; right:10px">2</div>
+      </div>
+
+      <div class="card">
+        <div class="sec-title">取景地标 <span style="float:right;font-size:11px;color:#a5d6a7;font-weight:400">巡礼地图 ↗</span></div>
+        <div class="land-row">
+          <div class="land"><span class="cap">上学道 EP1·00:03</span></div>
+          <div class="land"><span class="cap">神山高校 EP1·00:14</span></div>
+        </div>
+        <div class="badge" style="bottom:8px; right:10px">3</div>
+      </div>
+      <div style="height:100px"></div>
+    </div>
+    <div class="dock"><span class="star">★</span>想看<span class="dot">·</span><span class="rate">未评分</span></div>
+    <div class="badge" style="bottom:22px; right:96px">4</div>
+  </div>
+
+  <div class="legend">
+    <span class="keep">封面全宽大图、标题/元信息在图下方、模糊封面铺底背景——均保持现状，不改动。</span><br>
+    <b>①</b>磨砂瓷容器卡：每个区块一张不透明卡（圆角 20dp、顶部 1px 高光），模糊背景不再干扰文字阅读；模糊封面仍从页边距与卡片间隙透出，氛围保留<br>
+    <b>②</b>标签 tonal 化：细线描边透明 chip → 柔和填充 chip（主题色 13% 底），无描边<br>
+    <b>③</b>地标字幕保护：缩略图底部加渐变遮罩，字幕永远可读<br>
+    <b>④</b>底部 dock：全宽实心绿横条 → 悬浮玻璃胶囊（真模糊折射背后内容、内容宽度、浮起 16dp），收起为「状态 · 评分」三件套
+  </div>
+</div>
+
+</body>
+</html>

@@ -52,6 +52,14 @@ class SearchViewModel {
     var editing by mutableStateOf(false)
         private set
 
+    /**
+     * 是否抑制"进入沉浸态自动聚焦弹键盘"。
+     * 从保存态恢复（rememberSaveable restore：详情页返回/进程重建）时置 true——
+     * 用户看完作品返回搜索页不应自动弹键盘重新搜索；用户主动展开（拖拽/点击）时置 false。
+     */
+    var suppressAutoFocus by mutableStateOf(false)
+        private set
+
     // ==================== 阶段迁移 ====================
 
     /** 置位/复位"编辑中"（BasicTextField 聚焦/失焦时调用）。 */
@@ -82,6 +90,8 @@ class SearchViewModel {
     fun expandSearch() {
         phase = SearchPhase.IMMERSIVE_SEARCH
         dragProgress = 1f
+        // 用户主动展开：允许自动聚焦（拖拽/点击进入搜索）
+        suppressAutoFocus = false
     }
 
     /** 回到默认态（并清空拖拽进度）。 */
@@ -131,6 +141,9 @@ class SearchViewModel {
     fun restore(savedPhase: SearchPhase, savedQuery: String) {
         phase = savedPhase
         query = savedQuery
+        // 恢复的搜索态不自动聚焦弹键盘：用户从详情页返回/进程重建后停留在结果页即可，
+        // 需要输入时自己点输入框（用户看完作品返回不需要重新搜）
+        suppressAutoFocus = true
     }
 
     companion object {

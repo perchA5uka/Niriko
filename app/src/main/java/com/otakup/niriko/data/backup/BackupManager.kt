@@ -14,7 +14,10 @@ import com.otakup.niriko.data.model.WorkType
 import com.otakup.niriko.data.model.collection.SortOrder
 import com.otakup.niriko.data.settings.AppSettings
 import com.otakup.niriko.data.settings.ThemeMode
+import com.otakup.niriko.data.settings.CardGlassLevel
+import com.otakup.niriko.data.settings.WallpaperAtmosphere
 import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
+import com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -26,6 +29,11 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.floatOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
@@ -36,6 +44,11 @@ import java.time.LocalDate
  */
 class BackupManager(
     private val database: NirikoDatabase,
+    /**
+     * 封面覆盖存储（阶段 7 纳入备份）。
+     * 可空以便既有调用方与单测不必构造 DataStore。
+     */
+    private val coverOverrideStore: com.otakup.niriko.data.settings.CoverOverrideStore? = null,
 ) {
 
     private val json = Json {
@@ -52,10 +65,16 @@ class BackupManager(
      */
     suspend fun exportToJson(settings: AppSettings? = null): String {
         val subjects = database.subjectDao().getAll()
-        val collections = database.collectionDao().getAll()
+        // 阶段 B：私密收藏不跟随导出/备份
+        val collections = database.collectionDao().getAll().filter { !it.isPrivate }
         val workItems = database.workDao().getAll()
         val history = database.searchHistoryDao().getAll()
         val persons = database.personCollectionDao().getAll()
+        // 阶段 7：新增的「用户数据」表（外部身份绑定、我的每集评分、手动录入的权威成绩）
+        val externalIds = database.externalIdDao().getAll()
+        val myEpisodeRatings = database.externalRatingDao().getAllMyEpisodeRatings()
+        val manualAwards = database.manualAwardDao().getAll()
+        val coverOverrides = coverOverrideStore?.all().orEmpty()
 
         return json.encodeToString(JsonObject.serializer(), buildJsonObject {
             put("version", JsonPrimitive(EXPORT_VERSION))
@@ -76,6 +95,49 @@ class BackupManager(
             })
             put("personCollections", buildJsonArray {
                 persons.forEach { p -> add(personCollectionToJson(p)) }
+            })
+            put("externalIds", buildJsonArray {
+                externalIds.forEach { e ->
+                    add(buildJsonObject {
+                        put("subjectId", JsonPrimitive(e.subjectId))
+                        put("provider", JsonPrimitive(e.provider))
+                        put("externalId", JsonPrimitive(e.externalId))
+                        e.titleSnapshot?.let { put("titleSnapshot", JsonPrimitive(it)) }
+                        put("confidence", JsonPrimitive(e.confidence))
+                        put("bindMethod", JsonPrimitive(e.bindMethod))
+                        e.subKey?.let { put("subKey", JsonPrimitive(it)) }
+                        put("boundAt", JsonPrimitive(e.boundAt))
+                    })
+                }
+            })
+            put("myEpisodeRatings", buildJsonArray {
+                myEpisodeRatings.forEach { r ->
+                    add(buildJsonObject {
+                        put("epId", JsonPrimitive(r.epId))
+                        put("subjectId", JsonPrimitive(r.subjectId))
+                        put("score", JsonPrimitive(r.score))
+                        r.comment?.let { put("comment", JsonPrimitive(it)) }
+                        put("rewatch", JsonPrimitive(r.rewatch))
+                        put("ratedAt", JsonPrimitive(r.ratedAt))
+                    })
+                }
+            })
+            put("manualAwards", buildJsonArray {
+                manualAwards.forEach { a ->
+                    add(buildJsonObject {
+                        put("subjectId", JsonPrimitive(a.subjectId))
+                        put("sourceId", JsonPrimitive(a.sourceId))
+                        a.score?.let { put("score", JsonPrimitive(it)) }
+                        put("scoreMax", JsonPrimitive(a.scoreMax))
+                        a.rankPosition?.let { put("rankPosition", JsonPrimitive(it)) }
+                        a.note?.let { put("note", JsonPrimitive(it)) }
+                        a.url?.let { put("url", JsonPrimitive(it)) }
+                        put("createTime", JsonPrimitive(a.createTime))
+                    })
+                }
+            })
+            put("coverOverrides", buildJsonObject {
+                coverOverrides.forEach { (id, uri) -> put(id.toString(), JsonPrimitive(uri)) }
             })
             if (settings != null) {
                 put("settings", settingsToJson(settings))
@@ -107,6 +169,15 @@ class BackupManager(
         val workItems = parseWorkItems(root["workItems"])
         val history = parseSearchHistory(root["searchHistory"])
         val persons = parsePersonCollections(root["personCollections"])
+        val externalIds = parseExternalIds(root["externalIds"])
+        val myEpisodeRatings = parseMyEpisodeRatings(root["myEpisodeRatings"])
+        val manualAwards = parseManualAwards(root["manualAwards"])
+        val coverOverrides = parseCoverOverrides(root["coverOverrides"])
+        // 修复 BUG-8：新表此前不校验 subjectId，导入会写进孤儿数据
+        val knownSubjectIds = subjects.map { it.subjectId }.toHashSet()
+        val validExternalIds = externalIds.filter { it.subjectId in knownSubjectIds }
+        val validMyEpisodeRatings = myEpisodeRatings.filter { it.subjectId in knownSubjectIds }
+        val validManualAwards = manualAwards.filter { it.subjectId in knownSubjectIds }
 
         // 数据校验
         if (collections.any { c -> subjects.none { s -> s.subjectId == c.subjectId } }) {
@@ -131,14 +202,24 @@ class BackupManager(
                 if (workItems.isNotEmpty()) database.workDao().insertAll(workItems)
                 if (history.isNotEmpty()) database.searchHistoryDao().insertAll(history)
                 if (persons.isNotEmpty()) database.personCollectionDao().insertAll(persons)
+                // 阶段 7：外部身份绑定 / 我的每集评分 / 手动录入的权威成绩
+                // （这些都是"重建成本高"或"纯用户数据"，必须随备份迁移）
+                if (validExternalIds.isNotEmpty()) database.externalIdDao().insertAll(validExternalIds)
+                if (validMyEpisodeRatings.isNotEmpty()) {
+                    database.externalRatingDao().insertAllMyEpisodeRatings(validMyEpisodeRatings)
+                }
+                if (validManualAwards.isNotEmpty()) database.manualAwardDao().insertAll(validManualAwards)
             }
+            coverOverrideStore?.putAll(coverOverrides, clearFirst = !merge)
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
             return ImportResult(success = false, error = "数据写入失败: ${e.message}")
         }
 
-        // 解析设置
-        val settings = parseSettings(root["settings"])
+        // 解析设置。
+        // v3 起完整导出所有设置；v2 及更早只导出过部分设置，直接恢复会把未备份字段清成默认值，
+        // 因此旧版本备份不再恢复设置，避免误清空 Steam/WebDAV/Bangumi 等配置。
+        val settings = if (version >= 3) parseSettings(root["settings"]) else null
 
         return ImportResult(
             success = true,
@@ -235,18 +316,59 @@ class BackupManager(
     }
 
     private fun settingsToJson(s: AppSettings): JsonObject = buildJsonObject {
+        // 外观
         put("themeMode", JsonPrimitive(s.themeMode.name))
         put("dynamicColor", JsonPrimitive(s.dynamicColor))
         put("oledDark", JsonPrimitive(s.oledDark))
+        put("themeColorIndex", JsonPrimitive(s.themeColorIndex))
+        put("customSeedColor", JsonPrimitive(s.customSeedColor))
+        put("wallpaperEnabled", JsonPrimitive(s.wallpaperEnabled))
+        put("wallpaperUri", JsonPrimitive(s.wallpaperUri))
+        put("wallpaperLibraryUri", JsonPrimitive(s.wallpaperLibraryUri))
+        put("wallpaperDiscoverUri", JsonPrimitive(s.wallpaperDiscoverUri))
+        put("wallpaperStatsUri", JsonPrimitive(s.wallpaperStatsUri))
+        put("wallpaperSettingsUri", JsonPrimitive(s.wallpaperSettingsUri))
+        put("wallpaperBlurDp", JsonPrimitive(s.wallpaperBlurDp))
+        put("wallpaperAtmosphere", JsonPrimitive(s.wallpaperAtmosphere.name))
+        put("cardGlassLevel", JsonPrimitive(s.cardGlassLevel.name))
+        put("splashEnabled", JsonPrimitive(s.splashEnabled))
+        put("activeThemePackId", JsonPrimitive(s.activeThemePackId))
+        put("reduceMotion", JsonPrimitive(s.reduceMotion))
+        put("customIconMode", JsonPrimitive(s.customIconMode))
+
+        // 收藏
         put("defaultSortOrder", JsonPrimitive(s.defaultSortOrder.name))
         put("showStatusTags", JsonPrimitive(s.showStatusTags))
         put("showProgressBar", JsonPrimitive(s.showProgressBar))
+
+        // 搜索
         put("nsfwEnabled", JsonPrimitive(s.nsfwEnabled))
         put("showSearchSuggestions", JsonPrimitive(s.showSearchSuggestions))
-        put("showAnnuallySummary", JsonPrimitive(s.showAnnuallySummary))
-        put("startPage", JsonPrimitive(s.startPage))
+
+        // 数据源
         put("activeDataSourceId", JsonPrimitive(s.activeDataSourceId))
         put("bangumiEndpoint", JsonPrimitive(s.bangumiEndpoint.name))
+        put("steamApiKey", JsonPrimitive(s.steamApiKey))
+        put("steamId64", JsonPrimitive(s.steamId64))
+        put("steamWebApiToken", JsonPrimitive(s.steamWebApiToken))
+
+        // WebDAV
+        put("webDavUrl", JsonPrimitive(s.webDavUrl))
+        put("webDavUsername", JsonPrimitive(s.webDavUsername))
+        put("webDavPassword", JsonPrimitive(s.webDavPassword))
+        put("webDavAutoSync", JsonPrimitive(s.webDavAutoSync))
+
+        // Bangumi 账号
+        put("bangumiAccessToken", JsonPrimitive(s.bangumiAccessToken))
+        put("bangumiTokenType", JsonPrimitive(s.bangumiTokenType))
+        put("bangumiUsername", JsonPrimitive(s.bangumiUsername))
+        put("bangumiSyncEnabled", JsonPrimitive(s.bangumiSyncEnabled))
+        put("bangumiSyncPriority", JsonPrimitive(s.bangumiSyncPriority.name))
+        put("bangumiAutoSync", JsonPrimitive(s.bangumiAutoSync))
+
+        // 统计与启动
+        put("showAnnuallySummary", JsonPrimitive(s.showAnnuallySummary))
+        put("startPage", JsonPrimitive(s.startPage))
     }
 
     // ==================== JSON 反序列化 ====================
@@ -338,6 +460,73 @@ class BackupManager(
         }
     }
 
+    private fun parseExternalIds(element: JsonElement?): List<com.otakup.niriko.data.local.entity.SubjectExternalIdEntity> {
+        val array = element as? JsonArray ?: return emptyList()
+        return array.mapNotNull { item ->
+            val o = item as? JsonObject ?: return@mapNotNull null
+            val subjectId = o["subjectId"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+            val provider = o["provider"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            val externalId = o["externalId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            com.otakup.niriko.data.local.entity.SubjectExternalIdEntity(
+                subjectId = subjectId,
+                provider = provider,
+                externalId = externalId,
+                titleSnapshot = o["titleSnapshot"]?.jsonPrimitive?.contentOrNull,
+                confidence = o["confidence"]?.jsonPrimitive?.floatOrNull ?: 0f,
+                bindMethod = o["bindMethod"]?.jsonPrimitive?.contentOrNull
+                    ?: com.otakup.niriko.data.local.entity.SubjectExternalIdEntity.METHOD_MANUAL,
+                subKey = o["subKey"]?.jsonPrimitive?.contentOrNull,
+                boundAt = o["boundAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+            )
+        }
+    }
+
+    private fun parseMyEpisodeRatings(element: JsonElement?): List<com.otakup.niriko.data.local.entity.EpisodeMyRatingEntity> {
+        val array = element as? JsonArray ?: return emptyList()
+        return array.mapNotNull { item ->
+            val o = item as? JsonObject ?: return@mapNotNull null
+            val epId = o["epId"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+            val subjectId = o["subjectId"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+            val score = o["score"]?.jsonPrimitive?.floatOrNull ?: return@mapNotNull null
+            com.otakup.niriko.data.local.entity.EpisodeMyRatingEntity(
+                epId = epId,
+                subjectId = subjectId,
+                score = score,
+                comment = o["comment"]?.jsonPrimitive?.contentOrNull,
+                rewatch = o["rewatch"]?.jsonPrimitive?.booleanOrNull ?: false,
+                ratedAt = o["ratedAt"]?.jsonPrimitive?.longOrNull ?: 0L,
+            )
+        }
+    }
+
+    private fun parseManualAwards(element: JsonElement?): List<com.otakup.niriko.data.local.entity.ManualAwardEntity> {
+        val array = element as? JsonArray ?: return emptyList()
+        return array.mapNotNull { item ->
+            val o = item as? JsonObject ?: return@mapNotNull null
+            val subjectId = o["subjectId"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+            val sourceId = o["sourceId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+            com.otakup.niriko.data.local.entity.ManualAwardEntity(
+                subjectId = subjectId,
+                sourceId = sourceId,
+                score = o["score"]?.jsonPrimitive?.floatOrNull,
+                scoreMax = o["scoreMax"]?.jsonPrimitive?.floatOrNull ?: 40f,
+                rankPosition = o["rankPosition"]?.jsonPrimitive?.intOrNull,
+                note = o["note"]?.jsonPrimitive?.contentOrNull,
+                url = o["url"]?.jsonPrimitive?.contentOrNull,
+                createTime = o["createTime"]?.jsonPrimitive?.longOrNull ?: 0L,
+            )
+        }
+    }
+
+    private fun parseCoverOverrides(element: JsonElement?): Map<Long, String> {
+        val obj = element as? JsonObject ?: return emptyMap()
+        return obj.mapNotNull { (key, value) ->
+            val id = key.toLongOrNull() ?: return@mapNotNull null
+            val uri = value.jsonPrimitive.contentOrNull ?: return@mapNotNull null
+            if (uri.isBlank()) null else id to uri
+        }.toMap()
+    }
+
     private fun parsePersonCollections(element: JsonElement?): List<PersonCollectionEntity> {
         val arr = element as? JsonArray ?: return emptyList()
         return arr.mapNotNull { obj ->
@@ -360,25 +549,73 @@ class BackupManager(
 
     private fun parseSettings(element: JsonElement?): AppSettings? {
         val o = element as? JsonObject ?: return null
+        val defaults = AppSettings()
         return AppSettings(
+            // 外观
             themeMode = o["themeMode"]?.jsonPrimitive?.content?.let { n ->
                 try { ThemeMode.valueOf(n) } catch (_: Exception) { null }
-            } ?: AppSettings().themeMode,
-            dynamicColor = o["dynamicColor"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().dynamicColor,
-            oledDark = o["oledDark"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().oledDark,
+            } ?: defaults.themeMode,
+            dynamicColor = o["dynamicColor"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.dynamicColor,
+            oledDark = o["oledDark"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.oledDark,
+            themeColorIndex = o["themeColorIndex"]?.jsonPrimitive?.content?.toIntOrNull() ?: defaults.themeColorIndex,
+            customSeedColor = o["customSeedColor"]?.jsonPrimitive?.content?.toIntOrNull() ?: defaults.customSeedColor,
+            wallpaperEnabled = o["wallpaperEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.wallpaperEnabled,
+            wallpaperUri = o["wallpaperUri"]?.jsonPrimitive?.content ?: defaults.wallpaperUri,
+            wallpaperLibraryUri = o["wallpaperLibraryUri"]?.jsonPrimitive?.content ?: defaults.wallpaperLibraryUri,
+            wallpaperDiscoverUri = o["wallpaperDiscoverUri"]?.jsonPrimitive?.content ?: defaults.wallpaperDiscoverUri,
+            wallpaperStatsUri = o["wallpaperStatsUri"]?.jsonPrimitive?.content ?: defaults.wallpaperStatsUri,
+            wallpaperSettingsUri = o["wallpaperSettingsUri"]?.jsonPrimitive?.content ?: defaults.wallpaperSettingsUri,
+            wallpaperBlurDp = o["wallpaperBlurDp"]?.jsonPrimitive?.content?.toIntOrNull() ?: defaults.wallpaperBlurDp,
+            wallpaperAtmosphere = o["wallpaperAtmosphere"]?.jsonPrimitive?.content?.let { n ->
+                try { WallpaperAtmosphere.valueOf(n) } catch (_: Exception) { null }
+            } ?: defaults.wallpaperAtmosphere,
+            cardGlassLevel = o["cardGlassLevel"]?.jsonPrimitive?.content?.let { n ->
+                try { CardGlassLevel.valueOf(n) } catch (_: Exception) { null }
+            } ?: defaults.cardGlassLevel,
+            splashEnabled = o["splashEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.splashEnabled,
+            activeThemePackId = o["activeThemePackId"]?.jsonPrimitive?.content ?: defaults.activeThemePackId,
+            reduceMotion = o["reduceMotion"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.reduceMotion,
+            customIconMode = o["customIconMode"]?.jsonPrimitive?.content ?: defaults.customIconMode,
+
+            // 收藏
             defaultSortOrder = o["defaultSortOrder"]?.jsonPrimitive?.content?.let { n ->
                 try { SortOrder.valueOf(n) } catch (_: Exception) { null }
-            } ?: AppSettings().defaultSortOrder,
-            showStatusTags = o["showStatusTags"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showStatusTags,
-            showProgressBar = o["showProgressBar"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showProgressBar,
-            nsfwEnabled = o["nsfwEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().nsfwEnabled,
-            showSearchSuggestions = o["showSearchSuggestions"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showSearchSuggestions,
-            showAnnuallySummary = o["showAnnuallySummary"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: AppSettings().showAnnuallySummary,
-            startPage = o["startPage"]?.jsonPrimitive?.content ?: AppSettings().startPage,
-            activeDataSourceId = o["activeDataSourceId"]?.jsonPrimitive?.content ?: AppSettings().activeDataSourceId,
+            } ?: defaults.defaultSortOrder,
+            showStatusTags = o["showStatusTags"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showStatusTags,
+            showProgressBar = o["showProgressBar"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showProgressBar,
+
+            // 搜索
+            nsfwEnabled = o["nsfwEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.nsfwEnabled,
+            showSearchSuggestions = o["showSearchSuggestions"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showSearchSuggestions,
+
+            // 数据源
+            activeDataSourceId = o["activeDataSourceId"]?.jsonPrimitive?.content ?: defaults.activeDataSourceId,
             bangumiEndpoint = o["bangumiEndpoint"]?.jsonPrimitive?.content?.let { n ->
                 try { BangumiEndpoint.valueOf(n) } catch (_: Exception) { null }
-            } ?: AppSettings().bangumiEndpoint,
+            } ?: defaults.bangumiEndpoint,
+            steamApiKey = o["steamApiKey"]?.jsonPrimitive?.content ?: defaults.steamApiKey,
+            steamId64 = o["steamId64"]?.jsonPrimitive?.content ?: defaults.steamId64,
+            steamWebApiToken = o["steamWebApiToken"]?.jsonPrimitive?.content ?: defaults.steamWebApiToken,
+
+            // WebDAV
+            webDavUrl = o["webDavUrl"]?.jsonPrimitive?.content ?: defaults.webDavUrl,
+            webDavUsername = o["webDavUsername"]?.jsonPrimitive?.content ?: defaults.webDavUsername,
+            webDavPassword = o["webDavPassword"]?.jsonPrimitive?.content ?: defaults.webDavPassword,
+            webDavAutoSync = o["webDavAutoSync"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.webDavAutoSync,
+
+            // Bangumi 账号
+            bangumiAccessToken = o["bangumiAccessToken"]?.jsonPrimitive?.content ?: defaults.bangumiAccessToken,
+            bangumiTokenType = o["bangumiTokenType"]?.jsonPrimitive?.content ?: defaults.bangumiTokenType,
+            bangumiUsername = o["bangumiUsername"]?.jsonPrimitive?.content ?: defaults.bangumiUsername,
+            bangumiSyncEnabled = o["bangumiSyncEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.bangumiSyncEnabled,
+            bangumiSyncPriority = o["bangumiSyncPriority"]?.jsonPrimitive?.content?.let { n ->
+                try { BangumiSyncPriority.valueOf(n) } catch (_: Exception) { null }
+            } ?: defaults.bangumiSyncPriority,
+            bangumiAutoSync = o["bangumiAutoSync"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.bangumiAutoSync,
+
+            // 统计与启动
+            showAnnuallySummary = o["showAnnuallySummary"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showAnnuallySummary,
+            startPage = o["startPage"]?.jsonPrimitive?.content ?: defaults.startPage,
         )
     }
 
@@ -388,8 +625,8 @@ class BackupManager(
     }
 
     companion object {
-        private const val EXPORT_VERSION = 2
-        private const val APP_VERSION = "1.0.0"
+        private const val EXPORT_VERSION = 3
+        private val APP_VERSION: String = com.otakup.niriko.BuildConfig.VERSION_NAME
         private const val TAG = "BackupManager"
     }
 }

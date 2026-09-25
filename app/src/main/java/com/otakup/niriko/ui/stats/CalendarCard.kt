@@ -28,6 +28,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,6 +98,8 @@ fun CalendarCard(
     onSwitchMode: (CalendarMode) -> Unit,
     onDayClick: (LocalDate) -> Unit,
     onRefreshBroadcast: (() -> Unit)? = null,
+    /** 放送日历上次成功刷新时间（0 = 从未）。 */
+    broadcastLastUpdatedAt: Long = 0L,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -119,10 +126,11 @@ fun CalendarCard(
             // 图例
             CalendarLegend(calendarMode = calendarMode)
 
-            // 错误提示 + 刷新
-            if (broadcastError != null) {
-                BroadcastErrorHint(
+            // 错误提示 / 陈旧度 + 刷新
+            if (broadcastError != null || broadcastLastUpdatedAt > 0L) {
+                BroadcastStatusHint(
                     message = broadcastError,
+                    lastUpdatedAt = broadcastLastUpdatedAt,
                     onRefresh = onRefreshBroadcast,
                 )
             }
@@ -191,16 +199,33 @@ private fun CalendarLegend(calendarMode: CalendarMode) {
                 Spacer(Modifier.width(3.dp))
                 Text("发售", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
             }
+            // 阶段 F：放送可信度说明（单源，仅供参考）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("放送时间参考 Bangumi 日历", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f), fontSize = 9.sp)
+            }
         }
     }
 }
 
-/** 放送信息错误/状态提示行 + 手动刷新。 */
+/**
+ * 放送信息状态行：错误提示 + 「上次更新 X 分钟前」+ 手动刷新。
+ *
+ * 改造前这里只在出错时出现，且失败被静默吞掉时用户完全看不出数据是新的还是旧的。
+ */
 @Composable
-private fun BroadcastErrorHint(
-    message: String,
+private fun BroadcastStatusHint(
+    message: String?,
+    lastUpdatedAt: Long,
     onRefresh: (() -> Unit)? = null,
 ) {
+    // 相对时间走字
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(15_000)
+            nowMs = System.currentTimeMillis()
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -208,12 +233,25 @@ private fun BroadcastErrorHint(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 9.sp,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            if (message != null) {
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 9.sp,
+                )
+            }
+            if (lastUpdatedAt > 0L) {
+                Text(
+                    text = "上次更新 " + com.otakup.niriko.data.refresh.RefreshStatusLabels
+                        .formatAgo(lastUpdatedAt, nowMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 9.sp,
+                )
+            }
+        }
         if (onRefresh != null) {
             Text(
                 text = "刷新",
