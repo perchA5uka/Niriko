@@ -63,7 +63,7 @@ fun AboutSettingsScreen(
                     icon = Icons.Outlined.Feedback,
                     title = "反馈与建议",
                     description = "GitHub Issues",
-                    onClick = { /* 预留：打开 GitHub 链接 */ },
+                    onClick = { openExternalUrl(context, REPO_ISSUES_URL) },
                 )
             },
         ))
@@ -78,17 +78,29 @@ fun AboutSettingsScreen(
                     Text("本应用基于 MIT License 开源。")
                     Spacer(Modifier.height(8.dp))
                     Text(
+                        text = "仓库与许可证全文：$REPO_URL",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
                         text = "依赖库：\n" +
                             "• Jetpack Compose (Apache 2.0)\n" +
                             "• Material 3 (Apache 2.0)\n" +
                             "• Navigation Compose (Apache 2.0)\n" +
                             "• Room (Apache 2.0)\n" +
+                            "• DataStore (Apache 2.0)\n" +
+                            "• WorkManager (Apache 2.0)\n" +
+                            "• Media3 (Apache 2.0)\n" +
                             "• Coil (Apache 2.0)\n" +
                             "• Retrofit (Apache 2.0)\n" +
                             "• OkHttp (Apache 2.0)\n" +
                             "• Kotlinx Serialization (Apache 2.0)\n" +
-                            "• DataStore (Apache 2.0)\n" +
-                            "• material-color-utilities (Apache 2.0)",
+                            "• miuix-blur (Apache 2.0)\n" +
+                            "• kyant backdrop (Apache 2.0)\n" +
+                            "• material-color-utilities (Apache 2.0)\n" +
+                            "• pinyin4j (BSD)\n" +
+                            "• 玻璃着色器移植自 AndroidLiquidGlassView (MIT)\n" +
+                            "\n完整第三方声明见仓库内 THIRD-PARTY-NOTICES.md",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -96,6 +108,22 @@ fun AboutSettingsScreen(
             confirmButton = {
                 TextButton(onClick = { showLicenseDialog = false }) { Text("关闭") }
             },
+        )
+    }
+}
+
+/** 项目仓库（反馈入口与许可声明都指向这里）。 */
+private const val REPO_URL = "https://github.com/perchA5uka/Niriko"
+private const val REPO_ISSUES_URL = "$REPO_URL/issues"
+
+/** 打开外部链接；设备上没有能处理该链接的应用时静默忽略，不影响设置页。 */
+private fun openExternalUrl(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(
+            android.content.Intent(
+                android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse(url),
+            )
         )
     }
 }

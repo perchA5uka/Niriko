@@ -2,6 +2,8 @@
 
 **追番 · 收藏 · 统计** —— 一个以 Bangumi 为主数据源的 Android 原生应用。
 
+> 仓库：<https://github.com/perchA5uka/Niriko> · 许可：MIT · 问题反馈：<https://github.com/perchA5uka/Niriko/issues>
+
 管理动画 / 书籍 / 游戏 / 音乐 / 三次元的收藏与进度，查看放送日历与统计可视化，发现当下热门作品，并把 Steam、Bilibili、Kazumi 等平台的收藏导入进来。支持主题包、壁纸、玻璃质感界面与 WebDAV / Bangumi 双向同步。
 
 | 项目信息 | 值 |
@@ -410,7 +412,7 @@ docs/                            # 设计与调研文档
 - **Steam** 相关数据来自 Steam 商店与 Web API，版权归 Valve 及各发行商所有
 - 本应用使用 **TMDb API**，但未获得 TMDb 的认可或认证（This product uses the TMDb API but is not endorsed or certified by TMDb）
 - **OMDb** 内容按 CC BY-NC 4.0 提供，**不可用于商业用途**
-- **豆瓣** 通道是默认关闭的灰色通道；豆瓣未授权第三方抓取，仅供个人查看使用
+- **豆瓣** 通道是默认关闭的灰色通道；豆瓣未授权第三方抓取，仅供个人查看使用。代码内置了一个社区公开的 frodo apikey（非豆瓣官方发布、可能随时失效）；若要分发衍生版本，请自行评估并替换或移除该通道
 - 本仓库以 **MIT License** 开源（见 `LICENSE`）；随应用分发的第三方依赖、内嵌源码与数据来源的许可声明见 `THIRD-PARTY-NOTICES.md`
 
 ---

@@ -20,7 +20,7 @@ object VndbApiClient {
     const val BASE_URL = "https://api.vndb.org/kana/"
 
     /** VNDB 官方要求的 User-Agent（格式：{名称}/{版本}）。 */
-    private const val USER_AGENT = "Niriko/1.0 (Android; https://github.com/)"
+    private const val USER_AGENT = "Niriko/1.0.0 (Android; https://github.com/perchA5uka/Niriko)"
 
     private val json = Json {
         ignoreUnknownKeys = true

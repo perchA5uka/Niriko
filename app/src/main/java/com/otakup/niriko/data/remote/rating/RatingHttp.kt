@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit
  */
 object RatingHttp {
 
-    private const val USER_AGENT = "Niriko/1.0.0 (https://github.com/niriko)"
+    private const val USER_AGENT = "Niriko/1.0.0 (https://github.com/perchA5uka/Niriko)"
 
     val json: Json = Json {
         ignoreUnknownKeys = true
