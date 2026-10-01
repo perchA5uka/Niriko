@@ -272,6 +272,11 @@ class SettingsViewModel(
         viewModelScope.launch { dataStore.setDoubanPhotosEnabled(enabled) }
     }
 
+    /** 豆瓣剧照防剧透（B4 · 4-13：用户开关，默认开）。 */
+    fun setDoubanAntiSpoiler(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setDoubanAntiSpoiler(enabled) }
+    }
+
     fun setDoubanReferers(imageReferer: String, apiReferer: String) {
         viewModelScope.launch { dataStore.setDoubanReferers(imageReferer, apiReferer) }
     }

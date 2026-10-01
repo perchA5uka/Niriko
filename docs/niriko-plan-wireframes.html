@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Niriko · 计划清单 / 核心交互流程 / 低保真线框图</title>
+<style>*{box-sizing:border-box}
+body{margin:0;background:#f4f4f4;color:#111;font:14px/1.65 system-ui,-apple-system,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1600px;margin:0 auto;padding:22px 20px 90px}
+a{color:#111}
+h1{font-size:25px;margin:0 0 8px}
+h2{font-size:19px;border-left:7px solid #111;padding-left:10px;margin:38px 0 6px}
+h3{font-size:15px;margin:20px 0 4px}
+.hint{font-size:12.5px;color:#444;margin:0 0 4px}
+.head{border:2px solid #111;border-radius:14px;background:#fff;padding:18px 20px}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.stat{border:1.5px solid #111;border-radius:10px;padding:5px 12px;font-size:12px;background:#fff}
+.stat b{font-size:15px;margin-right:5px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1.5px dashed #999;font-size:12px;color:#333}
+.legend div{display:flex;align-items:center;gap:6px}
+.sw{width:28px;height:15px;border:1.5px solid #111;display:inline-block}
+.sw.img{background:repeating-linear-gradient(45deg,#e6e6e6 0 4px,#fff 4px 8px)}
+.sw.bar{height:8px;background:#d7d7d7;border:0;border-radius:4px}
+.sw.btn{border-radius:5px}
+.sw.dash{border-style:dashed}
+.sw.dot{border-style:dotted}
+.sw.done{background:#111}
+.jump{position:sticky;top:0;z-index:30;background:#f4f4f4;border-bottom:2px solid #111;padding:9px 0;display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 6px}
+.jump a{font-size:12px;border:1.5px solid #111;border-radius:999px;padding:3px 10px;text-decoration:none;background:#fff}
+.jump a:hover{background:#111;color:#fff}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;border:2px solid #111;border-radius:10px;padding:10px;background:#fff;margin:10px 0 14px}
+.toolbar button{border:1.5px solid #111;background:#fff;border-radius:999px;padding:4px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+.toolbar button.on,.toolbar button:hover{background:#111;color:#fff}
+.progress{flex:1;min-width:160px;height:12px;border:1.5px solid #111;border-radius:999px;overflow:hidden;background:#fff}
+.progress i{display:block;height:100%;background:#111;width:0;transition:width .2s}
+.group{margin-bottom:14px}
+.gsub{font-size:12px;color:#555;margin:0 0 8px}
+.chk{display:flex;gap:10px;border:1.5px solid #111;background:#fff;border-radius:10px;padding:9px 12px;margin-bottom:7px;cursor:pointer;align-items:flex-start}
+.chk input{display:none}
+.chk .box{width:16px;height:16px;border:2px solid #111;border-radius:4px;flex:0 0 auto;margin-top:3px;position:relative}
+.chk input:checked+.box{background:#111}
+.chk input:checked+.box::after{content:"✓";color:#fff;position:absolute;left:2px;top:-5px;font-size:14px}
+.chk[data-status="done"]{background:#f1f1f1}
+.chk[data-status="done"] input:checked+.box{background:#888;border-color:#888}
+.ct{font-weight:700;font-size:13.5px}
+.cd{color:#333;font-size:12.5px}
+.csrc{color:#666;font-size:11.5px;margin-top:2px}
+.num{font-family:ui-monospace,Consolas,monospace;color:#666;margin-right:7px;font-size:11.5px}
+.pill{font-size:10.5px;border:1.5px solid #111;border-radius:999px;padding:1px 7px;margin-left:8px;font-weight:400;vertical-align:1px;white-space:nowrap}
+.pill.done{background:#111;color:#fff}
+.pill.confirm{border-style:dashed}
+.pill.paused{border-style:dotted}
+.pill.suggest{border-style:dashed;background:#f0f0f0}
+.pri{font-size:10.5px;color:#666;margin-left:6px}
+.flow{border:1.5px solid #111;border-radius:10px;padding:10px 12px;background:#fff;margin-bottom:9px}
+.flowh{font-weight:700;font-size:13px;margin-bottom:8px}
+.fid{font-family:ui-monospace,Consolas,monospace;background:#111;color:#fff;padding:1px 6px;border-radius:4px;margin-right:8px;font-size:11px}
+.fsteps{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.fstep{border:1.5px solid #111;border-radius:8px;padding:5px 9px;font-size:11.5px;text-decoration:none;display:flex;flex-direction:column;align-items:center;gap:1px;background:#fff}
+.fstep:hover{background:#111;color:#fff}
+.fsid{font-family:ui-monospace,Consolas,monospace;font-size:9.5px;color:#777}
+.fstep:hover .fsid{color:#ddd}
+.arrow{font-size:12px;color:#111}
+.stage{margin-bottom:10px}
+.sdesc{font-size:12px;color:#555;margin:2px 0 12px}
+.cards{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start}
+.card{border:2px solid #111;border-radius:12px;background:#fff;padding:12px;break-inside:avoid;page-break-inside:avoid}
+.ch{display:flex;align-items:center;gap:8px;border-bottom:1.5px solid #111;padding-bottom:6px;margin-bottom:6px}
+.sid{font-family:ui-monospace,Consolas,monospace;font-size:11px;background:#111;color:#fff;padding:1px 6px;border-radius:4px}
+.card h4{margin:0;font-size:13.5px}
+.pos{font-size:11.5px;color:#555;margin-bottom:9px}
+.variants{display:flex;gap:10px;flex-wrap:wrap}
+.vwrap{width:268px}
+.vlabel{font-size:10.5px;border:1.5px solid #111;border-radius:999px;display:inline-block;padding:1px 8px;margin-bottom:5px;background:#fff}
+.phone{border:2px solid #111;border-radius:16px;background:#fff;padding:8px;min-height:290px;display:flex}
+.pscreen{flex:1;display:flex;flex-direction:column;gap:7px;width:100%}
+.ptop,.pnav{display:flex;justify-content:space-between;align-items:center;border-bottom:1.5px solid #111;padding-bottom:5px;font-size:12px;font-weight:700;gap:6px}
+.pacts{display:flex;gap:5px;flex:0 0 auto}
+.pacts i{font-style:normal;border:1.5px solid #111;border-radius:5px;padding:0 5px;font-size:10px;font-weight:400}
+.pback{margin-right:5px}
+.pimg{border:1.5px solid #111;background:repeating-linear-gradient(45deg,#eaeaea 0 6px,#fff 6px 12px);display:flex;align-items:center;justify-content:center;text-align:center;font-size:10.5px;color:#333;padding:4px;border-radius:6px;white-space:pre-wrap}
+.pbars{display:flex;flex-direction:column;gap:4px}
+.pbars i{height:7px;background:#d7d7d7;border-radius:4px}
+.cap{font-size:10.5px;color:#555}
+.pt{font-size:12px;font-weight:700}
+.psub{font-size:10.5px;color:#555}
+.pbtn{border:1.5px solid #111;border-radius:8px;text-align:center;font-size:11.5px;padding:5px 8px;background:#fff}
+.pbtn.on{background:#111;color:#fff}
+.pbtns{display:flex;gap:6px}
+.pbtns .pbtn{flex:1}
+.pchips{display:flex;gap:5px;flex-wrap:wrap}
+.pchips span{border:1.5px solid #111;border-radius:999px;padding:1px 7px;font-size:10.5px}
+.pchips span.on{background:#111;color:#fff}
+.pgrid{display:grid;gap:5px}
+.pgrid.c2{grid-template-columns:repeat(2,1fr)}
+.pgrid.c3{grid-template-columns:repeat(3,1fr)}
+.pgrid.c4{grid-template-columns:repeat(4,1fr)}
+.pcell{border:1.5px solid #111;border-radius:6px;height:52px;display:flex;align-items:center;justify-content:center;font-size:10.5px;background:repeating-linear-gradient(45deg,#ebebeb 0 5px,#fff 5px 10px);text-align:center;padding:2px}
+.pcell.sk{background:#e6e6e6;border-style:dashed}
+.prow{display:flex;gap:6px}
+.prowi{flex:1;min-width:0}
+.plist{display:flex;flex-direction:column;gap:5px}
+.pli{display:flex;gap:6px;align-items:center;border:1px solid #ccc;border-radius:6px;padding:4px}
+.pthumb{width:26px;height:34px;background:repeating-linear-gradient(45deg,#e6e6e6 0 4px,#fff 4px 8px);border:1px solid #111;border-radius:3px;flex:0 0 auto}
+.plines{flex:1;display:flex;flex-direction:column;gap:4px}
+.plines i{height:6px;background:#d7d7d7;border-radius:3px}
+.plines i.s{width:60%}
+.pfield{border:1.5px solid #111;border-radius:8px;padding:5px 8px;font-size:11px;color:#444;background:#fafafa}
+.psheet{border:2px dashed #111;border-radius:10px;padding:8px;background:#fcfcfc}
+.psheet-h{font-size:12px;font-weight:700;border-bottom:1px dashed #999;padding-bottom:4px;margin-bottom:5px}
+.psheet ul{margin:0;padding-left:16px;font-size:11px;color:#333}
+.psheet li{margin-bottom:3px}
+.pnote{border:2px dashed #111;border-radius:8px;padding:6px 8px;font-size:10.5px;background:repeating-linear-gradient(-45deg,#f7f7f7 0 6px,#fff 6px 12px);color:#222}
+.phr{border-top:1.5px dashed #999}
+.ptabbar{display:flex;justify-content:space-between;border-top:2px solid #111;padding-top:5px;margin-top:auto;font-size:10px;gap:2px}
+.ptabbar span{flex:1;text-align:center;color:#666}
+.ptabbar span.on{font-weight:700;color:#111;border:1.5px solid #111;border-radius:999px}
+.pstate{border:1.5px solid #111;border-radius:8px;padding:8px;text-align:center;font-size:11px;display:flex;flex-direction:column;gap:6px;align-items:center}
+.pstate.err{border-style:dashed}
+.pspin{width:18px;height:18px;border:2.5px solid #111;border-right-color:#bbb;border-radius:50%}
+.pdots{display:flex;gap:4px;justify-content:center}
+.pdots i{width:6px;height:6px;border:1px solid #111;border-radius:50%}
+.pdots i.on{background:#111}
+.meta{margin-top:10px;border-top:1.5px dashed #999;padding-top:8px;font-size:11.5px;display:flex;flex-direction:column;gap:4px}
+.meta b{display:inline-block;min-width:76px}
+.meta span{color:#333}
+.cardnote{margin-top:8px;font-size:11px;border-left:3px solid #111;padding-left:8px;color:#333}
+.tlist{font-size:12.5px;padding-left:20px}
+.tlist li{margin-bottom:7px}
+.foot{border-top:2px solid #111;margin-top:40px;padding-top:14px;font-size:11.5px;color:#555}
+.pill.decided{background:#e4e4e4;border-style:solid;border-width:2px}
+.pill.closed{border-style:dotted;background:#f2f2f2}
+.chk[data-status="closed"]{background:#f7f7f7}
+.chk[data-status="decided"]{border-width:2px}
+code{font-family:ui-monospace,Consolas,monospace;background:#ececec;padding:1px 5px;border-radius:4px;font-size:11.5px}
+@media print{.jump{position:static}.toolbar{display:none}.chk{break-inside:avoid}body{background:#fff}.card{border-width:1.5px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="head">
+<h1>Niriko · 计划清单 / 核心交互流程 / 低保真线框图</h1>
+<p class="hint">单页交付物 · 只做低保真（黑白灰），不做正式 UI。所有页面按用户真实使用产品的先后顺序分组，平铺在同一页，可从头到尾检查整条流程。</p>
+<p class="hint">内容来源：仓库 <b>README.md</b>（功能总览 / 已知限制与后续计划 / 开发约定）、<b>docs/remaining-phases.md</b>、<b>docs/ui-redesign-plan.md</b>、<b>docs/portal-feature-plan.md</b>、<b>docs/anishelf-reference-plan.md</b>、<b>docs/bangumi-reference-plan.md</b>、<b>docs/fix-and-redesign-plan-round6.md</b>，以及上一轮的 10 个参考项目建议。</p>
+<p class="hint"><b>规则：</b>计划里没有写的内容一律不补全。<b>本轮已把 11 条「待确认」全部决策</b>（见 ④），线框图与清单已按决策更新；剩余待确认 0 条。</p>
+<p class="hint"><b>实施计划：</b>本清单已落实为 <code>docs/rollout-plan.md</code>（范围总览 / 批次 B0–B5 / 落点 / 验收 / 单测 / 回滚）。其中 0-2、2-2、2-5 为<b>本轮新增功能</b>。</p>
+<div class="stats"><span class="stat">线框屏 <b>47</b></span><span class="stat">屏状态 <b>79</b></span><span class="stat">计划项 <b>77</b></span><span class="stat">本轮新功能 <b>3</b></span><span class="stat">已决策 <b>11</b></span><span class="stat">剩余待确认 <b>0</b></span><span class="stat">交互流程 <b>8</b></span></div>
+<div class="legend">
+<div><span class="sw img"></span>图片 / 媒体占位（斜线）</div>
+<div><span class="sw bar"></span>文本占位（灰条，下方注明是什么文本）</div>
+<div><span class="sw btn"></span>按钮（黑底 = 主操作）</div>
+<div><span class="sw dash"></span>原「待确认」区（虚线）· 本轮 11 条已决策</div>
+<div><span class="sw dot"></span>暂缓（点线）</div>
+<div><span class="sw done"></span>已实现 / 选中态</div>
+</div>
+</header>
+<nav class="jump"><a href="#plan">① 计划清单</a><a href="#flows">② 核心交互流程</a><a href="#wire">③ 低保真线框图</a><a href="#stage-S0">阶段 0 · 首次使用</a><a href="#stage-S1">阶段 1 · 建立收藏</a><a href="#stage-S2">阶段 2 · 日常追番</a><a href="#stage-S3">阶段 3 · 回顾统计</a><a href="#stage-S4">阶段 4 · 导入与同步</a><a href="#stage-S5">阶段 5 · 个性化</a><a href="#stage-S6">阶段 6 · 全局状态</a><a href="#todo">④ 决策记录</a></nav>
+<h2 id="plan">① 计划清单</h2>
+<p class="hint">按用户真实使用顺序分组：首次使用 → 建立收藏 → 日常追番 → 回顾统计 → 导入与同步 → 个性化 → 工程与质量 → 参考项目引入。勾选状态保存在本机浏览器（localStorage），可直接当验收清单用。</p>
+<div class="toolbar">
+<button data-f="all" class="on">全部</button><button data-f="todo">待办</button><button data-f="decided">已确认</button><button data-f="closed">已决策·不实施</button><button data-f="suggest">建议·未批准</button><button data-f="paused">暂缓</button><button data-f="done">已实现</button>仅未完成</button>
+<div class="progress"><i id="pbar"></i></div>
+<span id="plabel" class="hint"></span>
+<button id="copymb">复制清单 Markdown</button>
+<button id="reset">重置勾选</button>
+<button id="printbtn">打印 / 导出 PDF</button>
+</div><section class="group">
+<h3>阶段 0 · 首次使用</h3><p class="gsub">安装后第一次打开：开屏 → 授权 → 落到空态首页</p>
+<label class="chk" data-status="done" data-k="0-1">
+<input type="checkbox" data-k="0-1" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">0-1</span>启动页 / 开屏<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">系统 SplashScreen + 品牌位；「启动页」设置项生效</div>
+<div class="csrc">来源：README 设置·收藏与展示 · 关联：<a href="#S0-1">S0-1</a></div></div></label><label class="chk" data-status="decided" data-k="0-2">
+<input type="checkbox" data-k="0-2">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">0-2</span>首次启动引导 · TMDB API Key 设置<span class="pill decided">已确认 · 新功能</span><span class="pri">P0</span></div>
+<div class="cd">新增功能：首次启动只做一页 TMDB API Key 设置，每一页都带「跳过」</div>
+<div class="csrc">决策（本轮）：只需要 TMDB API Key 的设置功能 + 每页加跳过 · 计划：docs/rollout-plan.md B1 · 落点：S0-2；ui/onboarding/FirstRunScreen.kt + AppSettings.firstRunCompleted</div></div></label><label class="chk" data-status="done" data-k="0-3">
+<input type="checkbox" data-k="0-3" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">0-3</span>通知权限首次请求<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">Android 13+ POST_NOTIFICATIONS，MainActivity 启动时请求</div>
+<div class="csrc">来源：docs/remaining-phases.md · J · 关联：<a href="#S0-3">S0-3</a></div></div></label><label class="chk" data-status="closed" data-k="0-4">
+<input type="checkbox" data-k="0-4" disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">0-4</span>通知被拒后的二次引导<span class="pill closed">已决策·不实施</span><span class="pri">—</span></div>
+<div class="cd">拒绝通知权限后不在应用内做二次引导；设置页开关项保留</div>
+<div class="csrc">决策（本轮）：不需要 · 验收：S0-3 的「拒绝后」变体</div></div></label><label class="chk" data-status="done" data-k="0-5">
+<input type="checkbox" data-k="0-5" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">0-5</span>作品库空态引导<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">无收藏时给「开始探索」进入漫搜</div>
+<div class="csrc">来源：README 作品库 · 关联：<a href="#S0-4">S0-4</a></div></div></label><label class="chk" data-status="decided" data-k="0-6">
+<input type="checkbox" data-k="0-6">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">0-6</span>保存到相册的权限时机<span class="pill decided">已确认</span><span class="pri">P1</span></div>
+<div class="cd">权限在初次点击「保存到相册」时申请，不在进入查看器时申请</div>
+<div class="csrc">决策（本轮）：初次在使用图片查看器的保存功能时申请 · 验收：S1-17 的「首次保存 · 权限申请」变体</div></div></label>
+</section><section class="group">
+<h3>阶段 1 · 建立收藏</h3><p class="gsub">发现 / 搜索 → 详情 → 写入收藏（含全部正常态与异常态）</p>
+<label class="chk" data-status="done" data-k="1-1">
+<input type="checkbox" data-k="1-1" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-1</span>作品库三视图 + 记忆<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">海报网格 / 画廊大卡 / 列表，切换后记忆</div>
+<div class="csrc">来源：README 作品库；docs/remaining-phases.md A · 关联：<a href="#S1-2">S1-2</a></div></div></label><label class="chk" data-status="done" data-k="1-2">
+<input type="checkbox" data-k="1-2" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-2</span>排序 5 种 + 筛选<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">最近修改 / 添加时间 / 评分最高 / 标题 / 观看进度；状态 / 个人标签 / 关键词</div>
+<div class="csrc">来源：README 作品库 · 关联：<a href="#S1-4">S1-4</a></div></div></label><label class="chk" data-status="done" data-k="1-3">
+<input type="checkbox" data-k="1-3" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-3</span>多选批量操作<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">批量改状态 / 删除</div>
+<div class="csrc">来源：README；docs/remaining-phases.md H · 关联：<a href="#S1-5">S1-5</a></div></div></label><label class="chk" data-status="decided" data-k="1-4">
+<input type="checkbox" data-k="1-4">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-4</span>批量删除的二次确认<span class="pill decided">已确认</span><span class="pri">P1</span></div>
+<div class="cd">删除前弹确认框，确认后才执行</div>
+<div class="csrc">决策（本轮）：需要确认 · 验收：S1-5 的「删除二次确认」变体</div></div></label><label class="chk" data-status="done" data-k="1-5">
+<input type="checkbox" data-k="1-5" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-5</span>当季热门选取算法<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">候选池 ∪ 400 天窗口 → 热度 → ≥100 人 → 多样性重排 → 前 30，零填充</div>
+<div class="csrc">来源：README 发现页 ① · 关联：<a href="#S1-7">S1-7</a></div></div></label><label class="chk" data-status="done" data-k="1-6">
+<input type="checkbox" data-k="1-6" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-6</span>历史排名全维度筛选<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">14 个维度，改动即查询 + 触底分页</div>
+<div class="csrc">来源：README 发现页 ② · 关联：<a href="#S1-8">S1-8</a></div></div></label><label class="chk" data-status="todo" data-k="1-7">
+<input type="checkbox" data-k="1-7" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-7</span>评分区间 / 人数区间服务端化<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">当前为候选池内本地过滤，检索通路未暴露这两个参数</div>
+<div class="csrc">来源：README 已知限制 · 关联：<a href="#S1-8">S1-8</a></div></div></label><label class="chk" data-status="closed" data-k="1-8">
+<input type="checkbox" data-k="1-8" disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-8</span>筛选面板形态<span class="pill closed">已决策·不实施</span><span class="pri">—</span></div>
+<div class="cd">保持项目已有形式：历史排名的内联可折叠筛选面板（默认收起），不改弹窗 sheet</div>
+<div class="csrc">决策（本轮）：按照项目已有形式 · 验收：S1-8 的「筛选面板展开」变体（形态不变）</div></div></label><label class="chk" data-status="done" data-k="1-9">
+<input type="checkbox" data-k="1-9" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-9</span>搜索能力（语法 / 拼音 / NSFW / 建议）<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">tag: 语法、拼音子串、NSFW v0 与旧版兜底、历史记录、人物搜索、搜索建议</div>
+<div class="csrc">来源：README 漫搜 · 关联：<a href="#S1-10">S1-10</a></div></div></label><label class="chk" data-status="done" data-k="1-10">
+<input type="checkbox" data-k="1-10" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-10</span>搜索链路诊断<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">空态可查看榜单 / 检索 / 旧版兜底三条通路的 HTTP 状态与返回条数</div>
+<div class="csrc">来源：README 漫搜 · 关联：<a href="#S1-10">S1-10</a></div></div></label><label class="chk" data-status="done" data-k="1-11">
+<input type="checkbox" data-k="1-11" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-11</span>人物 / 角色详情<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">infobox、参与职位统计、配音角色、收藏数</div>
+<div class="csrc">来源：README 二级页面 · 关联：<a href="#S1-11">S1-11</a></div></div></label><label class="chk" data-status="done" data-k="1-12">
+<input type="checkbox" data-k="1-12" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-12</span>封面共享元素过渡<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">列表卡封面 → 详情页缩放飞入</div>
+<div class="csrc">来源：README 跨页面能力 · 关联：<a href="#S1-12">S1-12</a></div></div></label><label class="chk" data-status="done" data-k="1-13">
+<input type="checkbox" data-k="1-13" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-13</span>详情页评分横滑卡<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">我的 / 社区 / 权威 / 分布 / 榜单成绩 5 张卡 + 票数门槛</div>
+<div class="csrc">来源：README 作品详情 · 关联：<a href="#S1-13">S1-13</a></div></div></label><label class="chk" data-status="done" data-k="1-14">
+<input type="checkbox" data-k="1-14" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-14</span>剧集列表 + 看到这里<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">集号 / 播出日 / 评分角标 / 单集简介 / 写回进度 + 走势曲线</div>
+<div class="csrc">来源：README 作品详情 · 关联：<a href="#S1-14">S1-14</a></div></div></label><label class="chk" data-status="done" data-k="1-15">
+<input type="checkbox" data-k="1-15" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-15</span>外部源绑定保守策略<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">VNDB / AniList / TMDb / 豆瓣只产候选；仅 Steam 由 appid 自动绑定</div>
+<div class="csrc">来源：README；docs/remaining-phases.md G · 关联：<a href="#S1-15">S1-15</a></div></div></label><label class="chk" data-status="done" data-k="1-16">
+<input type="checkbox" data-k="1-16" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-16</span>外链门户 23 平台三级降级<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">精确 scheme → 搜索 scheme → 网页；无可用动作自动隐藏</div>
+<div class="csrc">来源：README；docs/portal-feature-plan.md · 关联：<a href="#S1-15">S1-15</a></div></div></label><label class="chk" data-status="closed" data-k="1-17">
+<input type="checkbox" data-k="1-17" disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-17</span>补 VeneraNext / Danotsu 包名<span class="pill closed">已决策·不实施</span><span class="pri">P2</span></div>
+<div class="cd">本轮不补，保持未接入（无网络环境无法确认包名）</div>
+<div class="csrc">决策（本轮）：暂时不补 · 验收：外链门户不改动</div></div></label><label class="chk" data-status="closed" data-k="1-18">
+<input type="checkbox" data-k="1-18" disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-18</span>网易云 / QQ 音乐 scheme 真机验证<span class="pill closed">已决策·不实施</span><span class="pri">P2</span></div>
+<div class="cd">本轮不做真机验证，继续走现有三级降级（失效自动网页兜底）</div>
+<div class="csrc">决策（本轮）：暂时不需要 · 验收：外链门户不改动</div></div></label><label class="chk" data-status="done" data-k="1-19">
+<input type="checkbox" data-k="1-19" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-19</span>收藏编辑面板<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">分段状态选择器 + 日期胶囊 + 抛弃状态 + 私密 + 卷进度</div>
+<div class="csrc">来源：README 收藏模型；docs/remaining-phases.md C · 关联：<a href="#S1-16">S1-16</a></div></div></label><label class="chk" data-status="done" data-k="1-20">
+<input type="checkbox" data-k="1-20" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-20</span>全屏图片查看器<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">翻页 / 捏合 / 双击 / 平移 / 保存 / 浏览器打开</div>
+<div class="csrc">来源：README 跨页面能力 · 关联：<a href="#S1-17">S1-17</a></div></div></label><label class="chk" data-status="done" data-k="1-21">
+<input type="checkbox" data-k="1-21" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">1-21</span>分享卡<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">海报卡渲染 + 预览配置 + 系统分享</div>
+<div class="csrc">来源：README；docs/remaining-phases.md I · 关联：<a href="#S1-18">S1-18</a></div></div></label>
+</section><section class="group">
+<h3>阶段 2 · 日常追番</h3><p class="gsub">最高频的回头操作：改状态 → 记进度 → 收提醒 → 看日历</p>
+<label class="chk" data-status="done" data-k="2-1">
+<input type="checkbox" data-k="2-1" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-1</span>长按卡片快速改状态<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">不走详情页直接在列表改状态</div>
+<div class="csrc">来源：README 作品库 · 关联：<a href="#S2-1">S2-1</a></div></div></label><label class="chk" data-status="decided" data-k="2-2">
+<input type="checkbox" data-k="2-2">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-2</span>长按浮层内进度快捷 +1<span class="pill decided">已确认 · 新功能</span><span class="pri">P2</span></div>
+<div class="cd">新增功能：长按浮层新增进度 − / + 快捷调整</div>
+<div class="csrc">决策（本轮）：目前无此功能，可以添加 · 计划：docs/rollout-plan.md B1 · 落点：S2-1；ui/screens/Screens.kt 长按菜单 + CollectionViewModel.bumpProgress</div></div></label><label class="chk" data-status="done" data-k="2-3">
+<input type="checkbox" data-k="2-3" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-3</span>单集详情<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">我的评分 0–10、评价自动保存、该集权威评分、上下集、看到这里、二刷</div>
+<div class="csrc">来源：README 二级页面 · 关联：<a href="#S2-2">S2-2</a></div></div></label><label class="chk" data-status="done" data-k="2-4">
+<input type="checkbox" data-k="2-4" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-4</span>放送提醒通知<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">WorkManager 每日周期 + 网络日历优先 / 离线回退；文案已定，点击进详情页</div>
+<div class="csrc">来源：docs/remaining-phases.md · J · 关联：<a href="#S2-3">S2-3</a></div></div></label><label class="chk" data-status="decided" data-k="2-5">
+<input type="checkbox" data-k="2-5">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-5</span>通知多条合并 / 免打扰<span class="pill decided">已确认 · 新功能</span><span class="pri">P1</span></div>
+<div class="cd">新增功能：同一天多条放送通知合并为一条；不做免打扰时段</div>
+<div class="csrc">决策（本轮）：多条合并需要，免打扰不需要 · 计划：docs/rollout-plan.md B1 · 落点：S2-3；data/notification/AiringReminderWorker.kt + 合并文案纯函数</div></div></label><label class="chk" data-status="done" data-k="2-6">
+<input type="checkbox" data-k="2-6" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-6</span>作品日历（置顶）<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">个人记录 / 放送信息 / 全部显示三模式；按精确时刻落格、跨月归类；可信度角标</div>
+<div class="csrc">来源：README 统计；docs/anishelf-reference-plan.md · 关联：<a href="#S2-4">S2-4</a></div></div></label><label class="chk" data-status="done" data-k="2-7">
+<input type="checkbox" data-k="2-7" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">2-7</span>时间线<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">Smart Stack 卡片堆叠，按作品聚合操作记录（默认折叠）</div>
+<div class="csrc">来源：README 统计 · 关联：<a href="#S2-5">S2-5</a></div></div></label>
+</section><section class="group">
+<h3>阶段 3 · 回顾统计</h3><p class="gsub">看得见的成就感：图表、年度、照片墙、词云</p>
+<label class="chk" data-status="done" data-k="3-1">
+<input type="checkbox" data-k="3-1" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">3-1</span>统计页各区块<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">概览胶囊 / 状态分布 / 类型分布 / 月度趋势 / 评分分布 / 评分对比</div>
+<div class="csrc">来源：README 统计 · 关联：<a href="#S3-1">S3-1</a></div></div></label><label class="chk" data-status="todo" data-k="3-2">
+<input type="checkbox" data-k="3-2" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">3-2</span>图表配色从主题派生<span class="pill todo">待办</span><span class="pri">P1</span></div>
+<div class="cd">现状硬编码 Color(0xFF…) 绕开主题，换主题色图表不变</div>
+<div class="csrc">来源：docs/ui-redesign-plan.md §0.2 · 关联：<a href="#S3-1">S3-1</a></div></div></label><label class="chk" data-status="todo" data-k="3-3">
+<input type="checkbox" data-k="3-3" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">3-3</span>图表加卡片容器<span class="pill todo">待办</span><span class="pri">P1</span></div>
+<div class="cd">环形图 / 柱状图直接画在壁纸上，壁纸文字从刻度后穿过</div>
+<div class="csrc">来源：docs/ui-redesign-plan.md §0.3 · 关联：<a href="#S3-1">S3-1</a></div></div></label><label class="chk" data-status="todo" data-k="3-4">
+<input type="checkbox" data-k="3-4" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">3-4</span>排版层级与数字 tabular<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">列表卡字重几乎同级；统计大数字无 tabular figures，刷新会跳动</div>
+<div class="csrc">来源：docs/ui-redesign-plan.md §0.4 · 关联：<a href="#S3-1">S3-1</a></div></div></label><label class="chk" data-status="done" data-k="3-5">
+<input type="checkbox" data-k="3-5" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">3-5</span>年度总结<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">当前年与历年数据，受设置开关控制</div>
+<div class="csrc">来源：README 统计 · 关联：<a href="#S3-2">S3-2</a></div></div></label><label class="chk" data-status="done" data-k="3-6">
+<input type="checkbox" data-k="3-6" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">3-6</span>照片墙 + 标签词云<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">封面马赛克；词云字号按标签频率、可点击筛选</div>
+<div class="csrc">来源：README 统计 · 关联：<a href="#S3-3">S3-3</a></div></div></label>
+</section><section class="group">
+<h3>阶段 4 · 导入与同步</h3><p class="gsub">把历史数据搬进来、把本地数据同步出去</p>
+<label class="chk" data-status="done" data-k="4-1">
+<input type="checkbox" data-k="4-1" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-1</span>设置分类导航<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">7 个分类，点进独立二级页</div>
+<div class="csrc">来源：README 设置 · 关联：<a href="#S4-1">S4-1</a></div></div></label><label class="chk" data-status="done" data-k="4-2">
+<input type="checkbox" data-k="4-2" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-2</span>Bangumi OAuth 登录 + 收藏同步<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">用户自建应用授权；冲突优先级本地 / 远端优先；端点可切换</div>
+<div class="csrc">来源：README 数据源与整合 / 导入与同步 · 关联：<a href="#S4-2">S4-2</a></div></div></label><label class="chk" data-status="done" data-k="4-3">
+<input type="checkbox" data-k="4-3" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-3</span>哔哩哔哩导入<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">WebView 登录 + 注入脚本拉取追番与评分 + 匹配勾选（默认不覆盖已有评分）</div>
+<div class="csrc">来源：README 导入与同步 · 关联：<a href="#S4-3">S4-3</a></div></div></label><label class="chk" data-status="done" data-k="4-4">
+<input type="checkbox" data-k="4-4" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-4</span>Steam 游戏库导入<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">OpenID 或 SteamID64 → 本人库 + 家庭共享库 → 匹配 → 勾选</div>
+<div class="csrc">来源：README 导入与同步 · 关联：<a href="#S4-4">S4-4</a></div></div></label><label class="chk" data-status="done" data-k="4-5">
+<input type="checkbox" data-k="4-5" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-5</span>Kazumi 导入<span class="pill done">已实现</span><span class="pri">P2</span></div>
+<div class="cd">读取 collectibles.hive，预览后勾选（仅动画、默认跳过已存在）</div>
+<div class="csrc">来源：README 导入与同步 · 关联：<a href="#S4-5">S4-5</a></div></div></label><label class="chk" data-status="decided" data-k="4-6">
+<input type="checkbox" data-k="4-6">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-6</span>Kazumi 文件选择方式<span class="pill decided">已确认</span><span class="pri">P2</span></div>
+<div class="cd">使用系统文件选择器（SAF），不做应用内路径输入</div>
+<div class="csrc">决策（本轮）：系统文件选择器 · 验收：S4-5 的「选择文件」变体</div></div></label><label class="chk" data-status="done" data-k="4-7">
+<input type="checkbox" data-k="4-7" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-7</span>WebDAV 同步<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">LWW 合并、手动与自动串行互斥、退避梯、节流 15 分钟</div>
+<div class="csrc">来源：README 导入与同步 / 刷新与缓存 · 关联：<a href="#S4-6">S4-6</a></div></div></label><label class="chk" data-status="todo" data-k="4-8">
+<input type="checkbox" data-k="4-8" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-8</span>WebDAV 纳入新增数据<span class="pill todo">待办</span><span class="pri">P1</span></div>
+<div class="cd">外部 ID、单集评分、手动成绩、封面覆盖尚未纳入同步（JSON 备份已包含）</div>
+<div class="csrc">来源：README 工程待办 · 关联：<a href="#S4-6">S4-6</a></div></div></label><label class="chk" data-status="done" data-k="4-9">
+<input type="checkbox" data-k="4-9" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-9</span>JSON 全量备份 / 恢复<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">收藏 / 元数据 / 手工条目 / 搜索历史 / 人物 / 外部绑定 / 封面覆盖 / 单集评价 / 手动成绩</div>
+<div class="csrc">来源：README 导入与同步 · 关联：<a href="#S4-7">S4-7</a></div></div></label><label class="chk" data-status="decided" data-k="4-10">
+<input type="checkbox" data-k="4-10">
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-10</span>恢复的覆盖策略与二次确认<span class="pill decided">已确认</span><span class="pri">P1</span></div>
+<div class="cd">恢复前二次确认；与本地冲突时本地优先，备份中本地没有的记录并入</div>
+<div class="csrc">决策（本轮）：冲突则本地优先 · 验收：S4-7 的「恢复确认」变体</div></div></label><label class="chk" data-status="done" data-k="4-11">
+<input type="checkbox" data-k="4-11" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-11</span>刷新诊断<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">各资源新鲜度 / 失败次数 / 退避剩余 / 最近错误；强制刷新与清除记录</div>
+<div class="csrc">来源：README 刷新与缓存 · 关联：<a href="#S4-8">S4-8</a></div></div></label><label class="chk" data-status="todo" data-k="4-12">
+<input type="checkbox" data-k="4-12" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-12</span>按源限流闸门<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">IGDB 4 req/s、MusicBrainz 1 req/s、VNDB 200 次 / 5 分钟</div>
+<div class="csrc">来源：README 工程待办 · 关联：<a href="#S4-8">S4-8</a></div></div></label><label class="chk" data-status="todo" data-k="4-13">
+<input type="checkbox" data-k="4-13" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-13</span>豆瓣防剧透翻页参数启用<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">参数已就绪但未启用</div>
+<div class="csrc">来源：README 已知限制 · 关联：<a href="#S1-15">S1-15</a></div></div></label><label class="chk" data-status="todo" data-k="4-14">
+<input type="checkbox" data-k="4-14" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">4-14</span>TMDb 多季手动指定季号<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">当前按年份 + 集数自动挑季</div>
+<div class="csrc">来源：README 已知限制 · 关联：<a href="#S1-15">S1-15</a></div></div></label>
+</section><section class="group">
+<h3>阶段 5 · 个性化</h3><p class="gsub">主题、壁纸、图标 —— 决定「这是我的应用」的观感</p>
+<label class="chk" data-status="done" data-k="5-1">
+<input type="checkbox" data-k="5-1" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">5-1</span>主题模式 / 动态取色 / 自定义种子 / OLED<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">HCT TONAL_SPOT 配色；HSV 取色面板 + HEX + 快捷色板；优先级 Material You &gt; 种子色 &gt; 品牌绿</div>
+<div class="csrc">来源：README 主题与个性化 · 关联：<a href="#S5-1">S5-1</a></div></div></label><label class="chk" data-status="done" data-k="5-2">
+<input type="checkbox" data-k="5-2" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">5-2</span>玻璃强度分级降级<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">全效果 / 降低 / 关闭；胶囊底栏真实折射壁纸</div>
+<div class="csrc">来源：README 跨页面能力 / 外观设置 · 关联：<a href="#S5-1">S5-1</a></div></div></label><label class="chk" data-status="done" data-k="5-3">
+<input type="checkbox" data-k="5-3" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">5-3</span>壁纸（静态 + 动态视频）<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">全局一张 + 每页覆盖；ExoPlayer 循环静音，退后台或进二级页暂停解码；柔化与氛围三档</div>
+<div class="csrc">来源：README 主题与个性化 · 关联：<a href="#S5-1">S5-1</a></div></div></label><label class="chk" data-status="done" data-k="5-4">
+<input type="checkbox" data-k="5-4" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">5-4</span>主题包 .nirikotheme<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">theme.json + 壁纸 + 每页覆盖，≤50MB；校验 zip 炸弹 / 路径穿越 / JSON；可导出分享</div>
+<div class="csrc">来源：README 主题与个性化 · 关联：<a href="#S5-2">S5-2</a></div></div></label><label class="chk" data-status="done" data-k="5-5">
+<input type="checkbox" data-k="5-5" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">5-5</span>桌面图标<span class="pill done">已实现</span><span class="pri">P2</span></div>
+<div class="cd">主题色 / 上传图 → 快捷方式 → 隐藏本体；确认后才隐藏；旧版广播兜底；缺失自动恢复</div>
+<div class="csrc">来源：README 主题与个性化 · 关联：<a href="#S5-3">S5-3</a></div></div></label><label class="chk" data-status="done" data-k="5-6">
+<input type="checkbox" data-k="5-6" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">5-6</span>减少动态效果<span class="pill done">已实现</span><span class="pri">P1</span></div>
+<div class="cd">系统关闭动画或设置开关时跳过入场动画</div>
+<div class="csrc">来源：README 动画体系 · 关联：<a href="#S5-1">S5-1</a></div></div></label>
+</section><section class="group">
+<h3>阶段 6 · 工程与质量</h3><p class="gsub">无界面或跨页面的工程债（README「工程待办」逐条落地）</p>
+<label class="chk" data-status="paused" data-k="6-1">
+<input type="checkbox" data-k="6-1" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">6-1</span>平板 / 折叠屏自适应布局<span class="pill paused">暂缓</span><span class="pri">P2</span></div>
+<div class="cd">导航栏 + 详情双栏，截至目前未实现</div>
+<div class="csrc">来源：README 工程待办；round6 §8.3.6「本轮不做，只记录」 · 关联：<a href="#S1-1">S1-1</a></div></div></label><label class="chk" data-status="todo" data-k="6-2">
+<input type="checkbox" data-k="6-2" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">6-2</span>Room 迁移测试<span class="pill todo">待办</span><span class="pri">P1</span></div>
+<div class="cd">迁移链 v2 → v29 未补 Room testing / Robolectric 测试</div>
+<div class="csrc">来源：README 工程待办 · 关联：（无界面）</div></div></label><label class="chk" data-status="todo" data-k="6-3">
+<input type="checkbox" data-k="6-3" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">6-3</span>补齐 app/schemas 缺失的 v25<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">代码迁移链含 24→25→26，但仓库缺 v25 schema 文件</div>
+<div class="csrc">来源：README 工程待办 · 关联：（无界面）</div></div></label><label class="chk" data-status="todo" data-k="6-4">
+<input type="checkbox" data-k="6-4" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">6-4</span>详情页 ExtendedSnapshot 补全<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">未包含全部新字段，二次进详情页会重跑部分外部源 / 剧照候选</div>
+<div class="csrc">来源：README 工程待办 · 关联：<a href="#S1-12">S1-12</a></div></div></label><label class="chk" data-status="todo" data-k="6-5">
+<input type="checkbox" data-k="6-5" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">6-5</span>release 签名与 CI<span class="pill todo">待办</span><span class="pri">P2</span></div>
+<div class="cd">release 未配置签名；仓库未附 CI，单测需本地执行</div>
+<div class="csrc">来源：README 工程待办 · 关联：（无界面）</div></div></label><label class="chk" data-status="done" data-k="6-6">
+<input type="checkbox" data-k="6-6" checked disabled>
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">6-6</span>新增逻辑补 JVM 单测<span class="pill done">已实现</span><span class="pri">P0</span></div>
+<div class="cd">当前 436 个用例覆盖统计 / 趋势 / 发现排序 / 筛选映射 / 匹配打分 / 刷新策略 / 解析器</div>
+<div class="csrc">来源：README 开发约定 · 关联：（无界面）</div></div></label>
+</section><section class="group">
+<h3>阶段 7 · 参考项目引入</h3><p class="gsub">上一轮的 10 个参考项目 → 建议项，尚未批准，落地前需先确认</p>
+<label class="chk" data-status="suggest" data-k="7-1">
+<input type="checkbox" data-k="7-1" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-1</span>同域对照：xiaoyvyv/bangumi + AniHyou<span class="pill suggest">建议·未批准</span><span class="pri">P1</span></div>
+<div class="cd">读思路产出功能 / 架构差异清单；GPL-3.0 不得抄代码</div>
+<div class="csrc">来源：上一轮参考项目建议（未批准） · 关联：（对照产文档）</div></div></label><label class="chk" data-status="suggest" data-k="7-2">
+<input type="checkbox" data-k="7-2" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-2</span>vico：替换手写图表<span class="pill suggest">建议·未批准</span><span class="pri">P1</span></div>
+<div class="cd">剧集评分走势、评分分布、月度趋势、评分对比</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：<a href="#S3-1">S3-1 / S1-14</a></div></div></label><label class="chk" data-status="suggest" data-k="7-3">
+<input type="checkbox" data-k="7-3" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-3</span>kizitonwose/Calendar：作品日历<span class="pill suggest">建议·未批准</span><span class="pri">P2</span></div>
+<div class="cd">月 / 周视图与自定义日期格</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：<a href="#S2-4">S2-4</a></div></div></label><label class="chk" data-status="suggest" data-k="7-4">
+<input type="checkbox" data-k="7-4" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-4</span>Reorderable：拖拽自定义排序<span class="pill suggest">建议·未批准</span><span class="pri">P2</span></div>
+<div class="cd">作品库目前只有 5 种固定排序；外链门户与主题包同理</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：<a href="#S1-2">S1-2</a></div></div></label><label class="chk" data-status="suggest" data-k="7-5">
+<input type="checkbox" data-k="7-5" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-5</span>compose-shimmer：骨架屏<span class="pill suggest">建议·未批准</span><span class="pri">P2</span></div>
+<div class="cd">替换近 50 处进度指示器</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：<a href="#S6-1">S6-1</a></div></div></label><label class="chk" data-status="suggest" data-k="7-6">
+<input type="checkbox" data-k="7-6" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-6</span>nowinandroid：工程范式<span class="pill suggest">建议·未批准</span><span class="pri">P1</span></div>
+<div class="cd">自适应布局、离线优先数据层、Room 迁移测试、基准与截图测试</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：<a href="#S1-1">S1-1 / S4-7</a></div></div></label><label class="chk" data-status="suggest" data-k="7-7">
+<input type="checkbox" data-k="7-7" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-7</span>roborazzi：Compose 截图测试<span class="pill suggest">建议·未批准</span><span class="pri">P2</span></div>
+<div class="cd">在纯 JVM 单测流水线上加 UI 回归，无需设备</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：（无界面）</div></div></label><label class="chk" data-status="suggest" data-k="7-8">
+<input type="checkbox" data-k="7-8" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-8</span>backdrop catalog / miuix 组件移植<span class="pill suggest">建议·未批准</span><span class="pri">P2</span></div>
+<div class="cd">LiquidBottomTabs、squircle、shader、preference；注意 Kotlin 2.4 / AGP 9.1 门槛</div>
+<div class="csrc">来源：上一轮建议（未批准） · 关联：<a href="#S1-1">S1-1 / S5-1</a></div></div></label><label class="chk" data-status="paused" data-k="7-9">
+<input type="checkbox" data-k="7-9" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-9</span>本地媒体文件夹（SMB）<span class="pill paused">暂缓</span><span class="pri">P2</span></div>
+<div class="cd">高风险，docs 明确列为暂缓 P2</div>
+<div class="csrc">来源：docs/bangumi-reference-plan.md · I · 关联：（无界面）</div></div></label><label class="chk" data-status="paused" data-k="7-10">
+<input type="checkbox" data-k="7-10" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-10</span>年鉴 / 评分月刊 VIB / 目录<span class="pill paused">暂缓</span><span class="pri">P2</span></div>
+<div class="cd">非官方稳定 API，docs 明确暂缓</div>
+<div class="csrc">来源：docs/bangumi-reference-plan.md §0 · 关联：（无界面）</div></div></label><label class="chk" data-status="paused" data-k="7-11">
+<input type="checkbox" data-k="7-11" >
+<span class="box"></span>
+<div class="cbody"><div class="ct"><span class="num">7-11</span>社区只读（超展开 / 小组等）<span class="pill paused">暂缓</span><span class="pri">P2</span></div>
+<div class="cd">docs 列为可选项，默认不做，保持收藏统计定位</div>
+<div class="csrc">来源：docs/bangumi-reference-plan.md · J · 关联：（无界面）</div></div></label>
+</section><h2 id="flows">② 核心交互流程</h2>
+<p class="hint">每条流程 = 用户真实走一遍的顺序；方块是可点击的页面锚点，点一下跳到对应的线框图。</p>
+<div class="flow"><div class="flowh"><span class="fid">F1</span>首次使用与授权</div>
+<div class="fsteps"><a class="fstep" href="#S0-1">打开应用<span class="fsid">S0-1</span></a><span class="arrow">→</span><a class="fstep" href="#S0-2">首次启动引导 · TMDB API Key<span class="fsid">S0-2</span></a><span class="arrow">→</span><a class="fstep" href="#S0-3">通知权限申请<span class="fsid">S0-3</span></a><span class="arrow">→</span><a class="fstep" href="#S0-4">作品库空态<span class="fsid">S0-4</span></a><span class="arrow">→</span><a class="fstep" href="#S1-10">开始探索<span class="fsid">S1-10</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F2</span>建立收藏（发现 → 详情 → 收藏）</div>
+<div class="fsteps"><a class="fstep" href="#S1-6">发现页<span class="fsid">S1-6</span></a><span class="arrow">→</span><a class="fstep" href="#S1-7">入口 ①/②/③<span class="fsid">S1-7</span></a><span class="arrow">→</span><a class="fstep" href="#S1-12">作品详情<span class="fsid">S1-12</span></a><span class="arrow">→</span><a class="fstep" href="#S1-16">编辑收藏<span class="fsid">S1-16</span></a><span class="arrow">→</span><a class="fstep" href="#S1-2">回到作品库<span class="fsid">S1-2</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F3</span>检索与诊断</div>
+<div class="fsteps"><a class="fstep" href="#S1-10">漫搜<span class="fsid">S1-10</span></a><span class="arrow">→</span><a class="fstep" href="#S1-10">建议 / 拼音 / 语法<span class="fsid">S1-10</span></a><span class="arrow">→</span><a class="fstep" href="#S1-10">无结果 → 诊断链路<span class="fsid">S1-10</span></a><span class="arrow">→</span><a class="fstep" href="#S1-12">结果 → 详情<span class="fsid">S1-12</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F4</span>日常追番（改状态 → 记进度 → 收提醒）</div>
+<div class="fsteps"><a class="fstep" href="#S1-2">作品库<span class="fsid">S1-2</span></a><span class="arrow">→</span><a class="fstep" href="#S2-1">长按改状态<span class="fsid">S2-1</span></a><span class="arrow">→</span><a class="fstep" href="#S1-14">剧集列表<span class="fsid">S1-14</span></a><span class="arrow">→</span><a class="fstep" href="#S2-2">单集详情 · 看到这里<span class="fsid">S2-2</span></a><span class="arrow">→</span><a class="fstep" href="#S2-3">放送提醒通知<span class="fsid">S2-3</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F5</span>回顾统计</div>
+<div class="fsteps"><a class="fstep" href="#S3-1">统计页<span class="fsid">S3-1</span></a><span class="arrow">→</span><a class="fstep" href="#S2-4">作品日历<span class="fsid">S2-4</span></a><span class="arrow">→</span><a class="fstep" href="#S2-5">时间线<span class="fsid">S2-5</span></a><span class="arrow">→</span><a class="fstep" href="#S3-2">年度总结<span class="fsid">S3-2</span></a><span class="arrow">→</span><a class="fstep" href="#S3-3">照片墙 / 词云 → 筛选<span class="fsid">S3-3</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F6</span>导入与同步</div>
+<div class="fsteps"><a class="fstep" href="#S4-1">设置入口<span class="fsid">S4-1</span></a><span class="arrow">→</span><a class="fstep" href="#S4-2">登录 / 导入<span class="fsid">S4-2</span></a><span class="arrow">→</span><a class="fstep" href="#S4-3">B站 / Steam / Kazumi<span class="fsid">S4-3</span></a><span class="arrow">→</span><a class="fstep" href="#S4-6">同步与备份<span class="fsid">S4-6</span></a><span class="arrow">→</span><a class="fstep" href="#S4-7">备份 / 恢复<span class="fsid">S4-7</span></a><span class="arrow">→</span><a class="fstep" href="#S4-8">刷新诊断<span class="fsid">S4-8</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F7</span>个性化</div>
+<div class="fsteps"><a class="fstep" href="#S4-1">设置入口<span class="fsid">S4-1</span></a><span class="arrow">→</span><a class="fstep" href="#S5-1">外观<span class="fsid">S5-1</span></a><span class="arrow">→</span><a class="fstep" href="#S5-2">主题包<span class="fsid">S5-2</span></a><span class="arrow">→</span><a class="fstep" href="#S5-3">桌面图标<span class="fsid">S5-3</span></a></div></div><div class="flow"><div class="flowh"><span class="fid">F8</span>异常与恢复（贯穿所有页）</div>
+<div class="fsteps"><a class="fstep" href="#S6-1">加载中<span class="fsid">S6-1</span></a><span class="arrow">→</span><a class="fstep" href="#S6-3">失败 / 退避<span class="fsid">S6-3</span></a><span class="arrow">→</span><a class="fstep" href="#S6-4">离线缓存回退<span class="fsid">S6-4</span></a><span class="arrow">→</span><a class="fstep" href="#S6-2">无数据<span class="fsid">S6-2</span></a><span class="arrow">→</span><a class="fstep" href="#S6-5">未登录 / 无权限<span class="fsid">S6-5</span></a><span class="arrow">→</span><a class="fstep" href="#S6-6">图标缺失自愈<span class="fsid">S6-6</span></a></div></div>
+<h2 id="wire">③ 低保真线框图（全部平铺）</h2>
+<p class="hint">同一屏的多个状态并排画出；每屏都标明：页面名称、它在流程里的位置、可执行操作、操作后去向、来源。虚线框一律代表「计划里没有定义」。</p>
+<section class="stage" id="stage-S0"><h3>阶段 0 · 首次使用</h3><p class="sdesc">安装后第一次打开：开屏 → 授权 → 空态首页　｜　在旅程中的位置：用户刚装好应用</p><div class="cards"><article class="card" id="S0-1">
+<header class="ch"><span class="sid">S0-1</span><h4>启动页 / 开屏</h4></header>
+<div class="pos">阶段 0 · 入口（打开 App 的第一屏）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pimg" style="height:150px"><span>应用图标 / 启动页图像（占位）</span></div><div class="pt">Niriko</div><div class="psub">追番 · 收藏 · 统计</div><div class="pbars"><i></i></div><div class="cap">加载提示</div></div></div></div><div class="vwrap"><div class="vlabel">待确认</div><div class="phone"><div class="pscreen"><div class="pnote">启动页可选项（默认品牌页 / 自定义图 / 跟随壁纸？）docs 未定义 → 待确认</div><div class="pbars"><i></i><i></i></div><div class="cap">同上结构</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>（无需操作）自动进入 ｜ 后台预热：进前台触发一轮受控刷新</span></div><div><b>操作后去向</b><span>有收藏 → 作品库（S1-2） ｜ 无收藏 → 作品库空态（S0-4）</span></div><div><b>来源</b><span>README 设置「启动页」；依赖 core-splashscreen</span></div></div>
+<div class="cardnote">「启动页」的可选值 README 未列明，本屏只画系统开屏 + 品牌位的结构。</div>
+</article><article class="card" id="S0-2">
+<header class="ch"><span class="sid">S0-2</span><h4>首次启动引导 · TMDB API Key 设置</h4></header>
+<div class="pos">阶段 0 · 首次启动只做一件事：填 TMDB API Key；每一页都带「跳过」</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常 · 唯一一页</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">首次启动引导 · 1/1</span><span class="pacts"><i>跳过</i></span></div><div class="pimg" style="height:90px"><span>说明插图（占位）</span></div><div class="pt">填写 TMDb API Key</div><div class="psub">用于海报、剧照与权威评分等数据源；不填也能继续使用其它功能</div><div class="pfield">TMDb API Key：____</div><div class="pbtn on">保存并继续</div><div class="pbtn">跳过</div></div></div></div><div class="vwrap"><div class="vlabel">点「跳过」</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">首次启动引导 · 1/1</span><span class="pacts"><i>跳过</i></span></div><div class="pnote">点「跳过」后的行为：不写入 Key，直接进入通知权限申请（S0-3）；之后可在设置 → 数据源与账号补填</div><div class="pfield">TMDb API Key：未填写（可稍后补）</div><div class="prow"><div class="prowi"><div class="pbtn on">跳过 ← 点击</div></div><div class="prowi"><div class="pbtn">保存并继续</div></div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>填写 TMDB API Key ｜ 保存并继续 ｜ 跳过（不填写，之后可在设置 → 数据源与账号补填）</span></div><div><b>操作后去向</b><span>保存 / 跳过 → 通知权限申请（S0-3） ｜ 补填入口：设置 → 数据源与账号（S4-1）</span></div><div><b>来源</b><span>用户决策（本轮）：首次启动引导不做多步内容，目前只需要 TMDB API Key 的设置功能，并且每一页都要有「跳过」</span></div></div>
+<div class="cardnote">决策已记录：引导只保留 TMDB API Key 这一页；「跳过」在每一页都必须存在（本页放在右上角）。本项为新增功能：原应用没有首次启动引导。</div>
+</article><article class="card" id="S0-3">
+<header class="ch"><span class="sid">S0-3</span><h4>权限申请 · 通知</h4></header>
+<div class="pos">阶段 0 · 首次进入后（Android 13+ 启动时请求）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">系统权限弹窗</div><div class="phone"><div class="pscreen"><div class="pimg" style="height:90px"><span>系统弹窗（应用名 + 图标）</span></div><div class="pt">允许 Niriko 发送通知吗？</div><div class="psub">用途：对「在看」作品按放送时间提醒</div><div class="pbtns"><div class="pbtn on">允许</div><div class="pbtn on">不允许</div></div></div></div></div><div class="vwrap"><div class="vlabel">拒绝后（不做二次引导）</div><div class="phone"><div class="pscreen"><div class="pnote">决策（本轮）：拒绝后不在应用内做二次引导，也不弹提示；设置页的开关项本身保留</div><div class="pt">放送提醒</div><div class="pchips"><span class="">开启</span><span class="on">关闭</span></div><div class="psub">开关仍在设置内，可随时手动打开（此时需系统已授权通知）</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>允许 ｜ 不允许</span></div><div><b>操作后去向</b><span>允许 → 空态首页（S0-4），放送提醒可用 ｜ 不允许 → 同左，放送提醒静默关闭（不做二次引导）</span></div><div><b>来源</b><span>docs/remaining-phases.md · J：首次通知权限在 MainActivity 启动时请求；Manifest 加 POST_NOTIFICATIONS。用户决策（本轮）：通知被拒后不做二次引导</span></div></div>
+<div class="cardnote">系统弹窗由系统绘制，此处只还原它出现的位置与前后关系。</div>
+</article><article class="card" id="S0-4">
+<header class="ch"><span class="sid">S0-4</span><h4>作品库 · 空态（无收藏）</h4></header>
+<div class="pos">阶段 0 · 首次进入没有收藏时的落点</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">空态</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>搜索</i><i>排序</i></span></div><div class="pimg" style="height:130px"><span>空态插图（占位）</span></div><div class="pt">还没有任何收藏</div><div class="psub">先去看看本季热门，或直接搜索作品</div><div class="pbtn on">开始探索</div><div class="ptabbar"><span class="on">作品库</span><span class="">发现</span><span class="">统计</span><span class="">设置</span></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点「开始探索」</span></div><div><b>操作后去向</b><span>漫搜（S1-10）</span></div><div><b>来源</b><span>README 作品库：空态引导「无收藏时提供『开始探索』进入漫搜」</span></div></div>
+
+</article></div></section><section class="stage" id="stage-S1"><h3>阶段 1 · 建立收藏</h3><p class="sdesc">发现与搜索 → 作品详情 → 写入收藏　｜　在旅程中的位置：用户开始把作品加进来</p><div class="cards"><article class="card" id="S1-1">
+<header class="ch"><span class="sid">S1-1</span><h4>主框架 · 四页 Pager + 胶囊玻璃底栏</h4></header>
+<div class="pos">阶段 1 · 四个顶级页共用的外壳</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">当前页标题</span><span class="pacts"><i>当前页操作</i></span></div><div class="pimg" style="height:60px"><span>当前页内容区（见各页线框）</span></div><div class="psub">壁纸层 + 玻璃层贯穿四页</div><div class="ptabbar"><span class="on">作品库</span><span class="">发现</span><span class="">统计</span><span class="">设置</span></div><div class="pnote">底栏为悬浮胶囊玻璃：跟手联动，随设置分级降级（全效果 / 降低 / 关闭）</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>左右滑动切页 ｜ 点底栏图标切页 ｜ 各页内操作</span></div><div><b>操作后去向</b><span>作品库（S1-2） ｜ 发现（S1-6） ｜ 统计（S3-1） ｜ 设置（S4-1）</span></div><div><b>来源</b><span>README 功能总览：底部导航四个顶级页，用 HorizontalPager 承载，左右滑动切换，胶囊玻璃底栏跟手联动</span></div></div>
+
+</article><article class="card" id="S1-2">
+<header class="ch"><span class="sid">S1-2</span><h4>作品库 · 海报网格</h4></header>
+<div class="pos">阶段 1 · 建立收藏的起点 / 日常回访主页面</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>搜索</i><i>视图</i><i>排序</i></span></div><div class="pchips"><span class="">全部</span><span class="on">在看</span><span class="">想看</span><span class="">看过</span><span class="">搁置</span><span class="">抛弃</span></div><div class="pgrid c3"><div class="pcell">基</div><div class="pcell">芙</div><div class="pcell">孤</div><div class="pcell">进</div><div class="pcell">赛</div><div class="pcell">钢</div></div><div class="psub">卡片角：状态徽标 + 集数进度条（设置可开关）</div><div class="ptabbar"><span class="on">作品库</span><span class="">发现</span><span class="">统计</span><span class="">设置</span></div></div></div></div><div class="vwrap"><div class="vlabel">加载中</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>搜索</i></span></div><div class="pgrid c3"><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div></div><div class="pstate"><div class="pspin"></div><div class="pstate-t">骨架 / 进度指示（全项目近 50 处进度指示器之一）</div></div></div></div></div><div class="vwrap"><div class="vlabel">无数据 / 失败</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>搜索</i></span></div><div class="pstate"><div class="pstate-t">该筛选条件下没有作品</div><div class="pbtn">清除筛选</div></div><div class="phr"></div><div class="pstate err"><div class="pstate-t">网络请求失败（已进入退避：30s / 60s / 120s / 300s）</div><div class="pbtn">重试</div></div><div class="psub">用户主动下拉或重试可绕过 TTL 与退避</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>切换视图 ｜ 切换排序 ｜ 打开筛选 ｜ 点卡片 → 详情 ｜ 长按卡片 → 快速改状态 ｜ 多选 → 批量操作 ｜ 下拉刷新</span></div><div><b>操作后去向</b><span>作品详情（S1-12） ｜ 筛选面板（S1-4） ｜ 批量栏（S1-5） ｜ 长按浮层（S2-1）</span></div><div><b>来源</b><span>README 作品库：三种视图一键切换并记忆；排序 5 种；筛选状态 / 个人标签 / 关键词；卡片可开关状态标签与集数进度条</span></div></div>
+
+</article><article class="card" id="S1-3">
+<header class="ch"><span class="sid">S1-3</span><h4>作品库 · 画廊大卡 / 列表</h4></header>
+<div class="pos">阶段 1 · 同一页的另两种视图（切换后记忆）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">画廊大卡</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>视图</i><i>排序</i></span></div><div class="pimg" style="height:110px"><span>封面大卡 + 渐变遮罩（占位）</span></div><div class="psub">标题 / 原名 / 我的评分 / 状态徽标</div><div class="pimg" style="height:60px"><span>下一张卡（横向滑动）</span></div></div></div></div><div class="vwrap"><div class="vlabel">列表</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>视图</i><i>排序</i></span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">缩略图 + 标题 + 状态 + 进度</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>切换回网格 ｜ 点卡片 → 详情 ｜ 长按改状态</span></div><div><b>操作后去向</b><span>作品详情（S1-12）</span></div><div><b>来源</b><span>README 作品库：三种视图（海报网格 / 画廊大卡 / 列表）一键切换并记忆</span></div></div>
+
+</article><article class="card" id="S1-4">
+<header class="ch"><span class="sid">S1-4</span><h4>排序与筛选面板</h4></header>
+<div class="pos">阶段 1 · 作品库内二级面板</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">面板</div><div class="phone"><div class="pscreen"><div class="psheet"><div class="psheet-h">排序与筛选</div><ul><li>排序：最近修改 ▾</li><li>观看状态：在看 / 搁置</li><li>个人标签：全部 / 我标过的标签</li><li>关键词：____</li></ul></div><div class="pbtns"><div class="pbtn">重置</div><div class="pbtn on">应用</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>选排序字段 ｜ 勾选状态 ｜ 选个人标签 ｜ 输入关键词 ｜ 重置 / 应用</span></div><div><b>操作后去向</b><span>返回作品库（S1-2），结果即时更新</span></div><div><b>来源</b><span>README 作品库：排序（最近修改 / 添加时间 / 评分最高 / 标题 / 观看进度）；筛选（观看状态、个人标签、关键词搜索）</span></div></div>
+
+</article><article class="card" id="S1-5">
+<header class="ch"><span class="sid">S1-5</span><h4>作品库 · 多选批量操作</h4></header>
+<div class="pos">阶段 1 · 作品库进入多选后的模式</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">多选态</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">已选 3 项</span><span class="pacts"><i>全选</i><i>取消</i></span></div><div class="pgrid c3"><div class="pcell">☑</div><div class="pcell">☑</div><div class="pcell">☐</div><div class="pcell">☑</div><div class="pcell">☐</div><div class="pcell">☐</div></div><div class="pbtn">删除所选</div><div class="pbtn on">批量改状态</div></div></div></div><div class="vwrap"><div class="vlabel">删除二次确认</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">已选 3 项</span><span class="pacts"><i>取消</i></span></div><div class="pgrid c3"><div class="pcell">☑</div><div class="pcell">☑</div><div class="pcell">☑</div></div><div class="psheet"><div class="psheet-h">确认删除</div><ul><li>将删除所选 3 个收藏（含进度与评分）</li><li>删除后不可撤销</li></ul></div><div class="prow"><div class="prowi"><div class="pbtn">取消</div></div><div class="prowi"><div class="pbtn on">确认删除</div></div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>勾选作品 ｜ 全选 ｜ 批量改状态 ｜ 批量删除（二次确认） ｜ 退出多选</span></div><div><b>操作后去向</b><span>确认删除 → 回到作品库（S1-2），列表已更新 ｜ 取消 → 回到多选态</span></div><div><b>来源</b><span>README 作品库：批量操作——多选后批量改状态 / 删除。用户决策（本轮）：批量删除需要二次确认</span></div></div>
+<div class="cardnote">决策已记录：删除属于破坏性操作，必须二次确认。</div>
+</article><article class="card" id="S1-6">
+<header class="ch"><span class="sid">S1-6</span><h4>发现页 · 卡片视图 / 宫格视图</h4></header>
+<div class="pos">阶段 1 · 找作品的入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">卡片视图</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">发现</span><span class="pacts"><i>切换布局</i><i>搜索</i></span></div><div class="pchips"><span class="">全部</span><span class="on">动画</span><span class="">书籍</span><span class="">游戏</span><span class="">音乐</span><span class="">三次元</span></div><div class="plist"><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">当季热门 / 历史排名 / Steam 热销榜</div><div class="psub">上次更新 X 分钟前（点按强制刷新）</div><div class="ptabbar"><span class="">作品库</span><span class="on">发现</span><span class="">统计</span><span class="">设置</span></div></div></div></div><div class="vwrap"><div class="vlabel">宫格视图</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">发现</span><span class="pacts"><i>切换布局</i><i>搜索</i></span></div><div class="pgrid c3"><div class="pcell">当季</div><div class="pcell">排名</div><div class="pcell">Steam</div></div><div class="pt">本季横向预览</div><div class="prow"><div class="prowi"><div class="pimg" style="height:40px"><span>封</span></div></div><div class="prowi"><div class="pimg" style="height:40px"><span>封</span></div></div><div class="prowi"><div class="pimg" style="height:40px"><span>封</span></div></div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>切换布局 ｜ 切换类型 ｜ 进入 当季热门 / 历史排名 / Steam</span></div><div><b>操作后去向</b><span>当季热门（S1-7） ｜ 历史排名（S1-8） ｜ Steam 榜（S1-9） ｜ 漫搜（S1-10）</span></div><div><b>来源</b><span>README 发现页：卡片视图（顶栏三个入口 + 全屏列表）与宫格视图（菜单宫格 + 本季横向预览），右上角一键切换并持久化；顶栏类型行覆盖 全部 / 动画 / 书籍 / 游戏 / 音乐 / 三次元</span></div></div>
+
+</article><article class="card" id="S1-7">
+<header class="ch"><span class="sid">S1-7</span><h4>当季热门</h4></header>
+<div class="pos">阶段 1 · 发现页入口 ①｜展示「当下有人气」而非本季清单</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">当季热门</span><span class="pacts"><i>返回</i><i>搜索</i></span></div><div class="pchips"><span class="">全部</span><span class="on">动画</span><span class="">书籍</span><span class="">游戏</span></div><div class="pgrid c2"><div class="pcell">候选 1</div><div class="pcell">候选 2</div><div class="pcell">候选 3</div><div class="pcell">候选 4</div></div><div class="psub">多样性重排：同类 ≤3 / 连续 ≤2 / 小类保底 3</div></div></div></div><div class="vwrap"><div class="vlabel">零填充（候选不足）</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">当季热门</span><span class="pacts"><i>返回</i></span></div><div class="pstate"><div class="pstate-t">本季候选不足，不用历史排名凑数</div><div class="pbtn">查看历史排名 ›</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点条目 → 详情 ｜ 下拉刷新 ｜ 列表为空时点「查看历史排名 ›」</span></div><div><b>操作后去向</b><span>作品详情（S1-12） ｜ 历史排名（S1-8）</span></div><div><b>来源</b><span>README 发现页 ①：候选池 = /calendar ∪ 400 天开播窗口；类内热度序 → 评分人数 ≥100 → 类型多样性重排 → 前 30；零填充，候选不足就是不足，列表为空给「查看历史排名 ›」出口</span></div></div>
+
+</article><article class="card" id="S1-8">
+<header class="ch"><span class="sid">S1-8</span><h4>历史排名 + 筛选器</h4></header>
+<div class="pos">阶段 1 · 发现页入口 ②｜榜单 + 完整筛选器</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">历史排名</span><span class="pacts"><i>返回</i><i>筛选</i></span></div><div class="pchips"><span class="on">日本</span><span class="">TV</span><span class="">2026</span><span class="">连载</span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">排名 + 封面 + 标题 + 评分 / 评分人数</div><div class="psub">触底自动加载下一页</div></div></div></div><div class="vwrap"><div class="vlabel">筛选面板展开</div><div class="phone"><div class="pscreen"><div class="pnote">内联可折叠面板，不是弹出 sheet —— README 明确记录该形态</div><div class="psheet"><div class="psheet-h">筛选</div><ul><li>地区 / 版本 / 年份 / 季度</li><li>状态 / 类型（46 标签 · 多选为「且」）/ 制作</li><li>排序 / 隐藏已收藏 / 增强区间</li></ul></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>展开 / 收起筛选面板 ｜ 改任一维度（立即查询） ｜ 触底分页 ｜ 点条目 → 详情</span></div><div><b>操作后去向</b><span>作品详情（S1-12）</span></div><div><b>来源</b><span>README 发现页 ②：地区 / 版本 / 年份 / 季度 / 状态 / 类型（46 标签）/ 制作 / 排序 / 收藏 / 增强；改动即查询，支持触底分页；筛选面板为内联可折叠、默认收起</span></div></div>
+<div class="cardnote">已知限制（README）：评分区间 / 评分人数区间目前是候选池内本地过滤，不是服务端全量过滤。</div>
+</article><article class="card" id="S1-9">
+<header class="ch"><span class="sid">S1-9</span><h4>Steam 热销榜</h4></header>
+<div class="pos">阶段 1 · 发现页入口 ③</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">Steam 热销榜</span><span class="pacts"><i>返回</i></span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">排名 + 封面 + 标题 + 价格 / 已收藏标记</div><div class="psub">本地已导入的游戏不会混进榜单</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点条目 → 详情 ｜ 看「收藏态」标记</span></div><div><b>操作后去向</b><span>作品详情（S1-12，Steam 独有条目 sourceKey=steam:{appid}）</span></div><div><b>来源</b><span>README 发现页 ③：商店热销榜前 100（topsellers），条目自动尝试匹配 Bangumi 词条，已收藏的显示收藏态；本地已导入的游戏不会混进榜单</span></div></div>
+
+</article><article class="card" id="S1-10">
+<header class="ch"><span class="sid">S1-10</span><h4>漫搜 / 完整搜索页</h4></header>
+<div class="pos">阶段 1 · 从发现页搜索入口或作品库空态进入</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">漫搜</span><span class="pacts"><i>返回</i></span></div><div class="pfield">搜索作品 / tag:异世界 / sort:rank / juren</div><div class="pt">搜索建议</div><div class="plist"><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">本地前缀 · 拼音即时命中 + 远程聚合</div><div class="pt">历史记录</div><div class="pchips"><span class="on">进击的巨人</span><span class="">葬送的芙莉莲</span><span class="">紫罗兰</span></div></div></div></div><div class="vwrap"><div class="vlabel">搜索空态 / 诊断</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">漫搜</span><span class="pacts"><i>返回</i></span></div><div class="pfield">搜索作品</div><div class="pstate"><div class="pstate-t">没有命中结果</div><div class="pbtn">诊断搜索链路</div></div><div class="pnote">诊断显示：榜单 / 检索 / 旧版兜底 三条通路的 HTTP 状态与返回条数</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>输入关键词（含拼音） ｜ 使用 Bangumi 语法 ｜ 点搜索建议 / 历史记录 ｜ 点「诊断搜索链路」 ｜ 点结果 → 详情</span></div><div><b>操作后去向</b><span>作品详情（S1-12） ｜ 人物详情（S1-11） ｜ 搜索链路诊断（S1-10 空态变体）</span></div><div><b>来源</b><span>README：支持 Bangumi 语法（tag:异世界 / sort:rank）、拼音子串（juren → 进击的巨人）、NSFW（登录走 v0，未登录走旧版兜底）、历史记录、人物搜索、搜索建议；空态提供「诊断搜索链路」，可查看榜单 / 检索 / 旧版兜底三条通路的 HTTP 状态与返回条数</span></div></div>
+
+</article><article class="card" id="S1-11">
+<header class="ch"><span class="sid">S1-11</span><h4>人物详情 / 角色详情</h4></header>
+<div class="pos">阶段 1 · 从搜索或详情页角色区进入</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>人物详情</span><span class="pacts"><i>外链</i></span></div><div class="prow"><div class="prowi"><div class="pimg" style="height:70px"><span>头像</span></div></div><div class="prowi"><div class="pbars"><i></i><i></i><i></i></div><div class="cap">姓名 / 原名 / 生日 / 血型</div></div></div><div class="pt">参与职位统计</div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">配音角色 / 参与作品（横滑卡片）</div><div class="pbtn on">收藏该人物</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>收藏该人物 ｜ 点参与作品 → 详情</span></div><div><b>操作后去向</b><span>作品详情（S1-12） ｜ 角色详情（同页结构）</span></div><div><b>来源</b><span>README 二级页面：person_detail/{id}（性别 / 生日 / 血型 / infobox、参与职位统计、收藏数与评论数、配音角色与参与作品）；character_detail/{id}（出演作品、收藏数与评论数、外链）</span></div></div>
+<div class="cardnote">已知限制（README）：Bangumi 无「按角色查声优」端点，角色详情页不展示 CV。</div>
+</article><article class="card" id="S1-12">
+<header class="ch"><span class="sid">S1-12</span><h4>作品详情 · 顶部与操作</h4></header>
+<div class="pos">阶段 1 · 所有入口的汇聚点（Bangumi 条目 / Steam / AniList / VNDB 兜底条目）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 作品详情</span><span class="pacts"><i>分享 · 换封面</i></span></div><div class="pimg" style="height:120px"><span>封面 + 背景图（共享元素飞入落点）</span></div><div class="pt">作品标题 / 原名 / 类型 / 放送状态</div><div class="pchips"><span class="on">我的评分</span><span class="">社区评分</span><span class="">权威评分</span><span class="">评分分布</span><span class="">榜单成绩</span></div><div class="pbtn on">编辑收藏</div><div class="psub">下方区块见 S1-15</div></div></div></div><div class="vwrap"><div class="vlabel">离线缓存结果</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回</span><span class="pacts"></span></div><div class="pnote">README：远程失败时回退本地缓存，并在界面标注为离线结果</div><div class="pimg" style="height:100px"><span>缓存封面</span></div><div class="psub">上次同步时间</div><div class="pbtn">重试刷新</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>返回（共享元素反向飞回） ｜ 分享卡 ｜ 更换封面 ｜ 进入各区块 ｜ 加入 / 编辑收藏</span></div><div><b>操作后去向</b><span>收藏编辑面板（S1-16） ｜ 分享卡预览（S1-18） ｜ 剧集（S1-14） ｜ 全屏查看器（S1-17）</span></div><div><b>来源</b><span>README 作品详情：横滑评分卡 + 多个区块；操作含分享卡、更换封面（TMDb 多语言海报 / 当前源 / 相册）；封面共享元素从列表飞入</span></div></div>
+
+</article><article class="card" id="S1-13">
+<header class="ch"><span class="sid">S1-13</span><h4>作品详情 · 评分横滑卡</h4></header>
+<div class="pos">阶段 1 · 详情页首屏区块（横向滑动 5 张卡）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">横滑卡</div><div class="phone"><div class="pscreen"><div class="pt">评分</div><div class="prow"><div class="prowi"><div class="pimg" style="height:80px"><span>我的评分 0–10</span></div></div><div class="prowi"><div class="pimg" style="height:80px"><span>社区评分 Bangumi / Bilibili</span></div></div><div class="prowi"><div class="pimg" style="height:80px"><span>权威评分 多源对照</span></div></div></div><div class="pdots"><i class="on"></i><i class=""></i><i class=""></i><i class=""></i><i class=""></i></div><div class="psub">票数门槛：全部票数 / ≥10 票 / ≥50 票</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>横向滑动切卡 ｜ 查看各权威源 ｜ 手动录入榜单成绩</span></div><div><b>操作后去向</b><span>榜单成绩录入弹层 ｜ 外链门户（S1-15）</span></div><div><b>来源</b><span>README：我的评分 · 社区评分（Bangumi / Bilibili + 评分争议度 + 本地库内同类型百分位）· 权威评分（多源对照）· 评分分布 · 榜单成绩（手动录入）；支持「原生分 + 10 分制换算」并存与票数门槛（全部 / ≥10 票 / ≥50 票）</span></div></div>
+
+</article><article class="card" id="S1-14">
+<header class="ch"><span class="sid">S1-14</span><h4>作品详情 · 剧集列表</h4></header>
+<div class="pos">阶段 1 · 详情页主区块之一</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pt">剧集</div><div class="pimg" style="height:50px"><span>评分走势曲线（当前手写 Canvas）</span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">集号 + 标题 + 播出日 + 评分角标 + 剧照缩略图</div><div class="pbtn">看到这里</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>展开某集简介 ｜ 点「看到这里」写回进度 ｜ 点某集 → 单集详情</span></div><div><b>操作后去向</b><span>单集详情（S2-2）</span></div><div><b>来源</b><span>README：集号 / 标题 / 播出日 / 时长 / 讨论数 / 每集评分角标 / 剧照缩略图 / 展开看单集简介 / 「看到这里」写回进度；附评分走势曲线</span></div></div>
+<div class="cardnote">「评分走势曲线」当前为手写 Canvas；计划建议换图表库（见清单 P1-3 · 参考项目 vico）。</div>
+</article><article class="card" id="S1-15">
+<header class="ch"><span class="sid">S1-15</span><h4>作品详情 · 剧照 / 角色 / 猜你喜欢 / 圣地巡礼 / 外部源 / 外链门户</h4></header>
+<div class="pos">阶段 1 · 详情页下方区块（同一页纵向堆叠）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pt">剧照</div><div class="pgrid c3"><div class="pcell">剧照</div><div class="pcell">剧照</div><div class="pcell">剧照</div></div><div class="pt">角色 / 制作人员 / 关联作品</div><div class="prow"><div class="prowi"><div class="pimg" style="height:45px"><span>角色</span></div></div><div class="prowi"><div class="pimg" style="height:45px"><span>staff</span></div></div><div class="prowi"><div class="pimg" style="height:45px"><span>关联</span></div></div></div><div class="pt">猜你喜欢（纯本地计算 · 前 10）</div><div class="prow"><div class="prowi"><div class="pimg" style="height:45px"><span>1</span></div></div><div class="prowi"><div class="pimg" style="height:45px"><span>2</span></div></div><div class="prowi"><div class="pimg" style="height:45px"><span>3</span></div></div></div><div class="pt">圣地巡礼（仅动画 · 非 NSFW）</div><div class="pimg" style="height:50px"><span>取景缩略图 + EP 集 mm:ss · #N</span></div><div class="pbtn">打开巡礼地图</div><div class="pt">外部信息源</div><div class="pchips"><span class="on">Steam</span><span class="">VNDB</span><span class="">AniList</span><span class="">TMDb</span><span class="">权威评分</span></div><div class="pt">外链门户（23 平台 · 无可用动作自动隐藏）</div><div class="pgrid c4"><div class="pcell">B站</div><div class="pcell">Steam</div><div class="pcell">VNDB</div><div class="pcell">更多</div></div></div></div></div><div class="vwrap"><div class="vlabel">绑定候选（未写库）</div><div class="phone"><div class="pscreen"><div class="pnote">README 写库策略：VNDB / AniList / TMDb / 豆瓣只产候选，需用户确认；仅 Steam 由 appid 精确匹配后自动绑定</div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">候选标题 + 匹配理由 + 置信度</div><div class="pbtns"><div class="pbtn">忽略</div><div class="pbtn">确认绑定</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点剧照 → 全屏查看器 ｜ 点角色 / staff / 关联作品 ｜ 点圣地巡礼地图外链 ｜ 外部源「确认绑定 / 重试」 ｜ 点外链门户任一平台</span></div><div><b>操作后去向</b><span>全屏图片查看器（S1-17） ｜ 人物详情（S1-11） ｜ 外部浏览器 / 对应 App（scheme → 搜索 scheme → 网页 三级降级）</span></div><div><b>来源</b><span>README：剧照（TMDb + 每集剧照 + B 站分集封面 + Anitabi 取景 + Steam 截图 + 豆瓣灰通道）· 角色 / 制作人员 / 关联作品横滑 · 猜你喜欢（本地标签共现 + 同类评分，前 10）· 圣地巡礼（Anitabi 地标 + 巡礼地图外链，仅动画非 NSFW）· 外部信息源（Steam / VNDB / AniList / TMDb / 权威评分）· 外链门户 23 平台三级降级</span></div></div>
+<div class="cardnote">豆瓣灰通道默认关闭；外链门户对当前作品无可用动作的目标会自动隐藏。</div>
+</article><article class="card" id="S1-16">
+<header class="ch"><span class="sid">S1-16</span><h4>收藏编辑面板</h4></header>
+<div class="pos">阶段 1 · 从详情页或卡片长按进入</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="psheet"><div class="psheet-h">编辑收藏</div><ul><li>状态：想看 / 在看 / 看过 / 搁置 / 抛弃（分段选择器）</li><li>进度：集数 / 卷数 / 游玩时长（按类型）</li><li>评分 0–10 + 短评</li><li>二刷标记</li><li>个人标签：____</li><li>私密收藏（导出与 WebDAV 同步会排除）</li><li>开始 / 完成日期胶囊</li></ul></div><div class="pbtn on">保存</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>改状态（动词按类型：看 / 读 / 玩 / 听） ｜ 改进度 ｜ 评分 / 写短评 ｜ 标记二刷 ｜ 加个人标签 ｜ 设为私密 ｜ 填开始 / 完成日期</span></div><div><b>操作后去向</b><span>保存后回到详情页（S1-12）或作品库（S1-2）</span></div><div><b>来源</b><span>README 收藏模型：状态五档、进度（集 / 卷 / 时长）、评分 0–10 与短评、二刷、个人标签、私密；docs/remaining-phases.md C：分段状态选择器 + 日期胶囊 + 抛弃状态</span></div></div>
+
+</article><article class="card" id="S1-17">
+<header class="ch"><span class="sid">S1-17</span><h4>全屏图片查看器</h4></header>
+<div class="pos">阶段 1 · 从任意剧照 / 封面 / 截图进入</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pimg" style="height:180px"><span>图片（可缩放 / 平移）</span></div><div class="prow"><div class="prowi"><div class="pbtn">保存到相册</div></div><div class="prowi"><div class="pbtn">浏览器打开</div></div><div class="prowi"><div class="pbtn">关闭</div></div></div><div class="pdots"><i class=""></i><i class=""></i><i class="on"></i><i class=""></i><i class=""></i><i class=""></i></div></div></div></div><div class="vwrap"><div class="vlabel">首次保存 · 权限申请</div><div class="phone"><div class="pscreen"><div class="pimg" style="height:120px"><span>图片</span></div><div class="pnote">决策（本轮）：初次点击「保存到相册」时才申请权限</div><div class="psheet"><div class="psheet-h">系统权限弹窗</div><ul><li>允许 Niriko 访问照片与媒体？</li></ul></div><div class="pbtns"><div class="pbtn on">允许</div><div class="pbtn on">不允许</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>左右翻页 ｜ 捏合 / 双击缩放 ｜ 保存到相册（首次触发权限申请） ｜ 浏览器打开原图 ｜ 关闭</span></div><div><b>操作后去向</b><span>保存成功 → 系统相册 ｜ 拒绝权限 → 停留本页，不保存（不做二次引导）</span></div><div><b>来源</b><span>README 跨页面能力：翻页 + 捏合缩放 + 双指平移 + 双击缩放 + 保存到相册 + 浏览器打开原图。用户决策（本轮）：初次使用保存功能时申请权限</span></div></div>
+<div class="cardnote">决策已记录：权限在「初次点击保存」时申请，不在进入查看器时申请。</div>
+</article><article class="card" id="S1-18">
+<header class="ch"><span class="sid">S1-18</span><h4>分享卡预览与分享</h4></header>
+<div class="pos">阶段 1 · 详情页「分享卡」入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="psheet"><div class="psheet-h">分享预览</div><ul><li>海报卡预览（封面 + 标题 + 评分 / 进度 / 标签）</li><li>包含项开关：评分 / 进度 / 个人标签</li></ul></div><div class="pbtn on">分享</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>预览海报卡 ｜ 切换包含项（评分 / 进度 / 标签） ｜ 调起系统分享</span></div><div><b>操作后去向</b><span>系统分享面板 → 目标 App</span></div><div><b>来源</b><span>README：分享卡把作品或收藏渲染成海报卡（可含评分 / 进度 / 个人标签）后调用系统分享；设置项「分享卡包含项」；docs/remaining-phases.md I：SharePosterCard / SharePreviewSheet 预览 + 配置 + 分享</span></div></div>
+
+</article></div></section><section class="stage" id="stage-S2"><h3>阶段 2 · 日常追番</h3><p class="sdesc">改状态、记进度、收放送提醒、看日历　｜　在旅程中的位置：用户每天回来用</p><div class="cards"><article class="card" id="S2-1">
+<header class="ch"><span class="sid">S2-1</span><h4>作品库 · 长按快速改状态 / 进度 +1</h4></header>
+<div class="pos">阶段 2 · 日常最高频操作（不走详情页）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">长按浮层（现状）</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>搜索</i></span></div><div class="pgrid c3"><div class="pcell">长按中</div><div class="pcell sk"></div><div class="pcell sk"></div></div><div class="psheet"><div class="psheet-h">改状态</div><ul><li>想看</li><li>在看</li><li>看过</li><li>搁置</li><li>抛弃</li></ul></div></div></div></div><div class="vwrap"><div class="vlabel">含进度 +1（新增）</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">作品库</span><span class="pacts"><i>搜索</i></span></div><div class="pgrid c3"><div class="pcell">长按中</div><div class="pcell sk"></div><div class="pcell sk"></div></div><div class="psheet"><div class="psheet-h">改状态 / 进度</div><ul><li>状态：想看 / 在看 / 看过 / 搁置 / 抛弃</li><li>进度：7 / 12 集　[ − ]　[ + ]</li></ul></div><div class="pbtns"><div class="pbtn">取消</div><div class="pbtn on">保存</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>长按卡片弹出浮层 ｜ 点某个状态即生效 ｜ 进度 − / + 快捷调整（新增） ｜ 点空白处取消</span></div><div><b>操作后去向</b><span>停留作品库（S1-2），卡片角标与筛选结果即时更新</span></div><div><b>来源</b><span>README 作品库：长按卡片快速改状态。用户决策（本轮）：浮层内进度快捷 +1 目前没有，可以添加</span></div></div>
+<div class="cardnote">决策已记录：浮层内新增进度快捷 +1（本项为已批准的新增功能，实现时需补 JVM 单测）。</div>
+</article><article class="card" id="S2-2">
+<header class="ch"><span class="sid">S2-2</span><h4>单集详情</h4></header>
+<div class="pos">阶段 2 · 从详情页剧集列表进入</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 第 6 集</span><span class="pacts"><i>外链</i></span></div><div class="pimg" style="height:90px"><span>本集剧照</span></div><div class="pt">集标题 / 播出日 / 时长 / 讨论数</div><div class="pt">我的评分 0–10</div><div class="pfield">我的评价（停止输入自动保存）</div><div class="pt">该集权威评分</div><div class="pbtns"><div class="pbtn">上一集</div><div class="pbtn">下一集</div></div><div class="pbtns"><div class="pbtn">看到这里</div><div class="pbtn">二刷</div></div><div class="plist"><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">本集简介（展开）</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>评分该集 ｜ 写评价（停止输入自动保存） ｜ 上一集 / 下一集 ｜ 「看到这里」写回进度 ｜ 二刷标记 ｜ 打开 Bangumi 章节页</span></div><div><b>操作后去向</b><span>上一集 / 下一集（同页替换） ｜ 返回剧集列表（S1-14） ｜ 外链 → 浏览器</span></div><div><b>来源</b><span>README 二级页面：episode_detail/{subjectId}/{epId} —— 剧照、我的评分（0–10）、我的评价（停止输入自动保存）、该集权威评分、本集简介、上一集 / 下一集、看到这里、二刷标记、Bangumi 章节页外链</span></div></div>
+
+</article><article class="card" id="S2-3">
+<header class="ch"><span class="sid">S2-3</span><h4>放送提醒 · 系统通知</h4></header>
+<div class="pos">阶段 2 · 后台 WorkManager 每日检查触发（不在应用内）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">单条</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>系统通知栏</span><span class="pacts"></span></div><div class="psheet"><div class="psheet-h">Niriko · 刚刚</div><ul><li>《作品名》今日更新</li><li>今日放送，记得观看</li></ul></div><div class="pnote">点通知进入该作品详情页（S1-12）</div></div></div></div><div class="vwrap"><div class="vlabel">多条合并（新增）</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>系统通知栏</span><span class="pacts"></span></div><div class="psheet"><div class="psheet-h">Niriko · 刚刚</div><ul><li>《作品A》《作品B》《作品C》等 3 部今日更新</li><li>今日放送，记得观看</li></ul></div><div class="pnote">决策（本轮）：同一天多条合并为一条；不提供免打扰时段</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点通知 → 进详情页 ｜ 划掉通知</span></div><div><b>操作后去向</b><span>作品详情（S1-12） ｜ 多条目合并的通知 → 进入对应作品（具体落点：多条目时进「今日放送」列表还是首条详情，需实现时确认）</span></div><div><b>来源</b><span>docs/remaining-phases.md · J：WorkManager 每日周期 Worker + NotificationCompat；默认文案「《作品名》今日更新」「今日放送，记得观看」；点击进详情页。用户决策（本轮）：多条合并需要，免打扰不需要</span></div></div>
+<div class="cardnote">决策已记录：同一天多条需要合并；不做免打扰时段。合并通知点击后的落点若有歧义，实现前再确认一次。本项为新增功能：现状为逐条弹出通知。</div>
+</article><article class="card" id="S2-4">
+<header class="ch"><span class="sid">S2-4</span><h4>统计 · 作品日历（置顶）</h4></header>
+<div class="pos">阶段 2 · 统计页第一个区块；追番节奏的查看入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">统计</span><span class="pacts"><i>刷新</i></span></div><div class="pt">作品日历</div><div class="pchips"><span class="">个人记录</span><span class="on">放送信息</span><span class="">全部显示</span></div><div class="pimg" style="height:120px"><span>月历网格：放送条目按精确时刻落格</span></div><div class="psub">角标：预计（仅日期）/ 可能不准（多源打架）/ 待定（单源）</div></div></div></div><div class="vwrap"><div class="vlabel">日期详情 Sheet</div><div class="phone"><div class="pscreen"><div class="pimg" style="height:110px"><span>月历（选中某天）</span></div><div class="psheet"><div class="psheet-h">10 月 12 日</div><ul><li>放送中：作品 A · EP7 21:30</li><li>我的记录：看完作品 B EP3</li><li>点条目 → 作品详情（S1-12）</li></ul></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>切换三种模式 ｜ 点某一天 → 日期详情 Sheet ｜ 左右切月</span></div><div><b>操作后去向</b><span>日期详情 Sheet（同屏）→ 点条目进详情（S1-12）</span></div><div><b>来源</b><span>README 统计：作品日历（置顶）—— 个人记录 / 放送信息 / 全部显示三种模式；放送条目按精确时刻落格，跨月正确归类。docs/anishelf-reference-plan.md：日历放送可信度标注（预计 / 可能不准 / 待定）</span></div></div>
+
+</article><article class="card" id="S2-5">
+<header class="ch"><span class="sid">S2-5</span><h4>统计 · 时间线</h4></header>
+<div class="pos">阶段 2 · 统计页区块；按作品聚合的操作记录</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常（默认折叠）</div><div class="phone"><div class="pscreen"><div class="pt">时间线</div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">作品分组标题 + 卡片堆叠（默认折叠）</div><div class="psub">展开后显示该作品的全部操作记录</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>展开 / 折叠某作品分组 ｜ 点条目 → 详情</span></div><div><b>操作后去向</b><span>作品详情（S1-12）</span></div><div><b>来源</b><span>README 统计：时间线 —— iOS Smart Stack 风格卡片堆叠，按作品聚合的操作记录（默认折叠）</span></div></div>
+
+</article></div></section><section class="stage" id="stage-S3"><h3>阶段 3 · 回顾统计</h3><p class="sdesc">图表、年度总结、照片墙、词云　｜　在旅程中的位置：用户想看自己看了多少</p><div class="cards"><article class="card" id="S3-1">
+<header class="ch"><span class="sid">S3-1</span><h4>统计页总览</h4></header>
+<div class="pos">阶段 3 · 回顾入口（底栏第三页）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">统计</span><span class="pacts"><i>刷新</i></span></div><div class="pchips"><span class="on">作品数 128</span><span class="">均分 7.4</span><span class="">完成率 62%</span></div><div class="pt">收藏状态分布</div><div class="pimg" style="height:60px"><span>分布图（当前为手写 Canvas）</span></div><div class="pt">作品类型分布 / 月度趋势 / 评分分布 / 评分对比</div><div class="pimg" style="height:70px"><span>图表区（缺少卡片容器：计划待办）</span></div><div class="pt">标签词云</div><div class="pimg" style="height:60px"><span>词云（字号按使用频率）</span></div></div></div></div><div class="vwrap"><div class="vlabel">加载中 / 无数据</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">统计</span><span class="pacts"><i>刷新</i></span></div><div class="pstate"><div class="pspin"></div><div class="pstate-t">统计计算中</div></div><div class="phr"></div><div class="pstate"><div class="pstate-t">还没有足够数据生成统计</div><div class="pbtn">去添加收藏</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点胶囊指标 / 图表 ｜ 点词云标签 → 筛选 ｜ 下拉强制刷新 ｜ 进入年度总结</span></div><div><b>操作后去向</b><span>作品库（带筛选，S1-2） ｜ 年度总结（S3-2） ｜ 照片墙（S3-3）</span></div><div><b>来源</b><span>README 统计：收藏概览（作品数 / 均分 / 完成率等胶囊指标）、收藏状态分布、作品类型分布、收藏月度趋势、评分分布、评分对比（个人 vs Bangumi）、标签词云</span></div></div>
+<div class="cardnote">docs/ui-redesign-plan.md 已记录现状问题：图表色硬编码、图表缺少容器、统计大数字与标签同级 —— 属计划内待办，见清单 P1-4。</div>
+</article><article class="card" id="S3-2">
+<header class="ch"><span class="sid">S3-2</span><h4>年度总结</h4></header>
+<div class="pos">阶段 3 · 从统计页进入的二级页</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 年度总结</span><span class="pacts"><i>年份切换</i></span></div><div class="pimg" style="height:110px"><span>年度卡片（占位）</span></div><div class="pchips"><span class="on">2026</span><span class="">2025</span><span class="">2024</span></div><div class="pbars"><i></i><i></i><i></i></div><div class="cap">年度数据明细</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>切换年份 ｜ 返回统计页</span></div><div><b>操作后去向</b><span>统计页（S3-1）</span></div><div><b>来源</b><span>README 统计：年度总结 —— 当前年与历年数据；设置项「年度总结开关」控制是否展示</span></div></div>
+
+</article><article class="card" id="S3-3">
+<header class="ch"><span class="sid">S3-3</span><h4>照片墙 / 标签词云</h4></header>
+<div class="pos">阶段 3 · 统计页内的两个可视化区块</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">照片墙</div><div class="phone"><div class="pscreen"><div class="pt">照片墙</div><div class="pgrid c4"><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div></div></div></div></div><div class="vwrap"><div class="vlabel">标签词云</div><div class="phone"><div class="pscreen"><div class="pt">标签词云</div><div class="pimg" style="height:80px"><span>字号 = 使用频率（点击筛选）</span></div><div class="pchips"><span class="">异世界</span><span class="">治愈</span><span class="">机战</span><span class="on">日常</span></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点照片墙某张封面 ｜ 点某个标签 → 进入作品库并带上筛选</span></div><div><b>操作后去向</b><span>作品详情（S1-12） ｜ 作品库（带筛选，S1-2）</span></div><div><b>来源</b><span>README 统计：照片墙（我的收藏封面马赛克）、标签词云（按个人标签使用频率映射字号，点击可筛选）</span></div></div>
+
+</article></div></section><section class="stage" id="stage-S4"><h3>阶段 4 · 导入与同步</h3><p class="sdesc">设置入口、登录、导入、WebDAV、备份、诊断　｜　在旅程中的位置：用户搬历史数据 / 多端同步</p><div class="cards"><article class="card" id="S4-1">
+<header class="ch"><span class="sid">S4-1</span><h4>设置 · 分类导航（入口页）</h4></header>
+<div class="pos">阶段 4 · 底栏第四页；所有配置与数据管理的入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">设置</span><span class="pacts"></span></div><div class="plist"><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">图标 + 分类名 + 一句话说明</div><div class="psub">外观 / 收藏与展示 / 搜索 / 数据源与账号 / 同步与备份 / 刷新诊断 / 关于</div><div class="ptabbar"><span class="">作品库</span><span class="">发现</span><span class="">统计</span><span class="on">设置</span></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>点任一分类 → 二级页</span></div><div><b>操作后去向</b><span>外观（S5-1） ｜ 收藏与展示（同结构） ｜ 搜索（同结构） ｜ 数据源与账号（S4-2 / S4-3 / S4-4） ｜ 同步与备份（S4-6 / S4-7） ｜ 刷新诊断（S4-8） ｜ 关于</span></div><div><b>来源</b><span>README 设置：分类导航（图标 + 一句话说明），点进独立二级页 —— 外观 / 收藏与展示 / 搜索 / 数据源与账号 / 同步与备份 / 刷新诊断 / 关于</span></div></div>
+
+</article><article class="card" id="S4-2">
+<header class="ch"><span class="sid">S4-2</span><h4>Bangumi OAuth 登录</h4></header>
+<div class="pos">阶段 4 · 设置 → 数据源与账号</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">未登录</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ Bangumi 账号</span><span class="pacts"></span></div><div class="pfield">自建应用 App ID</div><div class="pfield">App Secret</div><div class="pchips"><span class="on">官方 api.bgm.tv</span><span class="">国内反代</span></div><div class="pbtn on">授权登录</div><div class="psub">不内置公共应用 id，需用户自行在 Bangumi 创建应用</div></div></div></div><div class="vwrap"><div class="vlabel">等待回调</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回</span><span class="pacts"></span></div><div class="pstate"><div class="pspin"></div><div class="pstate-t">正在等待授权回调</div></div><div class="pnote">授权在外部页面完成，回调后回到本页</div></div></div></div><div class="vwrap"><div class="vlabel">已登录</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ Bangumi 账号</span><span class="pacts"></span></div><div class="prow"><div class="prowi"><div class="pimg" style="height:40px"><span>头像</span></div></div><div class="prowi"><div class="pbars"><i></i><i></i></div><div class="cap">用户名 / UID</div></div></div><div class="pt">NSFW 检索：走 v0</div><div class="pbtns"><div class="pbtn">退出登录</div><div class="pbtn">同步收藏</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>填自建应用 id / secret ｜ 发起授权（跳系统浏览器 / WebView） ｜ 回调后完成登录 ｜ 退出登录</span></div><div><b>操作后去向</b><span>返回设置（S4-1） ｜ Bangumi 收藏同步（S4-6 同页区块）</span></div><div><b>来源</b><span>README：应用内完成授权（用户在 Bangumi 自建应用，不内置公共应用 id）；登录后 NSFW 检索走 v0，未登录走旧版接口兜底；端点可切换（官方 / 国内反代）；登录后可把本地收藏同步到 Bangumi（冲突优先级：本地优先 / 远端优先）</span></div></div>
+<div class="cardnote">授权页由 Bangumi 站点渲染，属于外部页面；应用内的等待页结构如下。</div>
+</article><article class="card" id="S4-3">
+<header class="ch"><span class="sid">S4-3</span><h4>哔哩哔哩导入</h4></header>
+<div class="pos">阶段 4 · 设置 → 数据源与账号 → 导入入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">步骤 1 · 登录</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ B 站导入</span><span class="pacts"></span></div><div class="pimg" style="height:150px"><span>WebView：B 站登录页（占位）</span></div><div class="psub">在 WebView 内完成登录，凭据不离开本机</div></div></div></div><div class="vwrap"><div class="vlabel">步骤 2 · 匹配与勾选</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 匹配结果</span><span class="pacts"><i>全选</i></span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">☑ 标题 + 匹配到的 Bangumi 条目 + 原评分</div><div class="psub">默认不覆盖已有评分</div><div class="pbtn on">导入所选</div></div></div></div><div class="vwrap"><div class="vlabel">失败 / 无数据</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回</span><span class="pacts"></span></div><div class="pstate err"><div class="pstate-t">拉取追番列表失败（登录态可能已失效）</div><div class="pbtn">重新登录</div></div><div class="pstate"><div class="pstate-t">账号下没有可导入的追番</div><div class="pbtn">返回</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>WebView 内登录 B 站 ｜ 拉取追番与评分 ｜ 查看匹配结果 ｜ 勾选后导入</span></div><div><b>操作后去向</b><span>返回设置（S4-1） ｜ 作品库（S1-2，导入后出现）</span></div><div><b>来源</b><span>README 二级页面 bilibili_sync：WebView 内登录 B 站，注入脚本拉取追番列表、用户评分与短评，按 season_id / 标题匹配后勾选导入（默认不覆盖已有评分）</span></div></div>
+
+</article><article class="card" id="S4-4">
+<header class="ch"><span class="sid">S4-4</span><h4>Steam 游戏库导入</h4></header>
+<div class="pos">阶段 4 · 设置 → 数据源与账号 → 导入入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">入口</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ Steam 游戏库</span><span class="pacts"></span></div><div class="pbtn on">使用 Steam 登录（OpenID）</div><div class="psub">或</div><div class="pfield">手动填写 SteamID64</div><div class="pfield">Steam Web API Key（成就 / 已购需密钥）</div></div></div></div><div class="vwrap"><div class="vlabel">匹配与勾选</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 匹配结果</span><span class="pacts"><i>全选</i></span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">☑ 游戏名 + 时长 + 推断状态（在看 / 想看）</div><div class="pbtn on">导入所选</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>OpenID 登录或填 SteamID64 ｜ 拉取游戏库 ｜ 勾选导入</span></div><div><b>操作后去向</b><span>返回设置（S4-1） ｜ 作品库（S1-2）</span></div><div><b>来源</b><span>README 二级页面 steam_sync：OpenID 2.0 登录或手动填 SteamID64 → 拉取本人库 + 家庭共享库 → 匹配 Bangumi → 勾选导入；游玩时长推断状态（玩过 → 在看，未玩 → 想看）</span></div></div>
+
+</article><article class="card" id="S4-5">
+<header class="ch"><span class="sid">S4-5</span><h4>Kazumi 导入</h4></header>
+<div class="pos">阶段 4 · 设置 → 数据源与账号 → 导入入口</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">选择文件</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ Kazumi 导入</span><span class="pacts"></span></div><div class="pimg" style="height:60px"><span>系统文件选择器（SAF）</span></div><div class="psub">通过系统文件选择器选择 collectibles.hive</div><div class="pbtn on">选择文件</div></div></div></div><div class="vwrap"><div class="vlabel">预览与勾选</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 预览</span><span class="pacts"><i>全选</i></span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">☑ 动画条目（仅动画 · 默认跳过已存在）</div><div class="pbtn on">导入所选</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>用系统文件选择器选择 collectibles.hive ｜ 预览 ｜ 勾选导入</span></div><div><b>操作后去向</b><span>返回设置（S4-1） ｜ 作品库（S1-2，导入后出现）</span></div><div><b>来源</b><span>README：读取 Kazumi 导出的 collectibles.hive，预览后勾选导入（仅动画，默认跳过已存在）。用户决策（本轮）：文件选择走系统文件选择器</span></div></div>
+<div class="cardnote">决策已记录：使用系统文件选择器（SAF），不需要应用内路径输入。</div>
+</article><article class="card" id="S4-6">
+<header class="ch"><span class="sid">S4-6</span><h4>WebDAV 同步 / Bangumi 收藏同步</h4></header>
+<div class="pos">阶段 4 · 设置 → 同步与备份</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 同步与备份</span><span class="pacts"></span></div><div class="pfield">WebDAV 地址 / 账号 / 密码</div><div class="pchips"><span class="">手动同步</span><span class="on">自动同步（节流 15 分钟）</span></div><div class="pchips"><span class="on">冲突：本地优先</span><span class="">远端优先</span></div><div class="pbtn on">立即同步</div><div class="psub">上次同步：X｜下次可重试：X</div></div></div></div><div class="vwrap"><div class="vlabel">进行中 / 失败退避</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回</span><span class="pacts"></span></div><div class="pstate"><div class="pspin"></div><div class="pstate-t">同步中：读远端 → 合并 → 写远端（手动与自动互斥）</div></div><div class="phr"></div><div class="pstate err"><div class="pstate-t">同步失败，已进入退避（30s / 60s / 120s / 300s）</div><div class="pbtn">立即重试</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>配置 WebDAV 地址 / 账号 ｜ 立即同步 ｜ 开关自动同步 ｜ 选择冲突优先级</span></div><div><b>操作后去向</b><span>停留本页（显示结果与退避时间）</span></div><div><b>来源</b><span>README：WebDAV 先下载并按 LWW（最后写入胜出）合并到本地，再把合并结果发布回远端；手动与自动同步串行化互斥；失败进入退避梯并在设置页显示「上次同步 / 下次可重试时间」；自动同步回到前台触发、节流 15 分钟；Bangumi 收藏同步可设冲突优先级（本地优先 / 远端优先）</span></div></div>
+<div class="cardnote">已知限制（README）：WebDAV 尚未纳入 subject_external_ids / episode_my_ratings / manual_awards / 封面覆盖（JSON 备份已包含）→ 见清单 P1-6。</div>
+</article><article class="card" id="S4-7">
+<header class="ch"><span class="sid">S4-7</span><h4>JSON 全量备份 / 恢复</h4></header>
+<div class="pos">阶段 4 · 设置 → 同步与备份</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 备份</span><span class="pacts"></span></div><div class="pbtn on">导出 JSON 备份</div><div class="pbtn">从文件恢复</div><div class="psub">私密收藏不会出现在导出文件中</div></div></div></div><div class="vwrap"><div class="vlabel">恢复确认 · 冲突本地优先</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 备份</span><span class="pacts"></span></div><div class="psheet"><div class="psheet-h">恢复确认</div><ul><li>读取备份并与本地合并</li><li>冲突记录：以本地为准（本地优先）</li><li>备份中本地没有的记录会被并入</li></ul></div><div class="prow"><div class="prowi"><div class="pbtn">取消</div></div><div class="prowi"><div class="pbtn on">开始恢复</div></div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>导出备份文件 ｜ 选择文件恢复 ｜ 确认恢复（冲突以本地为准）</span></div><div><b>操作后去向</b><span>停留本页（结果提示）</span></div><div><b>来源</b><span>README：导出 / 恢复收藏、作品元数据、手工条目、搜索历史、人物收藏、外部绑定、封面覆盖、单集评价、手动成绩等；私密收藏不含在导出与同步内。用户决策（本轮）：冲突则本地优先</span></div></div>
+<div class="cardnote">决策已记录：恢复时如与本地记录冲突，本地优先（远端备份不覆盖本地已有记录）。新增记录仍会并入。</div>
+</article><article class="card" id="S4-8">
+<header class="ch"><span class="sid">S4-8</span><h4>刷新诊断</h4></header>
+<div class="pos">阶段 4 · 设置 → 刷新诊断；也用于搜索链路诊断</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 刷新诊断</span><span class="pacts"><i>强制刷新</i></span></div><div class="plist"><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">资源名 + 新鲜度 + 失败次数 + 退避剩余 + 最近错误</div><div class="pbtn">清除刷新记录</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>查看各资源状态 ｜ 强制刷新 ｜ 清除刷新记录</span></div><div><b>操作后去向</b><span>停留本页</span></div><div><b>来源</b><span>README：列出各资源新鲜度、累计失败、退避剩余与最近错误；提供强制刷新与清除记录；发现页与统计页显示「上次更新 X 分钟前」，点按即强制刷新</span></div></div>
+
+</article></div></section><section class="stage" id="stage-S5"><h3>阶段 5 · 个性化</h3><p class="sdesc">主题、壁纸、玻璃强度、主题包、桌面图标　｜　在旅程中的位置：用户把它调成自己的样子</p><div class="cards"><article class="card" id="S5-1">
+<header class="ch"><span class="sid">S5-1</span><h4>设置 · 外观</h4></header>
+<div class="pos">阶段 5 · 设置 → 外观（二级页）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 外观</span><span class="pacts"></span></div><div class="pchips"><span class="on">跟随系统</span><span class="">浅色</span><span class="">深色</span></div><div class="pchips"><span class="on">动态取色</span><span class="">自定义主题色</span><span class="">OLED 纯黑</span></div><div class="pt">玻璃效果强度</div><div class="pchips"><span class="on">全效果</span><span class="">降低</span><span class="">关闭</span></div><div class="pt">壁纸（全局 + 每页覆盖）</div><div class="pimg" style="height:50px"><span>壁纸预览 / 柔化强度 / 氛围（浓郁 · 均衡 · 素净）</span></div><div class="pt">减少动态效果</div><div class="pchips"><span class="">开</span><span class="on">关</span></div><div class="plist"><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">主题包 · 桌面图标</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>切换主题模式 / 动态取色 ｜ 调节玻璃强度（全效果 / 降低 / 关闭） ｜ 设置壁纸与柔化 ｜ 开关减少动态效果 ｜ 进入主题包 / 桌面图标</span></div><div><b>操作后去向</b><span>桌面图标（S5-3） ｜ 主题包导入（S5-2） ｜ 实时预览（停留本页）</span></div><div><b>来源</b><span>README 设置·外观：主题模式（跟随系统 / 浅色 / 深色）、动态取色、自定义主题色、OLED 纯黑、玻璃效果强度、卡片玻璃、壁纸（全局与每页）、壁纸柔化与氛围、桌面图标、分享卡包含项、减少动态效果、主题包</span></div></div>
+
+</article><article class="card" id="S5-2">
+<header class="ch"><span class="sid">S5-2</span><h4>主题包导入（.nirikotheme）</h4></header>
+<div class="pos">阶段 5 · 外观 → 主题包；也可由系统「打开方式」直接进入</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 主题包</span><span class="pacts"></span></div><div class="pimg" style="height:80px"><span>配色 + 壁纸预览（占位）</span></div><div class="psub">theme.json 必需 · 每页覆盖可选 · ≤50MB</div><div class="pbtns"><div class="pbtn">导出当前</div><div class="pbtn on">应用</div></div><div class="pbtn on">选择文件导入</div></div></div></div><div class="vwrap"><div class="vlabel">校验失败</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回</span><span class="pacts"></span></div><div class="pstate err"><div class="pstate-t">主题包校验失败（zip 炸弹 / 路径穿越 / JSON 非法）</div><div class="pbtn">重新选择</div></div><div class="psub">失败不影响当前主题</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>选择 .nirikotheme 文件 ｜ 预览配色与壁纸 ｜ 应用主题包 ｜ 导出当前主题包</span></div><div><b>操作后去向</b><span>应用后停留在外观（S5-1）</span></div><div><b>来源</b><span>README：ZIP 包 theme.json（必需）+ 可选壁纸 + 每页覆盖，包体上限 50MB；可应用内选择器或系统「打开方式」导入（已注册文件关联）；也可导出当前配色与壁纸分享；导入时校验 zip 炸弹 / 路径穿越 / JSON 合法性</span></div></div>
+
+</article><article class="card" id="S5-3">
+<header class="ch"><span class="sid">S5-3</span><h4>桌面图标</h4></header>
+<div class="pos">阶段 5 · 外观 → 桌面图标</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">正常</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 桌面图标</span><span class="pacts"></span></div><div class="pimg" style="height:70px"><span>图标预览（主题色 / 上传图）</span></div><div class="pbtn on">创建桌面快捷方式</div><div class="pbtn">隐藏本体图标</div><div class="psub">仅在确认桌面已存在快捷方式后才允许隐藏</div></div></div></div><div class="vwrap"><div class="vlabel">无法确认 / 手动隐藏</div><div class="phone"><div class="pscreen"><div class="pstate err"><div class="pstate-t">无法确认桌面快捷方式已创建</div><div class="pbtn">重试确认</div></div><div class="pnote">README：无法确认时保留原图标并给出原因；MIUI / HyperOS 可能需先在系统允许「桌面快捷方式」权限；手动隐藏前会提示只能从系统设置进入应用</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>生成图标（主题色 / 上传图片） ｜ 创建桌面快捷方式 ｜ 隐藏本体图标（需确认）</span></div><div><b>操作后去向</b><span>停留本页（结果说明）</span></div><div><b>来源</b><span>README：主题色或上传图片生成 Bitmap → 固定快捷方式（ShortcutManager）→ 隐藏本体图标（禁用 activity-alias）；确认桌面确实已存在快捷方式后才隐藏；旧版 INSTALL_SHORTCUT 广播兜底（MIUI / HyperOS 需先允许「桌面快捷方式」权限）；快捷方式缺失时回前台自动恢复本体图标；手动隐藏需确认</span></div></div>
+
+</article></div></section><section class="stage" id="stage-S6"><h3>阶段 6 · 全局状态</h3><p class="sdesc">加载 / 无数据 / 失败 / 离线 / 无权限 / 自愈　｜　在旅程中的位置：以上所有阶段都可能遇到</p><div class="cards"><article class="card" id="S6-1">
+<header class="ch"><span class="sid">S6-1</span><h4>全局状态 · 加载中</h4></header>
+<div class="pos">阶段 6 · 任意数据页的中间态</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">当前实现</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">页面标题</span><span class="pacts"></span></div><div class="pstate"><div class="pspin"></div><div class="pstate-t">CircularProgressIndicator / LinearProgressIndicator</div></div></div></div></div><div class="vwrap"><div class="vlabel">计划建议（未批准）</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">页面标题</span><span class="pacts"></span></div><div class="pnote">骨架屏 / 微光（参考项目 compose-shimmer）；需用户确认后再改</div><div class="pgrid c3"><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div><div class="pcell sk"></div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>等待 ｜ 离页取消（轻量前台任务随退后台取消）</span></div><div><b>操作后去向</b><span>加载完成 → 正常内容态</span></div><div><b>来源</b><span>README / 现状：全项目近 50 处进度指示器；计划建议换骨架屏（见清单 P1-5 · 参考项目 compose-shimmer）</span></div></div>
+<div class="cardnote">骨架屏的具体形态属于计划建议（未批准），当前实现为进度指示器。</div>
+</article><article class="card" id="S6-2">
+<header class="ch"><span class="sid">S6-2</span><h4>全局状态 · 无数据</h4></header>
+<div class="pos">阶段 6 · 各页空态的总览</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">各页空态对照</div><div class="phone"><div class="pscreen"><div class="pstate"><div class="pstate-t">作品库：还没有任何收藏</div><div class="pbtn">开始探索</div></div><div class="phr"></div><div class="pstate"><div class="pstate-t">当季热门：候选不足</div><div class="pbtn">查看历史排名 ›</div></div><div class="phr"></div><div class="pstate"><div class="pstate-t">搜索：没有命中结果</div><div class="pbtn">诊断搜索链路</div></div><div class="phr"></div><div class="pstate"><div class="pstate-t">统计：数据不足</div><div class="pbtn">去添加收藏</div></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>按各页给出的出口操作</span></div><div><b>操作后去向</b><span>漫搜（S1-10） ｜ 历史排名（S1-8） ｜ 作品库（S1-2）</span></div><div><b>来源</b><span>README：作品库空态给「开始探索」；当季热门列表为空给「查看历史排名 ›」；搜索无结果可「诊断搜索链路」；统计无数据提示去添加收藏</span></div></div>
+
+</article><article class="card" id="S6-3">
+<header class="ch"><span class="sid">S6-3</span><h4>全局状态 · 失败与重试</h4></header>
+<div class="pos">阶段 6 · 任意网络请求失败</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">整页失败</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">页面标题</span><span class="pacts"></span></div><div class="pstate err"><div class="pstate-t">加载失败（已进入退避梯）</div><div class="pbtn">重试</div></div><div class="psub">下次可自动重试剩余时间</div></div></div></div><div class="vwrap"><div class="vlabel">内联失败（已有缓存）</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">页面标题</span><span class="pacts"><i>刷新</i></span></div><div class="pnote">页面已有缓存内容，失败以内联提示 + 可重试呈现</div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">缓存内容继续可读</div><div class="pbtn">重试</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>重试（绕过 TTL 与退避） ｜ 下拉刷新 ｜ 进设置看诊断</span></div><div><b>操作后去向</b><span>成功 → 正常内容态 ｜ 持续失败 → 刷新诊断（S4-8）</span></div><div><b>来源</b><span>README 刷新与缓存：失败后 30s / 60s / 120s / 300s 不再自动重试；用户主动下拉或重试可绕过 TTL 与退避；同 key 并发请求合并为一次</span></div></div>
+<div class="cardnote">失败提示的具体文案与展示形态（Snackbar / 整页错误 / 内联）各页不一致：docs 未统一 → 待确认。</div>
+</article><article class="card" id="S6-4">
+<header class="ch"><span class="sid">S6-4</span><h4>全局状态 · 离线缓存回退</h4></header>
+<div class="pos">阶段 6 · 远程失败但有本地缓存</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">离线结果标注</div><div class="phone"><div class="pscreen"><div class="ptop"><span class="ptitle">搜索结果 / 详情</span><span class="pacts"><i>刷新</i></span></div><div class="pchips"><span class="on">离线结果</span></div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">本地库命中结果</div><div class="psub">上次同步时间</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>继续浏览缓存内容 ｜ 重试刷新</span></div><div><b>操作后去向</b><span>重试成功 → 在线内容；仍离线 → 停留</span></div><div><b>来源</b><span>README 跨页面能力：搜索结果与详情自动落库；远程失败时回退本地缓存（并在界面标注为离线结果）</span></div></div>
+
+</article><article class="card" id="S6-5">
+<header class="ch"><span class="sid">S6-5</span><h4>全局状态 · 未登录 / 无权限</h4></header>
+<div class="pos">阶段 6 · NSFW 检索与需登录能力</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">未登录 + 开启 R18</div><div class="phone"><div class="pscreen"><div class="pnav"><span><span class="pback">←</span>返回 ｜ 搜索</span><span class="pacts"></span></div><div class="pfield">tag:异世界</div><div class="pnote">未登录时 NSFW 检索走旧版接口兜底（结果可能少于 v0）</div><div class="plist"><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div><div class="pli"><div class="pthumb"></div><div class="plines"><i></i><i class="s"></i></div></div></div><div class="cap">兜底结果</div></div></div></div><div class="vwrap"><div class="vlabel">未配置密钥的源</div><div class="phone"><div class="pscreen"><div class="pnote">README：未配置密钥的权威评分源自动隐藏（不显示空卡）</div><div class="pchips"><span class="on">Steam 好评率</span><span class="">Metacritic</span></div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>允许 R18 内容（设置开关） ｜ 去登录 Bangumi</span></div><div><b>操作后去向</b><span>登录（S4-2） ｜ 返回设置（S4-1）</span></div><div><b>来源</b><span>README：NSFW 检索登录后走 v0，未登录走旧版接口兜底；设置项「允许 R18 内容」；豆瓣灰通道默认关闭；未配置密钥的权威评分源自动隐藏</span></div></div>
+
+</article><article class="card" id="S6-6">
+<header class="ch"><span class="sid">S6-6</span><h4>异常恢复 · 桌面图标缺失自愈</h4></header>
+<div class="pos">阶段 6 · 回前台时自动检查（用户无感）</div>
+<div class="variants"><div class="vwrap"><div class="vlabel">自动恢复</div><div class="phone"><div class="pscreen"><div class="pnote">回前台检测：桌面快捷方式是否仍存在</div><div class="pbtns"><div class="pbtn">存在 → 保持隐藏</div><div class="pbtn">缺失 → 自动恢复本体图标</div></div><div class="psub">用户无感，仅状态变化</div></div></div></div></div>
+<div class="meta"><div><b>可执行操作</b><span>（通常无操作，自动恢复） ｜ 必要时手动重新创建</span></div><div><b>操作后去向</b><span>停留当前页</span></div><div><b>来源</b><span>README：快捷方式缺失时，回到前台自动恢复本体图标，避免应用从桌面「消失」</span></div></div>
+
+</article></div></section>
+<h2 id="todo">④ 决策记录（本轮）· 剩余待确认 0 条</h2>
+<p class="hint">以下 11 条原「待确认」已由本轮决策关闭；清单状态与线框图均已按决策更新，决策原文附在每条末尾便于复核。</p>
+<ul class="tlist">
+<li><b>0-2 首次启动引导 · TMDB API Key</b> — 首次启动不做多步引导，只保留一页 TMDB API Key 设置；每一页都加「跳过」<span class="csrc">（决策原文：「只需要 TMDB API Key 的设置功能 + 每页加跳过」 · 落点：S0-2 已改为真实页面；设置入口在 S4-1）</span></li><li><b>0-6 保存到相册的权限时机</b> — 权限在初次点击「保存到相册」时申请，不在进入查看器时申请<span class="csrc">（决策原文：「初次在使用图片查看器的保存功能时申请」 · 落点：S1-17 的「首次保存 · 权限申请」变体）</span></li><li><b>1-4 批量删除的二次确认</b> — 删除前弹确认框，确认后才执行<span class="csrc">（决策原文：「需要确认」 · 落点：S1-5 的「删除二次确认」变体）</span></li><li><b>2-2 长按浮层内进度快捷 +1</b> — 长按浮层新增进度 − / + 快捷调整（新增功能）<span class="csrc">（决策原文：「目前无此功能，可以添加」 · 落点：S2-1 的「含进度 +1（新增）」变体；需补 JVM 单测）</span></li><li><b>2-5 通知多条合并 / 免打扰</b> — 同一天的多条放送通知合并为一条；不做免打扰时段<span class="csrc">（决策原文：「多条合并需要，免打扰不需要」 · 落点：S2-3 的「多条合并」变体）</span></li><li><b>4-6 Kazumi 文件选择方式</b> — 使用系统文件选择器（SAF），不做应用内路径输入<span class="csrc">（决策原文：「系统文件选择器」 · 落点：S4-5 的「选择文件」变体）</span></li><li><b>4-10 恢复的覆盖策略与二次确认</b> — 恢复前二次确认；与本地冲突时本地优先，备份中本地没有的记录并入<span class="csrc">（决策原文：「冲突则本地优先」 · 落点：S4-7 的「恢复确认」变体）</span></li><li><b>0-4 通知被拒后的二次引导</b> — 拒绝通知权限后不在应用内做二次引导；设置页开关项保留<span class="csrc">（决策原文：「不需要」 · 落点：S0-3 的「拒绝后」变体）</span></li><li><b>1-8 筛选面板形态</b> — 保持项目已有形式：历史排名的内联可折叠筛选面板（默认收起），不改弹窗 sheet<span class="csrc">（决策原文：「按照项目已有形式」 · 落点：S1-8 的「筛选面板展开」变体（形态不变））</span></li><li><b>1-17 补 VeneraNext / Danotsu 包名</b> — 本轮不补，保持未接入（无网络环境无法确认包名）<span class="csrc">（决策原文：「暂时不补」 · 落点：外链门户不改动）</span></li><li><b>1-18 网易云 / QQ 音乐 scheme 真机验证</b> — 本轮不做真机验证，继续走现有三级降级（失效自动网页兜底）<span class="csrc">（决策原文：「暂时不需要」 · 落点：外链门户不改动）</span></li>
+</ul>
+<p class="hint">新增的两处（2-2 进度快捷 +1、2-5 多条合并）属于本轮新批准的功能，实现时请按仓库约定补 JVM 单测。</p>
+
+<p>本页为低保真交付物：只表达信息层级、核心文案、按钮位置与页面状态，不含配色 / 动效 / 正式视觉。所有页面与状态的来源已逐条标注；标注「待确认」处需产品先决定后再出图。</p>
+<p>生成时间：本会话 · 单文件（无外部依赖，可直接打开 / 打印）。</p>
+</div>
+</div>
+<script>window.__PLAN__=[{"g":"阶段 0 · 首次使用","id":"0-1","t":"启动页 / 开屏","s":"done","p":"P0","src":"README 设置·收藏与展示"},{"g":"阶段 0 · 首次使用","id":"0-2","t":"首次启动引导","s":"confirm","p":"—","src":"README / docs 均无"},{"g":"阶段 0 · 首次使用","id":"0-3","t":"通知权限首次请求","s":"done","p":"P0","src":"docs/remaining-phases.md · J"},{"g":"阶段 0 · 首次使用","id":"0-4","t":"通知被拒后的二次引导","s":"confirm","p":"—","src":"docs 未定义"},{"g":"阶段 0 · 首次使用","id":"0-5","t":"作品库空态引导","s":"done","p":"P0","src":"README 作品库"},{"g":"阶段 0 · 首次使用","id":"0-6","t":"保存到相册的权限时机","s":"confirm","p":"—","src":"docs 未定义"},{"g":"阶段 1 · 建立收藏","id":"1-1","t":"作品库三视图 + 记忆","s":"done","p":"P0","src":"README 作品库；docs/remaining-phases.md A"},{"g":"阶段 1 · 建立收藏","id":"1-2","t":"排序 5 种 + 筛选","s":"done","p":"P0","src":"README 作品库"},{"g":"阶段 1 · 建立收藏","id":"1-3","t":"多选批量操作","s":"done","p":"P1","src":"README；docs/remaining-phases.md H"},{"g":"阶段 1 · 建立收藏","id":"1-4","t":"批量删除的二次确认","s":"confirm","p":"—","src":"docs 未写明"},{"g":"阶段 1 · 建立收藏","id":"1-5","t":"当季热门选取算法","s":"done","p":"P0","src":"README 发现页 ①"},{"g":"阶段 1 · 建立收藏","id":"1-6","t":"历史排名全维度筛选","s":"done","p":"P0","src":"README 发现页 ②"},{"g":"阶段 1 · 建立收藏","id":"1-7","t":"评分区间 / 人数区间服务端化","s":"todo","p":"P2","src":"README 已知限制"},{"g":"阶段 1 · 建立收藏","id":"1-8","t":"筛选面板形态","s":"confirm","p":"—","src":"README 已知限制"},{"g":"阶段 1 · 建立收藏","id":"1-9","t":"搜索能力（语法 / 拼音 / NSFW / 建议）","s":"done","p":"P0","src":"README 漫搜"},{"g":"阶段 1 · 建立收藏","id":"1-10","t":"搜索链路诊断","s":"done","p":"P1","src":"README 漫搜"},{"g":"阶段 1 · 建立收藏","id":"1-11","t":"人物 / 角色详情","s":"done","p":"P1","src":"README 二级页面"},{"g":"阶段 1 · 建立收藏","id":"1-12","t":"封面共享元素过渡","s":"done","p":"P1","src":"README 跨页面能力"},{"g":"阶段 1 · 建立收藏","id":"1-13","t":"详情页评分横滑卡","s":"done","p":"P0","src":"README 作品详情"},{"g":"阶段 1 · 建立收藏","id":"1-14","t":"剧集列表 + 看到这里","s":"done","p":"P0","src":"README 作品详情"},{"g":"阶段 1 · 建立收藏","id":"1-15","t":"外部源绑定保守策略","s":"done","p":"P0","src":"README；docs/remaining-phases.md G"},{"g":"阶段 1 · 建立收藏","id":"1-16","t":"外链门户 23 平台三级降级","s":"done","p":"P1","src":"README；docs/portal-feature-plan.md"},{"g":"阶段 1 · 建立收藏","id":"1-17","t":"补 VeneraNext / Danotsu 包名","s":"confirm","p":"P2","src":"docs/portal-feature-plan.md §待确认"},{"g":"阶段 1 · 建立收藏","id":"1-18","t":"网易云 / QQ 音乐 scheme 真机验证","s":"confirm","p":"P2","src":"docs/portal-feature-plan.md §待确认"},{"g":"阶段 1 · 建立收藏","id":"1-19","t":"收藏编辑面板","s":"done","p":"P0","src":"README 收藏模型；docs/remaining-phases.md C"},{"g":"阶段 1 · 建立收藏","id":"1-20","t":"全屏图片查看器","s":"done","p":"P1","src":"README 跨页面能力"},{"g":"阶段 1 · 建立收藏","id":"1-21","t":"分享卡","s":"done","p":"P1","src":"README；docs/remaining-phases.md I"},{"g":"阶段 2 · 日常追番","id":"2-1","t":"长按卡片快速改状态","s":"done","p":"P0","src":"README 作品库"},{"g":"阶段 2 · 日常追番","id":"2-2","t":"浮层内进度快捷 +1","s":"confirm","p":"—","src":"docs 未写明"},{"g":"阶段 2 · 日常追番","id":"2-3","t":"单集详情","s":"done","p":"P0","src":"README 二级页面"},{"g":"阶段 2 · 日常追番","id":"2-4","t":"放送提醒通知","s":"done","p":"P1","src":"docs/remaining-phases.md · J"},{"g":"阶段 2 · 日常追番","id":"2-5","t":"通知多条合并 / 免打扰","s":"confirm","p":"—","src":"docs 未定义"},{"g":"阶段 2 · 日常追番","id":"2-6","t":"作品日历（置顶）","s":"done","p":"P0","src":"README 统计；docs/anishelf-reference-plan.md"},{"g":"阶段 2 · 日常追番","id":"2-7","t":"时间线","s":"done","p":"P1","src":"README 统计"},{"g":"阶段 3 · 回顾统计","id":"3-1","t":"统计页各区块","s":"done","p":"P0","src":"README 统计"},{"g":"阶段 3 · 回顾统计","id":"3-2","t":"图表配色从主题派生","s":"todo","p":"P1","src":"docs/ui-redesign-plan.md §0.2"},{"g":"阶段 3 · 回顾统计","id":"3-3","t":"图表加卡片容器","s":"todo","p":"P1","src":"docs/ui-redesign-plan.md §0.3"},{"g":"阶段 3 · 回顾统计","id":"3-4","t":"排版层级与数字 tabular","s":"todo","p":"P2","src":"docs/ui-redesign-plan.md §0.4"},{"g":"阶段 3 · 回顾统计","id":"3-5","t":"年度总结","s":"done","p":"P1","src":"README 统计"},{"g":"阶段 3 · 回顾统计","id":"3-6","t":"照片墙 + 标签词云","s":"done","p":"P1","src":"README 统计"},{"g":"阶段 4 · 导入与同步","id":"4-1","t":"设置分类导航","s":"done","p":"P0","src":"README 设置"},{"g":"阶段 4 · 导入与同步","id":"4-2","t":"Bangumi OAuth 登录 + 收藏同步","s":"done","p":"P0","src":"README 数据源与整合 / 导入与同步"},{"g":"阶段 4 · 导入与同步","id":"4-3","t":"哔哩哔哩导入","s":"done","p":"P1","src":"README 导入与同步"},{"g":"阶段 4 · 导入与同步","id":"4-4","t":"Steam 游戏库导入","s":"done","p":"P1","src":"README 导入与同步"},{"g":"阶段 4 · 导入与同步","id":"4-5","t":"Kazumi 导入","s":"done","p":"P2","src":"README 导入与同步"},{"g":"阶段 4 · 导入与同步","id":"4-6","t":"Kazumi 文件选择方式","s":"confirm","p":"—","src":"docs 未写明"},{"g":"阶段 4 · 导入与同步","id":"4-7","t":"WebDAV 同步","s":"done","p":"P0","src":"README 导入与同步 / 刷新与缓存"},{"g":"阶段 4 · 导入与同步","id":"4-8","t":"WebDAV 纳入新增数据","s":"todo","p":"P1","src":"README 工程待办"},{"g":"阶段 4 · 导入与同步","id":"4-9","t":"JSON 全量备份 / 恢复","s":"done","p":"P0","src":"README 导入与同步"},{"g":"阶段 4 · 导入与同步","id":"4-10","t":"恢复的覆盖策略与二次确认","s":"confirm","p":"—","src":"docs 未写明"},{"g":"阶段 4 · 导入与同步","id":"4-11","t":"刷新诊断","s":"done","p":"P1","src":"README 刷新与缓存"},{"g":"阶段 4 · 导入与同步","id":"4-12","t":"按源限流闸门","s":"todo","p":"P2","src":"README 工程待办"},{"g":"阶段 4 · 导入与同步","id":"4-13","t":"豆瓣防剧透翻页参数启用","s":"todo","p":"P2","src":"README 已知限制"},{"g":"阶段 4 · 导入与同步","id":"4-14","t":"TMDb 多季手动指定季号","s":"todo","p":"P2","src":"README 已知限制"},{"g":"阶段 5 · 个性化","id":"5-1","t":"主题模式 / 动态取色 / 自定义种子 / OLED","s":"done","p":"P1","src":"README 主题与个性化"},{"g":"阶段 5 · 个性化","id":"5-2","t":"玻璃强度分级降级","s":"done","p":"P1","src":"README 跨页面能力 / 外观设置"},{"g":"阶段 5 · 个性化","id":"5-3","t":"壁纸（静态 + 动态视频）","s":"done","p":"P1","src":"README 主题与个性化"},{"g":"阶段 5 · 个性化","id":"5-4","t":"主题包 .nirikotheme","s":"done","p":"P1","src":"README 主题与个性化"},{"g":"阶段 5 · 个性化","id":"5-5","t":"桌面图标","s":"done","p":"P2","src":"README 主题与个性化"},{"g":"阶段 5 · 个性化","id":"5-6","t":"减少动态效果","s":"done","p":"P1","src":"README 动画体系"},{"g":"阶段 6 · 工程与质量","id":"6-1","t":"平板 / 折叠屏自适应布局","s":"paused","p":"P2","src":"README 工程待办；round6 §8.3.6「本轮不做，只记录」"},{"g":"阶段 6 · 工程与质量","id":"6-2","t":"Room 迁移测试","s":"todo","p":"P1","src":"README 工程待办"},{"g":"阶段 6 · 工程与质量","id":"6-3","t":"补齐 app/schemas 缺失的 v25","s":"todo","p":"P2","src":"README 工程待办"},{"g":"阶段 6 · 工程与质量","id":"6-4","t":"详情页 ExtendedSnapshot 补全","s":"todo","p":"P2","src":"README 工程待办"},{"g":"阶段 6 · 工程与质量","id":"6-5","t":"release 签名与 CI","s":"todo","p":"P2","src":"README 工程待办"},{"g":"阶段 6 · 工程与质量","id":"6-6","t":"新增逻辑补 JVM 单测","s":"done","p":"P0","src":"README 开发约定"},{"g":"阶段 7 · 参考项目引入","id":"7-1","t":"同域对照：xiaoyvyv/bangumi + AniHyou","s":"suggest","p":"P1","src":"上一轮参考项目建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-2","t":"vico：替换手写图表","s":"suggest","p":"P1","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-3","t":"kizitonwose/Calendar：作品日历","s":"suggest","p":"P2","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-4","t":"Reorderable：拖拽自定义排序","s":"suggest","p":"P2","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-5","t":"compose-shimmer：骨架屏","s":"suggest","p":"P2","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-6","t":"nowinandroid：工程范式","s":"suggest","p":"P1","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-7","t":"roborazzi：Compose 截图测试","s":"suggest","p":"P2","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-8","t":"backdrop catalog / miuix 组件移植","s":"suggest","p":"P2","src":"上一轮建议（未批准）"},{"g":"阶段 7 · 参考项目引入","id":"7-9","t":"本地媒体文件夹（SMB）","s":"paused","p":"P2","src":"docs/bangumi-reference-plan.md · I"},{"g":"阶段 7 · 参考项目引入","id":"7-10","t":"年鉴 / 评分月刊 VIB / 目录","s":"paused","p":"P2","src":"docs/bangumi-reference-plan.md §0"},{"g":"阶段 7 · 参考项目引入","id":"7-11","t":"社区只读（超展开 / 小组等）","s":"paused","p":"P2","src":"docs/bangumi-reference-plan.md · J"}];</script>
+<script>(function(){
+var KEY='niriko-plan-check-v1';var saved={};
+try{saved=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){saved={};}
+var boxes=[].slice.call(document.querySelectorAll('.chk input[type=checkbox]'));
+boxes.forEach(function(b){var k=b.getAttribute('data-k');if(b.disabled){return;}if(saved[k]){b.checked=true;}
+b.addEventListener('change',function(){if(b.checked){saved[k]=1;}else{delete saved[k];}try{localStorage.setItem(KEY,JSON.stringify(saved));}catch(e){}updateProgress();});});
+function updateProgress(){var todo=boxes.filter(function(b){return !b.disabled;});var dc=todo.filter(function(b){return b.checked;}).length;
+var pct=todo.length?Math.round(dc*100/todo.length):0;var bar=document.getElementById('pbar');if(bar){bar.style.width=pct+'%';}
+var lab=document.getElementById('plabel');if(lab){lab.textContent='待办完成 '+dc+' / '+todo.length+'（'+pct+'%）';}}
+updateProgress();
+var fbtns=[].slice.call(document.querySelectorAll('.toolbar button[data-f]'));var onlyOpen=false;
+function applyFilter(){var f='all';fbtns.forEach(function(b){if(b.classList.contains('on')){f=b.getAttribute('data-f');}});
+[].slice.call(document.querySelectorAll('.chk')).forEach(function(el){var st=el.getAttribute('data-status');var box=el.querySelector('input');
+var ok=(f==='all'||st===f)&&(!onlyOpen||(!box.checked&&!box.disabled));el.style.display=ok?'':'none';});
+[].slice.call(document.querySelectorAll('.group')).forEach(function(g){
+var vis=[].slice.call(g.querySelectorAll('.chk')).some(function(c){return c.style.display!=='none';});g.style.display=vis?'':'none';});}
+fbtns.forEach(function(b){b.addEventListener('click',function(){fbtns.forEach(function(x){x.classList.remove('on');});b.classList.add('on');applyFilter();});});
+var ob=document.getElementById('onlyopen');if(ob){ob.addEventListener('click',function(){onlyOpen=!onlyOpen;ob.classList.toggle('on',onlyOpen);applyFilter();});}
+var rb=document.getElementById('reset');if(rb){rb.addEventListener('click',function(){if(!confirm('清空全部勾选？')){return;}saved={};try{localStorage.setItem(KEY,'{}');}catch(e){}
+boxes.forEach(function(b){if(!b.disabled){b.checked=false;}});updateProgress();applyFilter();});}
+var pb=document.getElementById('printbtn');if(pb){pb.addEventListener('click',function(){window.print();});}
+var cb=document.getElementById('copymb');if(cb){cb.addEventListener('click',function(){
+var L=window.__PLAN__||[];var lines=['# Niriko 计划清单',''];var cur='';
+L.forEach(function(i){if(i.g&&i.g!==cur){cur=i.g;lines.push('');lines.push('## '+cur);}
+lines.push('- ['+(i.s==='done'?'x':' ')+'] '+i.id+' '+i.t+'（'+i.s+' · '+i.p+'）— 来源：'+i.src);});
+var txt=lines.join(String.fromCharCode(10));
+if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(function(){cb.textContent='已复制 ✓';setTimeout(function(){cb.textContent='复制清单 Markdown';},1500);});}
+else{cb.textContent='浏览器不支持剪贴板';}});}
+})();</script>
+</body>
+</html>

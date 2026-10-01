@@ -329,6 +329,39 @@ object StatsCalculator {
     }
 
     /**
+     * 计算 [rangeStart] ~ [rangeEnd]（闭区间）内的日历事件。
+     *
+     * 周视图的 7 天可能横跨两个月（例如 12/28–1/3），单月的 [computeCalendarEvents] 覆盖不到，
+     * 因此这里按范围覆盖到的每个月各算一次再合并，并裁掉范围外的日期。
+     * 范围恰好是整月时直接复用 [computeCalendarEvents]，结果与改造前逐字节一致。
+     */
+    fun computeCalendarEventsForRange(
+        items: List<CollectionWithSubject>,
+        rangeStart: LocalDate,
+        rangeEnd: LocalDate,
+        mode: CalendarMode,
+        broadcast: Map<DayOfWeek, List<AiringSubject>>,
+        seasonal: Map<String, List<AiringSubject>>,
+    ): Map<LocalDate, CalendarDayEvents> {
+        val months = CalendarRangeCalculator.monthsCovering(rangeStart, rangeEnd)
+        if (months.isEmpty()) return emptyMap()
+        val only = months.first()
+        if (months.size == 1 && rangeStart == only.atDay(1) && rangeEnd == only.atEndOfMonth()) {
+            return computeCalendarEvents(items, only.year, only.monthValue, mode, broadcast, seasonal)
+        }
+        val merged = LinkedHashMap<LocalDate, CalendarDayEvents>()
+        months.forEach { month ->
+            computeCalendarEvents(items, month.year, month.monthValue, mode, broadcast, seasonal)
+                .forEach { (date, events) ->
+                    if (!date.isBefore(rangeStart) && !date.isAfter(rangeEnd)) {
+                        merged[date] = events
+                    }
+                }
+        }
+        return merged
+    }
+
+    /**
      * 按“当月第 N 个该星期几”挑选单张封面（用户要求的一图一格轮换）。
      * occurrenceIndex = (dayOfMonth - 1) / 7：同一 dayOfWeek 在当月出现的次序（0-based，例如 8/2→0、8/9→1、8/16→2……）。
      * 候选不足一轮时取模循环；无候选返回 null。

@@ -9,6 +9,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +32,7 @@ import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Collections
@@ -38,17 +40,23 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +65,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.tooling.preview.Preview
@@ -64,13 +73,19 @@ import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.adaptive.NirikoGridColumns
+import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
 import com.otakup.niriko.ui.common.reportBottomBarScroll
+import com.otakup.niriko.ui.components.SkeletonSubjectCard
 import com.otakup.niriko.ui.components.UniversalSearchBar
+import com.otakup.niriko.ui.components.skeletonBaseColor
+import com.otakup.niriko.ui.components.skeletonShimmer
 import com.otakup.niriko.ui.library.CollectionCard
 import com.otakup.niriko.ui.animation.RevealOnScroll
 import com.otakup.niriko.ui.library.LibraryGalleryCard
 import com.otakup.niriko.ui.library.LibraryViewStyle
 import com.otakup.niriko.ui.library.PosterGridCard
+import com.otakup.niriko.ui.library.PosterGridSkeletonCard
 import com.otakup.niriko.ui.library.CollectionDashboard
 import com.otakup.niriko.ui.library.PersonCollectionSection
 import com.otakup.niriko.data.model.collection.CollectionFilter
@@ -92,6 +107,13 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
+    // 合并放送通知点击（计划 B1-3）：切到「在看」筛选后清空请求
+    LaunchedEffect(com.otakup.niriko.data.notification.AiringListFilterRequest.pending) {
+        if (com.otakup.niriko.data.notification.AiringListFilterRequest.pending) {
+            viewModel.updateFilter { it.copy(status = WatchStatus.WATCHING) }
+            com.otakup.niriko.data.notification.AiringListFilterRequest.pending = false
+        }
+    }
     // 观察人物收藏（独立于作品收藏）
     val context = androidx.compose.ui.platform.LocalContext.current
     val personCollections by context.nirikoApp.personCollectionDao.observeAll()
@@ -110,6 +132,7 @@ fun LibraryScreen(
         onBatchDelete = viewModel::batchDelete,
         onNavigateToSearch = onNavigateToSearch,
         onStatusQuickSet = viewModel::updateStatus,
+        onProgressSet = viewModel::setProgress,
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
         modifier = modifier,
@@ -129,6 +152,7 @@ private fun LibraryScreenContent(
     onPersonClick: (Long) -> Unit = {},
     onNavigateToSearch: () -> Unit = {},
     onStatusQuickSet: (Long, WatchStatus) -> Unit = { _, _ -> },
+    onProgressSet: (subjectId: Long, value: Int, volume: Boolean) -> Unit = { _, _, _ -> },
     onBatchUpdateStatus: ((List<Long>, WatchStatus) -> Unit)? = null,
     onBatchDelete: ((List<Long>) -> Unit)? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -141,12 +165,17 @@ private fun LibraryScreenContent(
     var viewStyle by rememberSaveable { mutableStateOf(LibraryViewStyle.GRID) }
     // 阶段 H：多选批量操作
     var multiSelect by remember { mutableStateOf(false) }
+    // 批量删除二次确认（计划 B2-2）
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<Long>()) }
     fun toggleSelect(id: Long) {
         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
     }
     var showTagFilters by remember { mutableStateOf(false) }
     var localQuery by rememberSaveable(state.filter.keyword) { mutableStateOf(state.filter.keyword) }
+    // B2 窗口尺寸类别：海报网格列数按宽度档位取 3 / 4 / 6。
+    // COMPACT 绑定现状的 3 列（手机端回归零变化是硬要求）。
+    val windowLayout = currentNirikoWindowLayout()
 
     Column(modifier = modifier.fillMaxSize()) {
         // 搜索栏
@@ -335,9 +364,8 @@ private fun LibraryScreenContent(
                 FilterChip(
                     selected = false,
                     onClick = {
-                        onBatchDelete?.invoke(selectedIds.toList())
-                        selectedIds = emptySet()
-                        multiSelect = false
+                        // 计划 B2-2（用户确认「需要确认」）：先弹确认框，确认后才删
+                        showDeleteConfirm = true
                     },
                     label = { Text("删除") },
                     modifier = Modifier.padding(start = 2.dp),
@@ -348,8 +376,35 @@ private fun LibraryScreenContent(
             }
         }
 
-        // 列表 / 空状态
-        if (state.items.isEmpty()) {
+        // 批量删除二次确认（计划 B2-2）：说明数量与不可撤销
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text("删除所选收藏") },
+                text = {
+                    Text(
+                        "将删除所选 " + selectedIds.size +
+                            " 个收藏（含进度与评分），删除后不可撤销。",
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteConfirm = false
+                        onBatchDelete?.invoke(selectedIds.toList())
+                        selectedIds = emptySet()
+                        multiSelect = false
+                    }) { Text("确认删除", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                },
+            )
+        }
+
+        // 列表 / 空状态 / 首屏加载骨架（B4）
+        if (state.isLoading && state.items.isEmpty()) {
+            LibrarySkeleton(viewStyle = viewStyle)
+        } else if (state.items.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -404,46 +459,69 @@ private fun LibraryScreenContent(
                             animatedVisibilityScope = animatedVisibilityScope,
                             modifier = Modifier.animateContentSize(animationSpec = tween(durationMillis = 300)),
                         )
-                        // 长按快速标记状态
-                        DropdownMenu(
+                        // 长按浮层：状态 + 进度快捷（计划 B1-2）
+                        LibraryLongPressMenu(
                             expanded = showStatusMenu,
-                            onDismissRequest = { showStatusMenu = false },
-                            shape = RoundedCornerShape(20.dp),
-                        ) {
-                            WatchStatus.entries.forEach { status ->
-                                DropdownMenuItem(
-                                    text = { Text(status.label) },
-                                    trailingIcon = {
-                                        if (item.collection.status == status) Icon(Icons.Filled.Check, null, modifier = Modifier.size(18.dp))
-                                    },
-                                    onClick = {
-                                        showStatusMenu = false
-                                        onStatusQuickSet(item.subject.subjectId, status)
-                                    },
-                                )
-                            }
-                        }
+                            subjectType = item.subject.type,
+                            watchedEpisodes = item.collection.watchedEpisodes,
+                            watchedVolumes = item.collection.watchedVolumes,
+                            totalEpisodes = item.subject.totalEpisodes,
+                            currentStatus = item.collection.status,
+                            onDismiss = { showStatusMenu = false },
+                            onStatusSet = { status ->
+                                showStatusMenu = false
+                                onStatusQuickSet(item.subject.subjectId, status)
+                            },
+                            onProgressSet = { value, volume ->
+                                onProgressSet(item.subject.subjectId, value, volume)
+                            },
+                        )
                     }
                 }
             }
                 LibraryViewStyle.GRID -> LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
+                    columns = GridCells.Fixed(NirikoGridColumns.fromLayout(windowLayout)),
                     modifier = Modifier.reportBottomBarScroll(),
                     contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 120.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     gridItems(state.items, key = { it.collection.id }) { item ->
-                        PosterGridCard(
-                            subject = item.subject,
-                            collection = item.collection,
-                            totalEpisodes = item.subject.totalEpisodes,
-                            onClick = { if (multiSelect) toggleSelect(item.subject.subjectId) else onSubjectClick(item.subject.subjectId) },
-                            selected = item.subject.subjectId in selectedIds,
-                            sharedTransitionScope = sharedTransitionScope,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            modifier = Modifier.animateItem(),
-                        )
+                        var showStatusMenu by remember { mutableStateOf(false) }
+                        val haptic = LocalHapticFeedback.current
+                        Box(Modifier.animateItem()) {
+                            PosterGridCard(
+                                subject = item.subject,
+                                collection = item.collection,
+                                totalEpisodes = item.subject.totalEpisodes,
+                                onClick = { if (multiSelect) toggleSelect(item.subject.subjectId) else onSubjectClick(item.subject.subjectId) },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    showStatusMenu = true
+                                },
+                                selected = item.subject.subjectId in selectedIds,
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            // 长按浮层：状态 + 进度快捷（计划 B1-2）
+                            LibraryLongPressMenu(
+                                expanded = showStatusMenu,
+                                subjectType = item.subject.type,
+                                watchedEpisodes = item.collection.watchedEpisodes,
+                                watchedVolumes = item.collection.watchedVolumes,
+                                totalEpisodes = item.subject.totalEpisodes,
+                                currentStatus = item.collection.status,
+                                onDismiss = { showStatusMenu = false },
+                                onStatusSet = { status ->
+                                    showStatusMenu = false
+                                    onStatusQuickSet(item.subject.subjectId, status)
+                                },
+                                onProgressSet = { value, volume ->
+                                    onProgressSet(item.subject.subjectId, value, volume)
+                                },
+                            )
+                        }
                     }
                 }
                 LibraryViewStyle.GALLERY -> LazyVerticalGrid(
@@ -467,6 +545,137 @@ private fun LibraryScreenContent(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 作品库首屏骨架（B4）：三种视图各有对应骨架，几何与真实卡片一致
+ * （网格：3 列 × 10.dp 间距 × 2:3 海报；列表：横向玻璃卡；画廊：340.dp 大卡），
+ * 因此数据到达替换为真实内容时不跳版。
+ */
+@Composable
+private fun LibrarySkeleton(
+    viewStyle: LibraryViewStyle,
+    modifier: Modifier = Modifier,
+) {
+    when (viewStyle) {
+        LibraryViewStyle.GRID -> Column(
+            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            repeat(2) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    repeat(3) {
+                        PosterGridSkeletonCard(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+
+        LibraryViewStyle.LIST -> Column(
+            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            repeat(3) { SkeletonSubjectCard() }
+        }
+
+        LibraryViewStyle.GALLERY -> Column(
+            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(2) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(340.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(skeletonBaseColor())
+                        .skeletonShimmer(),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 收藏页长按浮层（计划 B1-2）：状态快捷 + 进度 − / +。
+ *
+ * 进度行只在 [ProgressBumpPolicy] 支持的类型上出现（动画/三次元=集、书籍漫画=卷、游戏=分钟）；
+ * 音乐等类型只显示状态项。加到上限不会自动切换「看过」（用户确认：不自动）。
+ */
+@Composable
+private fun LibraryLongPressMenu(
+    expanded: Boolean,
+    subjectType: com.otakup.niriko.data.model.SubjectType,
+    watchedEpisodes: Int?,
+    watchedVolumes: Int?,
+    totalEpisodes: Int?,
+    currentStatus: WatchStatus,
+    onDismiss: () -> Unit,
+    onStatusSet: (WatchStatus) -> Unit,
+    onProgressSet: (value: Int, volume: Boolean) -> Unit,
+) {
+    val snapshot = com.otakup.niriko.util.ProgressBumpPolicy.snapshot(
+        type = subjectType,
+        watchedEpisodes = watchedEpisodes,
+        watchedVolumes = watchedVolumes,
+        totalEpisodes = totalEpisodes,
+    )
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        if (snapshot != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "进度 " + com.otakup.niriko.util.ProgressBumpPolicy.label(snapshot),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(
+                    onClick = {
+                        onProgressSet(
+                            com.otakup.niriko.util.ProgressBumpPolicy.next(snapshot, -1),
+                            snapshot.unit == com.otakup.niriko.util.ProgressUnit.VOLUME,
+                        )
+                    },
+                    enabled = snapshot.value > 0,
+                ) {
+                    Icon(Icons.Filled.Remove, contentDescription = "进度减一", modifier = Modifier.size(18.dp))
+                }
+                IconButton(
+                    onClick = {
+                        onProgressSet(
+                            com.otakup.niriko.util.ProgressBumpPolicy.next(snapshot, 1),
+                            snapshot.unit == com.otakup.niriko.util.ProgressUnit.VOLUME,
+                        )
+                    },
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "进度加一", modifier = Modifier.size(18.dp))
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))
+        }
+        WatchStatus.entries.forEach { status ->
+            DropdownMenuItem(
+                text = { Text(status.label) },
+                trailingIcon = {
+                    if (currentStatus == status) {
+                        Icon(Icons.Filled.Check, null, modifier = Modifier.size(18.dp))
+                    }
+                },
+                onClick = { onStatusSet(status) },
+            )
         }
     }
 }

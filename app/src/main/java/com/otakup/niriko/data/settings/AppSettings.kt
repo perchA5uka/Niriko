@@ -160,6 +160,11 @@ data class AppSettings(
      */
     val doubanPhotosEnabled: Boolean = false,
     /**
+     * 豆瓣剧照「防剧透」（计划 B4 · 4-13）：开启时跳过第一页剧照，从第二页起取
+     * （第一页集中了开播前宣传图与早期剧情图）。默认开启；取不到图时调用方回退到第 0 页。
+     */
+    val doubanAntiSpoiler: Boolean = true,
+    /**
      * 加载豆瓣图片时的 Referer（防盗链必需；失效时可自行修改，不必等发版）。
      * 默认 https://douban.com —— 这是 Bangumi-master 的实测值：带 path 的
      * movie.douban.com/ 反而会被图床拒。注意本字符串**不带尾部斜杠**。
@@ -224,4 +229,10 @@ data class AppSettings(
     // ===== 统计与启动 =====
     val showAnnuallySummary: Boolean = true,
     val startPage: String = "library",
+    /**
+     * 首次启动引导（计划 B1-1）是否已完成。
+     * 注意：判断「要不要展示引导」不能只看本字段——键缺失时还要看有没有历史设置，
+     * 见 [FirstRunPolicy.shouldShowFirstRun]（升级安装的老用户不打扰）。
+     */
+    val firstRunCompleted: Boolean = false,
 )

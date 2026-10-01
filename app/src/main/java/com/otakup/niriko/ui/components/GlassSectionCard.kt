@@ -3,7 +3,6 @@ package com.otakup.niriko.ui.components
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +21,7 @@ import com.otakup.niriko.data.settings.GlassEffectLevel
 import com.otakup.niriko.ui.components.liquidglass.LIQUID_LENS_SHADER
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.NirikoShapes
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.colorControls
 import top.yukonga.miuix.kmp.blur.drawBackdrop
@@ -48,7 +48,7 @@ fun GlassSectionCard(
     backdrop: Backdrop?,
     modifier: Modifier = Modifier,
     isScrolling: Boolean = false,
-    shape: Shape = RoundedCornerShape(16.dp),
+    shape: Shape = NirikoShapes.SectionShape,
     contentPadding: Dp = 16.dp,
     /** 封面模糊位图：backdrop 不可用/长内容时用全幅模糊封面，避免黑底。 */
     fallbackBitmap: Bitmap? = null,
@@ -63,9 +63,16 @@ fun GlassSectionCard(
 
     // backdrop 不可用（无封面背景墙 / 玻璃非 FULL / 未捕获成功）时，一律走全幅模糊封面，
     // 不再有静态纯黑回退；长内容卡片也由 BlurredGlassSurface 的 Crop 绘制保证不断裂。
-    val backdropUsable = backdrop != null && glassEffect == GlassEffectLevel.FULL
+    // 判定集中到 GlassDecision（纯函数，真值表由 GlassDecisionTest 覆盖）
+    val backdropUsable = GlassDecision.sectionBackdropUsable(
+        backdrop = backdrop,
+        glassEffect = glassEffect,
+    )
 
-    if (!backdropUsable) {
+    // 类型收窄：backdropUsable 为 true 时 backdrop 必非 null（判定内含判空）；
+    // 抽成纯函数后编译器无法再智能转换，这里显式收窄一次，语义与抽取前逐字一致。
+    val usableBackdrop = if (backdropUsable) backdrop else null
+    if (usableBackdrop == null) {
         if (effectiveFallback != null) {
             // 全幅模糊封面：任何高度都不会黑/断裂，视觉上仍是毛玻璃。
             BlurredGlassSurface(
@@ -109,7 +116,7 @@ fun GlassSectionCard(
     Box(
         modifier = modifier
             .drawBackdrop(
-                backdrop = backdrop,
+                backdrop = usableBackdrop,
                 shape = { shape },
                 effects = {
                     // 降功耗（用户调研：单组件限帧/preferredFrameRate 不可行，软件层跳帧可行）：

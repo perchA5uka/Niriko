@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.otakup.niriko.data.calculator.CalendarRangeCalculator
 import com.otakup.niriko.data.calculator.StatsCalculator
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.local.entity.SubjectEntity
@@ -29,6 +30,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
@@ -41,6 +43,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 
 private const val TAG = "StatsVM"
 
@@ -64,8 +67,19 @@ class StatsViewModel(
             .map { it[RefreshKeys.BROADCAST_CALENDAR]?.lastSuccessAt ?: 0L }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
-    private val _calendarYear = MutableStateFlow(LocalDate.now().year)
-    private val _calendarMonth = MutableStateFlow(LocalDate.now().monthValue)
+    /**
+     * 日历锚点日期：月视图用它定位月份，周视图用它定位周（周日起始）。
+     *
+     * 周 / 月切换不修改锚点，因此切换前后停留在同一周 / 同一月，不跳变。
+     */
+    private val _calendarAnchor = MutableStateFlow(LocalDate.now())
+
+    /** 日历视图粒度：true = 月视图（展开，默认，与双模改造前一致），false = 周视图（收起）。 */
+    private val _calendarExpanded = MutableStateFlow(true)
+
+    /** 周 / 月视图粒度，供统计页绑定切换控件。 */
+    val calendarExpanded: StateFlow<Boolean> = _calendarExpanded.asStateFlow()
+
     private val _calendarMode = MutableStateFlow(CalendarMode.PERSONAL)
     private val _broadcastSchedule = MutableStateFlow<Map<DayOfWeek, List<AiringSubject>>>(emptyMap())
     private val _broadcastError = MutableStateFlow<String?>(null)
@@ -88,8 +102,8 @@ class StatsViewModel(
     val uiState: StateFlow<StatsUiState> = combine(
         listOf(
             safeCollectionFlow,
-            _calendarYear,
-            _calendarMonth,
+            _calendarAnchor,
+            _calendarExpanded,
             _calendarMode,
             _broadcastSchedule,
             _seasonalAiringMap,
@@ -99,14 +113,14 @@ class StatsViewModel(
     ) { arrays ->
         @Suppress("UNCHECKED_CAST")
         val items = (arrays[0] as? List<*>)?.filterIsInstance<CollectionWithSubject>() ?: emptyList()
-        val calYear = (arrays[1] as? Int) ?: LocalDate.now().year
-        val calMonth = (arrays[2] as? Int) ?: LocalDate.now().monthValue
+        val anchor = (arrays[1] as? LocalDate) ?: LocalDate.now()
+        val expanded = (arrays[2] as? Boolean) ?: true
         val mode = (arrays[3] as? CalendarMode) ?: CalendarMode.PERSONAL
         val broadcast = (arrays[4] as? Map<DayOfWeek, List<AiringSubject>>) ?: emptyMap()
         val seasonal = (arrays[5] as? Map<String, List<AiringSubject>>) ?: emptyMap()
         val broadcastError = (arrays[6] as? String)
         val episodesBySubject = (arrays[7] as? Map<Long, List<EpisodeInfo>>) ?: emptyMap()
-        computeStats(items, calYear, calMonth, mode, broadcast, seasonal, broadcastError, episodesBySubject)
+        computeStats(items, anchor, expanded, mode, broadcast, seasonal, broadcastError, episodesBySubject)
     }
         // 全量统计计算移出主线程（combine 收集器在主线程，computeStats 含双重嵌套循环）
         .flowOn(Dispatchers.Default)
@@ -127,15 +141,60 @@ class StatsViewModel(
         }
     }
 
+    /**
+     * 日历头部箭头的翻页：月视图 ±1 月，周视图 ±1 周。
+     * 与手势滑动共用同一个锚点，因此两条路径的结果完全一致。
+     */
     fun switchMonth(delta: Int) {
-        val current = LocalDate.of(_calendarYear.value, _calendarMonth.value, 1)
-        val newDate = current.plusMonths(delta.toLong())
-        _calendarYear.value = newDate.year
-        _calendarMonth.value = newDate.monthValue
-        ensureSeasonalDataForMonth(newDate.year, newDate.monthValue)
+        applyCalendarAnchor(
+            CalendarRangeCalculator.shiftAnchor(_calendarAnchor.value, _calendarExpanded.value, delta)
+        )
+    }
+
+    /**
+     * 周 / 月视图粒度切换。锚点日期保持不变 → 切换前后停留在同一周 / 同一月，选中日期不跳变。
+     */
+    fun switchCalendarView(expanded: Boolean) {
+        if (_calendarExpanded.value == expanded) return
+        _calendarExpanded.value = expanded
+        // 粒度变化会改变可见范围（周视图可能同时覆盖相邻两个月），补拉范围内各月的放送数据
+        ensureSeasonalForAnchor(_calendarAnchor.value)
+    }
+
+    /**
+     * 手势翻页回写锚点：月视图传该月任意一天，周视图传该周任意一天。
+     *
+     * 与 [switchMonth] 构成双向同步：滑动 → 锚点（本函数），锚点变化 → 驱动 pager 动画（UI 侧）。
+     * 二者都只在「可见范围真的变了」时才推进，所以收敛、不会来回振荡。
+     */
+    fun setCalendarAnchor(date: LocalDate) {
+        applyCalendarAnchor(date)
+    }
+
+    private fun applyCalendarAnchor(newAnchor: LocalDate) {
+        val oldAnchor = _calendarAnchor.value
+        if (newAnchor == oldAnchor) return
+        val expanded = _calendarExpanded.value
+        _calendarAnchor.value = newAnchor
+        if (CalendarRangeCalculator.visibleRange(oldAnchor, expanded) ==
+            CalendarRangeCalculator.visibleRange(newAnchor, expanded)
+        ) {
+            // 可见范围没变（例如同一月内换了代表日）：无需重复拉取数据
+            return
+        }
+        ensureSeasonalForAnchor(newAnchor)
         // 切到当前月或未来月份时刷新放送数据，保证 broadcast 不滞后
-        if (!newDate.isBefore(LocalDate.now().withDayOfMonth(1))) {
+        val monthStart = LocalDate.of(newAnchor.year, newAnchor.monthValue, 1)
+        if (!monthStart.isBefore(LocalDate.now().withDayOfMonth(1))) {
             fetchBroadcastSchedule()
+        }
+    }
+
+    /** 确保锚点当前可见范围内的所有月份都有放送数据（周视图可能横跨两个月）。 */
+    private fun ensureSeasonalForAnchor(anchor: LocalDate) {
+        val (start, end) = CalendarRangeCalculator.visibleRange(anchor, _calendarExpanded.value)
+        CalendarRangeCalculator.monthsCovering(start, end).forEach { month ->
+            ensureSeasonalDataForMonth(month.year, month.monthValue)
         }
     }
 
@@ -284,8 +343,8 @@ class StatsViewModel(
 
     private fun computeStats(
         items: List<CollectionWithSubject>,
-        calYear: Int,
-        calMonth: Int,
+        anchorDate: LocalDate,
+        expanded: Boolean,
         mode: CalendarMode,
         broadcast: Map<DayOfWeek, List<AiringSubject>>,
         seasonal: Map<String, List<AiringSubject>>,
@@ -294,9 +353,14 @@ class StatsViewModel(
     ): StatsUiState {
         return try {
             val base = computeBaseStats(items)
-            val calendarDayEvents = StatsCalculator.computeCalendarEvents(items, calYear, calMonth, mode, broadcast, seasonal)
+            val (rangeStart, rangeEnd) = CalendarRangeCalculator.visibleRange(anchorDate, expanded)
+            val calendarDayEvents = StatsCalculator.computeCalendarEventsForRange(
+                items, rangeStart, rangeEnd, mode, broadcast, seasonal,
+            )
+            val anchorMonth = YearMonth.from(anchorDate)
             base.copy(
-                calendarYear = calYear, calendarMonth = calMonth,
+                calendarYear = anchorMonth.year, calendarMonth = anchorMonth.monthValue,
+                calendarAnchorDate = anchorDate, calendarExpanded = expanded,
                 calendarDayEvents = calendarDayEvents,
                 calendarMode = mode, broadcastSchedule = broadcast,
                 broadcastError = broadcastError,

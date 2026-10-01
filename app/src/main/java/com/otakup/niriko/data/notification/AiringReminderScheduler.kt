@@ -25,8 +25,11 @@ object AiringReminderScheduler {
     /** 放送提醒通知渠道 id。 */
     const val CHANNEL_ID = "airing_reminder"
 
-    /** Intent extra：通知点击携带的 subjectId。 */
+    /** Intent extra：通知点击携带的 subjectId（单条通知）。 */
     const val EXTRA_SUBJECT_ID = "niriko_airing_subject_id"
+
+    /** Intent extra：合并通知点击 → 打开作品库「在看」列表（计划 B1-3）。 */
+    const val EXTRA_OPEN_AIRING_LIST = "niriko_airing_open_list"
 
     /** 建立（或复用）放送提醒通知渠道。API 26+ 才需要。 */
     fun ensureChannel(context: Context) {

@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Animation
@@ -73,10 +74,7 @@ import com.otakup.niriko.util.WallpaperPage
 import com.otakup.niriko.viewmodel.SettingsViewModel
 
 /**
- * 外观设置页：主题模式 / 自定义主题色 / 动态取色 / OLED / 壁纸 / 主题包。
- *
- * 版式对齐 Kazumi（取舍 ④B）：分组标题 + 玻璃分组容器 + 统一行解剖，
- * 三选项设置改为就地 radio 行，壁纸柔化改为就地滑杆行。
+ * 外观设置页（二级页外壳：脚手架 + 返回箭头）。
  */
 @Composable
 fun AppearanceSettingsScreen(
@@ -84,9 +82,36 @@ fun AppearanceSettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        SettingsDetailScaffold(title = "外观", onBack = onBack) {
+            AppearanceSettingsContent(
+                viewModel = viewModel,
+                snackbarHostState = snackbarHostState,
+            )
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}
+
+/**
+ * 「外观」二级页正文（不含脚手架与返回箭头、不含 SnackbarHost 宿主）：
+ * 窄屏由 AppearanceSettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ *
+ * 版式对齐 Kazumi（取舍 ④B）：分组标题 + 玻璃分组容器 + 统一行解剖，
+ * 三选项设置改为就地 radio 行，壁纸柔化改为就地滑杆行。
+ */
+@Composable
+fun AppearanceSettingsContent(
+    viewModel: SettingsViewModel,
+    snackbarHostState: SnackbarHostState,
+) {
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
-    val snackbarHostState = remember { SnackbarHostState() }
     var showThemeColorPicker by remember { mutableStateOf(false) }
     // 壁纸文件选择：pendingWallpaperTarget=null 表示全局，否则为页面 key
     var pendingWallpaperTarget by remember { mutableStateOf<String?>(null) }
@@ -104,8 +129,7 @@ fun AppearanceSettingsScreen(
         pendingWallpaperTarget = null
     }
 
-    Box(modifier = modifier.fillMaxWidth()) {
-    SettingsDetailScaffold(title = "外观", onBack = onBack) {
+    Column {
         // ===== 主题模式（三选项：就地单选） =====
         SettingsGroupTitle("主题模式")
         SettingsSplitGroup(content = listOf(
@@ -555,11 +579,6 @@ fun AppearanceSettingsScreen(
                 )
             },
         ))
-    }
-    SnackbarHost(
-        hostState = snackbarHostState,
-        modifier = Modifier.align(Alignment.BottomCenter),
-    )
     }
 
     if (showThemeColorPicker) {

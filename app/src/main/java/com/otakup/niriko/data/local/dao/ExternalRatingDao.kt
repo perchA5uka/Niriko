@@ -64,4 +64,8 @@ interface ExternalRatingDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllMyEpisodeRatings(entities: List<EpisodeMyRatingEntity>)
+
+    /** 清空「我的每集评分」（WebDAV 同步合并后整体写回，计划 B4 · 4-8）。 */
+    @Query("DELETE FROM episode_my_ratings")
+    suspend fun clearAllMyEpisodeRatings()
 }

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PowerOff
 import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ fun GrayChannelSettingsGroup(
     onGrayChannelEnabled: (Boolean) -> Unit,
     onProbeHeaders: (String, String) -> Unit,
     onDoubanReferers: (String, String) -> Unit,
+    onDoubanAntiSpoiler: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -110,6 +112,16 @@ fun GrayChannelSettingsGroup(
                         "已自定义 UA" + if (settings.probeCookie.isNotBlank()) " + Cookie" else ""
                     },
                     onClick = { showHeaderDialog = true },
+                )
+            },
+            {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.VisibilityOff,
+                    title = "剧照防剧透",
+                    description = "跳过第一页剧照（开播宣传图与早期剧情图），从第二页起取；" +
+                        "取不到时自动回退。默认开启。",
+                    checked = settings.doubanAntiSpoiler,
+                    onCheckedChange = onDoubanAntiSpoiler,
                 )
             },
             {

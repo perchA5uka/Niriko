@@ -16,7 +16,9 @@ import androidx.compose.ui.unit.sp
  * - 卡片段标题/原名 bodyMedium：14sp / w400 / onSurfaceVariant；
  * - 简介 bodySmall：13sp / w400 / onSurfaceVariant / maxLines 2；
  * - 元信息 labelSmall：11.5sp / w500 / tertiary 色。
- * 全部统计数字启用 tabular figures（fontFeatureSettings = "tnum"），滚动刷新不再跳动。
+ * 仅统计大数字 [displayLarge] 显式启用 tabular figures（fontFeatureSettings = "tnum"），
+ * 滚动刷新不再跳动；其余层级一律不加 tnum（骨架屏/正文不需要等宽数字）。
+ * B4 收口：此前这里写作「全部统计数字启用 tabular figures」，与代码不符。
  */
 val NirikoTypography = Typography(
     displayLarge = TextStyle(

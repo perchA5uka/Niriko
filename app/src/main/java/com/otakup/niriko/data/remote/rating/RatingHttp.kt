@@ -73,6 +73,8 @@ object RatingHttp {
         body: Pair<String, String>?,
     ): JsonElement? = withContext(Dispatchers.IO) {
         runCatching {
+            // 按源限流（B4 · 4-12）：命中 IGDB / MusicBrainz 等规则时先等待
+            com.otakup.niriko.util.SourceRateLimits.awaitUrl(url)
             val builder = Request.Builder()
                 .url(url)
                 .header("User-Agent", USER_AGENT)

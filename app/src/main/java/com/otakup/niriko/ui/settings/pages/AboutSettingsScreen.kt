@@ -26,12 +26,23 @@ import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsInfoRow
 import com.otakup.niriko.ui.settings.SettingsSplitGroup
 
-/** 关于页。 */
+/** 关于页（二级页外壳：脚手架 + 返回箭头）。 */
 @Composable
 fun AboutSettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SettingsDetailScaffold(title = "关于", onBack = onBack, modifier = modifier) {
+        AboutSettingsContent()
+    }
+}
+
+/**
+ * 「关于」二级页正文（不含脚手架与返回箭头）：
+ * 窄屏由 AboutSettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ */
+@Composable
+fun AboutSettingsContent() {
     var showLicenseDialog by remember { mutableStateOf(false) }
     // 运行时读取版本号，避免硬编码与实际版本漂移
     val context = LocalContext.current
@@ -40,7 +51,7 @@ fun AboutSettingsScreen(
         pm.getPackageInfo(context.packageName, 0).versionName
     }.getOrNull() ?: "1.0.0"
 
-    SettingsDetailScaffold(title = "关于", onBack = onBack, modifier = modifier) {
+    Column {
         SettingsGroupTitle("应用")
         SettingsSplitGroup(content = listOf(
             {

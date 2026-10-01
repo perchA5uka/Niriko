@@ -1,5 +1,6 @@
 package com.otakup.niriko.ui.settings.pages
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.Visibility
@@ -13,15 +14,28 @@ import com.otakup.niriko.ui.settings.SettingsSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.viewmodel.SettingsViewModel
 
-/** 搜索设置页。 */
+/** 搜索设置页（二级页外壳：脚手架 + 返回箭头）。 */
 @Composable
 fun SearchSettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val settings by viewModel.settings.collectAsState()
     SettingsDetailScaffold(title = "搜索", onBack = onBack, modifier = modifier) {
+        SearchSettingsContent(viewModel = viewModel)
+    }
+}
+
+/**
+ * 「搜索」二级页正文（不含脚手架与返回箭头）：
+ * 窄屏由 SearchSettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ */
+@Composable
+fun SearchSettingsContent(
+    viewModel: SettingsViewModel,
+) {
+    val settings by viewModel.settings.collectAsState()
+    Column {
         SettingsGroupTitle("搜索行为")
         SettingsSplitGroup(content = listOf(
             {

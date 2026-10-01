@@ -7,7 +7,6 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,22 +39,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.otakup.niriko.data.calculator.ChartSeriesCalculator
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.animation.RevealOnScroll
@@ -78,10 +73,8 @@ import com.otakup.niriko.data.model.stats.TagStat
 import com.otakup.niriko.data.model.stats.TimelineEvent
 import com.otakup.niriko.data.model.stats.TypeDistItem
 import com.otakup.niriko.data.model.stats.YearlyStats
+import com.otakup.niriko.navigation.LocalSearchGestureLock
 import java.time.LocalDate
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 // ==================== 图表颜色方案（主题派生，P0a） ====================
 // 颜色一律来自 ui/theme/ChartPalette.kt：从 colorScheme.primary 经 HCT 派生，
@@ -106,6 +99,9 @@ fun StatsScreen(
     // 放送日历陈旧度（0 = 从未刷新），显示在日历卡片底部
     val broadcastLastUpdatedAt by viewModel.broadcastLastUpdatedAt.collectAsState()
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
+    // 日历横滑会与顶级页 Pager 抢手势：手指落在日历上时锁住 Pager（与搜索页共用同一把锁）。
+    // 只在 StatsScreen 读取（StatsContent 的 @Preview 直接调用它，读 CompositionLocal 会崩）。
+    val searchGestureLock = LocalSearchGestureLock.current
 
     StatsContent(
         state = state,
@@ -114,6 +110,9 @@ fun StatsScreen(
         onDayClick = { selectedDay = it },
         onRefreshBroadcast = viewModel::refreshBroadcastSchedule,
         broadcastLastUpdatedAt = broadcastLastUpdatedAt,
+        onSwitchView = viewModel::switchCalendarView,
+        onAnchorDateChange = viewModel::setCalendarAnchor,
+        gestureLock = searchGestureLock,
         onSubjectClick = onSubjectClick,
         onNavigateToDiscover = onNavigateToDiscover,
         sharedTransitionScope = sharedTransitionScope,
@@ -149,6 +148,12 @@ private fun StatsContent(
     onRefreshBroadcast: () -> Unit = {},
     /** 放送日历上次成功刷新时间（0 = 从未）。 */
     broadcastLastUpdatedAt: Long = 0L,
+    /** 日历视图粒度：true = 月视图，false = 周视图。 */
+    onSwitchView: (Boolean) -> Unit = {},
+    /** 日历锚点变化（手势翻页回写）。 */
+    onAnchorDateChange: (LocalDate) -> Unit = {},
+    /** 顶级页 Pager 手势锁；为 null 时日历不干预 Pager（预览 / 未提供 CompositionLocal）。 */
+    gestureLock: MutableState<Boolean>? = null,
     onSubjectClick: (Long) -> Unit = {},
     onNavigateToDiscover: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
@@ -171,10 +176,9 @@ private fun StatsContent(
 
         when {
             state.isLoading -> item(key = "loading") {
-                Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                    Text("正在加载统计数据…", style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                // B4：文字加载态 → 骨架组合（日历格 + 概览胶囊 + 图表块），
+                // 形状按真实版面排序；reduceMotion / 玻璃档位 OFF 时由 SkeletonBlock 自动退成静态灰块。
+                StatsLoadingSkeleton()
             }
             state.totalCount == 0 -> item(key = "empty") {
                 EmptyStatsPlaceholder(onNavigateToDiscover = onNavigateToDiscover)
@@ -183,16 +187,19 @@ private fun StatsContent(
                 // 0. 作品日历（置顶，核心）
                 item(key = "calendar") {
                     CalendarCard(
-                        year = state.calendarYear,
-                        month = state.calendarMonth,
+                        anchorDate = state.calendarAnchorDate,
+                        expanded = state.calendarExpanded,
                         dayEvents = state.calendarDayEvents,
                         calendarMode = state.calendarMode,
                         broadcastError = state.broadcastError,
                         onSwitchMonth = onSwitchMonth,
                         onSwitchMode = onSwitchMode,
                         onDayClick = onDayClick,
+                        onSwitchView = onSwitchView,
+                        onAnchorDateChange = onAnchorDateChange,
                         onRefreshBroadcast = onRefreshBroadcast,
                         broadcastLastUpdatedAt = broadcastLastUpdatedAt,
+                        gestureLock = gestureLock,
                     )
                 }
                 item(key = "div1") { HorizontalDivider() }
@@ -220,9 +227,17 @@ private fun StatsContent(
                 item(key = "type") { TypeDistributionSection(state = state) }
                 item(key = "div5") { HorizontalDivider() }
 
+                // 4b. 收藏月度趋势（本轮接入：此前已实现但从未被渲染）
+                item(key = "monthly") { MonthlyTrendSection(state = state) }
+                item(key = "divMonthly") { HorizontalDivider() }
+
                 // 5. 评分分布
                 item(key = "rating") { RatingDistributionSection(state = state) }
                 item(key = "div6") { HorizontalDivider() }
+
+                // 5b. 评分对比（个人 vs Bangumi，本轮接入：此前已实现但从未被渲染）
+                item(key = "compare") { RatingComparisonSection(state = state) }
+                item(key = "divCompare") { HorizontalDivider() }
 
                 // 6. 年度总结
                 item(key = "yearly") { YearlySummarySection(state = state) }
@@ -275,8 +290,8 @@ private fun StatusDistributionSection(state: StatsUiState) {
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 环形图
-            DonutChart(
+            // 环形图（Vico 承载，见 ui/stats/NirikoDonutChart.kt）
+            NirikoDonutChart(
                 data = nonZeroItems.map { item ->
                     DonutSlice(
                         label = item.status.label,
@@ -380,24 +395,43 @@ private fun TypeBarRow(
 
 @Composable
 private fun MonthlyTrendSection(state: StatsUiState) {
-    SectionTitle("收藏月度趋势")
-    if (state.monthlyTrend.isEmpty()) {
-        Text("暂无月度数据", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        return
-    }
-    // 水平滚动柱状图
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(vertical = 8.dp),
-    ) {
-        BarChart(
-            data = state.monthlyTrend.map { m ->
-                BarEntry(label = m.label.takeLast(2), value = m.count.toFloat())
-            },
-            modifier = Modifier.height(180.dp),
+    StatsSectionCard {
+        SectionTitle("收藏月度趋势")
+        if (state.monthlyTrend.isEmpty()) {
+            Text("暂无月度数据", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@StatsSectionCard
+        }
+        // 月度增量柱 + 累计折线；累计值由 ChartSeriesCalculator 纯函数计算（有单测）
+        val cumulative = remember(state.monthlyTrend) {
+            ChartSeriesCalculator.monthlyCumulative(state.monthlyTrend)
+        }
+        val barColor = chartBarDefaultColor()
+        val lineColor = chartBarAccentColor()
+        Spacer(Modifier.height(8.dp))
+        ChartLegendRow(
+            entries = listOf(
+                barColor to "每月收藏",
+                lineColor to "累计收藏",
+            ),
+        )
+        NirikoBarChart(
+            // 保留 label.takeLast(2) 的截断语义（"2024-01" -> "01"）
+            labels = state.monthlyTrend.map { it.label.takeLast(2) },
+            bars = listOf(
+                BarSeries(
+                    label = "每月收藏",
+                    values = state.monthlyTrend.map { it.count.toFloat() },
+                    color = barColor,
+                ),
+            ),
+            line = BarLine(
+                label = "累计收藏",
+                values = cumulative.map { it.toFloat() },
+                color = lineColor,
+                dashed = true,
+            ),
+            chartHeight = 180.dp,
         )
     }
 }
@@ -408,50 +442,43 @@ private fun MonthlyTrendSection(state: StatsUiState) {
 private fun RatingDistributionSection(state: StatsUiState) {
     StatsSectionCard {
         SectionTitle("评分分布")
-
-        if (state.myRatingDistribution.isNotEmpty()) {
-            Text("我的评分", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(vertical = 4.dp),
-            ) {
-                BarChart(
-                    data = state.myRatingDistribution.map { r ->
-                        BarEntry(label = r.range, value = r.count.toFloat(), color = chartBarDefaultColor())
-                    },
-                    modifier = Modifier.height(160.dp),
-                )
-            }
-        }
-
-        if (state.bangumiRatingDistribution.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Text("Bangumi 评分", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(vertical = 4.dp),
-            ) {
-                BarChart(
-                    data = state.bangumiRatingDistribution.map { r ->
-                        BarEntry(label = r.range, value = r.count.toFloat(), color = chartBarAccentColor())
-                    },
-                    modifier = Modifier.height(160.dp),
-                )
-            }
-        }
-
-        if (state.myRatingDistribution.isEmpty() && state.bangumiRatingDistribution.isEmpty()) {
+        val hasMine = state.myRatingDistribution.isNotEmpty()
+        val hasBangumi = state.bangumiRatingDistribution.isNotEmpty()
+        if (!hasMine && !hasBangumi) {
             Text("暂无评分数据", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@StatsSectionCard
         }
+        // 个人与 Bangumi 合并到同一坐标系做分组柱；分桶合并 / 排序走纯函数（有单测）。
+        // 分桶数 > 12 时 Vico 侧按比例放大内容宽度并可横向滚动，柱宽不被压缩。
+        val merged = remember(state.myRatingDistribution, state.bangumiRatingDistribution) {
+            ChartSeriesCalculator.mergeRatingBuckets(
+                state.myRatingDistribution,
+                state.bangumiRatingDistribution,
+            )
+        }
+        val myColor = chartBarDefaultColor()
+        val bangumiColor = chartBarAccentColor()
+        Spacer(Modifier.height(8.dp))
+        ChartLegendRow(
+            entries = buildList {
+                if (hasMine) add(myColor to "我的评分")
+                if (hasBangumi) add(bangumiColor to "Bangumi 评分")
+            },
+        )
+        NirikoBarChart(
+            labels = merged.map { it.range },
+            bars = buildList {
+                if (hasMine) {
+                    add(BarSeries("我的评分", merged.map { it.myCount.toFloat() }, myColor))
+                }
+                if (hasBangumi) {
+                    add(BarSeries("Bangumi 评分", merged.map { it.bangumiCount.toFloat() }, bangumiColor))
+                }
+            },
+            chartHeight = 170.dp,
+            showValueLabels = false,
+        )
     }
 }
 
@@ -588,10 +615,48 @@ private fun MosaicSection(state: StatsUiState) {
 
 @Composable
 private fun RatingComparisonSection(state: StatsUiState) {
-    SectionTitle("评分对比（个人 vs Bangumi）")
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        state.ratingComparison.take(10).forEach { item ->
-            RatingComparisonRow(item = item)
+    val rows = state.ratingComparison.take(10)
+    StatsSectionCard {
+        SectionTitle("评分对比（个人 vs Bangumi）")
+        if (rows.isEmpty()) {
+            Text("暂无评分对比数据", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@StatsSectionCard
+        }
+        // 对柱（个人 / Bangumi）+ 差值折线；差值走纯函数（有单测）。
+        // x 轴用序号，标题/分数在下方 RatingComparisonRow 列表里逐条列出，避免长标题压轴。
+        val differences = remember(rows) { ChartSeriesCalculator.ratingDifferences(rows) }
+        val myColor = chartBarDefaultColor()
+        val bangumiColor = chartBarAccentColor()
+        val diffColor = MaterialTheme.colorScheme.tertiary
+        Spacer(Modifier.height(8.dp))
+        ChartLegendRow(
+            entries = listOf(
+                myColor to "我的评分",
+                bangumiColor to "Bangumi 评分",
+                diffColor to "差值（个人 - Bangumi）",
+            ),
+        )
+        NirikoBarChart(
+            labels = rows.mapIndexed { index, _ -> "${index + 1}" },
+            bars = listOf(
+                BarSeries("我的评分", rows.map { it.myRating ?: 0f }, myColor),
+                BarSeries("Bangumi 评分", rows.map { it.bangumiRating ?: 0f }, bangumiColor),
+            ),
+            line = BarLine(
+                label = "差值（个人 - Bangumi）",
+                values = differences.map { it ?: 0f },
+                color = diffColor,
+                dashed = true,
+            ),
+            chartHeight = 190.dp,
+            showValueLabels = false,
+        )
+        Spacer(Modifier.height(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            rows.forEach { item ->
+                RatingComparisonRow(item = item)
+            }
         }
     }
 }
@@ -629,6 +694,33 @@ private fun RatingComparisonRow(item: RatingComparison) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** 图表图例行：色点 + 说明文字（分组柱 / 折线的颜色对照）。 */
+@Composable
+private fun ChartLegendRow(entries: List<Pair<Color, String>>) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        entries.forEach { (color, label) ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(color),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -692,161 +784,6 @@ private fun LegendRow(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-// ==================== 环形图 (Donut Chart) ====================
-
-data class DonutSlice(
-    val label: String,
-    val value: Float,
-    val color: Color,
-)
-
-@Composable
-fun DonutChart(
-    data: List<DonutSlice>,
-    totalText: String,
-    modifier: Modifier = Modifier,
-) {
-    val total = data.sumOf { it.value.toDouble() }.toFloat()
-    if (total == 0f) return
-
-    // 环形图绘制动画降级为静态（Pager 预组合时与滑动争帧）
-    val animationProgress = 1f
-
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = size.minDimension * 0.15f
-            val gapAngle = 3f
-            var startAngle = -90f
-
-            data.forEachIndexed { _, slice ->
-                val fullSweep = (slice.value / total) * 360f - gapAngle
-                // 每个弧段按动画进度展开
-                val sweep = (fullSweep * animationProgress).coerceAtLeast(0f)
-                drawArc(
-                    color = slice.color,
-                    startAngle = startAngle,
-                    sweepAngle = sweep,
-                    useCenter = false,
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Butt),
-                    size = Size(size.width - strokeWidth, size.height - strokeWidth),
-                    topLeft = Offset(strokeWidth / 2, strokeWidth / 2),
-                )
-                // 即使动画中也要保持正确的起止角度布局
-                startAngle += fullSweep + gapAngle
-            }
-        }
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = totalText,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                softWrap = false,
-            )
-            Text(
-                text = "总计",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-// ==================== 柱状图 (Bar Chart) ====================
-
-data class BarEntry(
-    val label: String,
-    val value: Float,
-    val color: Color = Color.Unspecified,
-)
-
-@Composable
-fun BarChart(
-    data: List<BarEntry>,
-    modifier: Modifier = Modifier,
-    barWidth: Float = 24f,
-    barSpacing: Float = 8f,
-) {
-    if (data.isEmpty()) return
-
-    val maxValue = data.maxOf { it.value }
-    if (maxValue == 0f) return
-
-    // 柱状图生长动画降级为静态（Pager 预组合时与滑动争帧）
-    val animationProgress = 1f
-
-    val totalWidth = data.size * (barWidth + barSpacing) + barSpacing
-
-    // 复用 Paint 实例（组合期创建一次，避免每次绘制 new Paint() 的 GC 压力）；
-    // 绘制中按原逻辑设置颜色/字号，渲染输出与之前一致
-    val density = LocalDensity.current.density
-    val textPaint = remember(density) {
-        android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#8C8C8C")
-            textSize = 10f * density
-            textAlign = android.graphics.Paint.Align.CENTER
-        }
-    }
-
-    val palette = chartBarDefaultColor()
-    Canvas(modifier = modifier.width(totalWidth.dp)) {
-        val chartHeight = size.height - 32f
-        val barWidthPx = barWidth * density
-        val barSpacingPx = barSpacing * density
-        val startX = barSpacingPx
-
-        data.forEachIndexed { index, entry ->
-            val targetBarHeight = (entry.value / maxValue) * chartHeight
-            val barHeight = targetBarHeight * animationProgress
-            val x = startX + index * (barWidthPx + barSpacingPx)
-            val y = size.height - 16f - barHeight
-
-            // 柱体（未显式指定色时用主题派生主色）
-            drawRect(
-                color = if (entry.color == Color.Unspecified) palette else entry.color,
-                topLeft = Offset(x, y),
-                size = Size(barWidthPx, barHeight),
-            )
-
-            // 数值（仅当 animationProgress > 0.8 显示）
-            if (animationProgress > 0.8f) {
-                drawContext.canvas.nativeCanvas.apply {
-                    if (entry.value > 0) {
-                        drawText(
-                            "%.0f".format(entry.value),
-                            x + barWidthPx / 2,
-                            y - 4f,
-                            textPaint,
-                        )
-                    }
-                    // 标签
-                    textPaint.color = android.graphics.Color.parseColor("#8C8C8C")
-                    textPaint.textSize = 9f * density
-                    drawText(
-                        entry.label,
-                        x + barWidthPx / 2,
-                        size.height - 2f,
-                        textPaint,
-                    )
-                }
-            } else {
-                // 只绘制标签
-                drawContext.canvas.nativeCanvas.apply {
-                    textPaint.color = android.graphics.Color.parseColor("#8C8C8C")
-                    textPaint.textSize = 9f * density
-                    drawText(
-                        entry.label,
-                        x + barWidthPx / 2,
-                        size.height - 2f,
-                        textPaint,
-                    )
-                }
-            }
-        }
     }
 }
 

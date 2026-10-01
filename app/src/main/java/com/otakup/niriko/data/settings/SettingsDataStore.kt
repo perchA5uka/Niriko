@@ -10,6 +10,7 @@ import com.otakup.niriko.data.model.collection.SortOrder
 import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "niriko_settings")
@@ -63,6 +64,8 @@ class SettingsDataStore(private val context: Context) {
         // 统计与启动
         val SHOW_ANNUALLY_SUMMARY = booleanPreferencesKey("show_annually_summary")
         val START_PAGE = stringPreferencesKey("start_page")
+        // 首次启动引导（计划 B1-1）
+        val FIRST_RUN_COMPLETED = booleanPreferencesKey("first_run_completed")
 
         // 数据源
         val ACTIVE_DATA_SOURCE_ID = stringPreferencesKey("active_data_source_id")
@@ -84,6 +87,7 @@ class SettingsDataStore(private val context: Context) {
         val DISCOGS_TOKEN = stringPreferencesKey("discogs_token")
         val OPENCRITIC_API_KEY = stringPreferencesKey("opencritic_api_key")
         val DOUBAN_PHOTOS_ENABLED = booleanPreferencesKey("douban_photos_enabled")
+        val DOUBAN_ANTI_SPOILER = booleanPreferencesKey("douban_anti_spoiler")
         val DOUBAN_IMAGE_REFERER = stringPreferencesKey("douban_image_referer")
         val DOUBAN_API_REFERER = stringPreferencesKey("douban_api_referer")
 
@@ -174,6 +178,7 @@ class SettingsDataStore(private val context: Context) {
             // 统计与启动
             showAnnuallySummary = prefs[Keys.SHOW_ANNUALLY_SUMMARY] ?: defaults.showAnnuallySummary,
             startPage = prefs[Keys.START_PAGE] ?: defaults.startPage,
+            firstRunCompleted = prefs[Keys.FIRST_RUN_COMPLETED] ?: defaults.firstRunCompleted,
 
             // 数据源
             activeDataSourceId = prefs[Keys.ACTIVE_DATA_SOURCE_ID] ?: defaults.activeDataSourceId,
@@ -195,6 +200,7 @@ class SettingsDataStore(private val context: Context) {
             discogsToken = prefs[Keys.DISCOGS_TOKEN] ?: defaults.discogsToken,
             openCriticApiKey = prefs[Keys.OPENCRITIC_API_KEY] ?: defaults.openCriticApiKey,
             doubanPhotosEnabled = prefs[Keys.DOUBAN_PHOTOS_ENABLED] ?: defaults.doubanPhotosEnabled,
+            doubanAntiSpoiler = prefs[Keys.DOUBAN_ANTI_SPOILER] ?: defaults.doubanAntiSpoiler,
             doubanImageReferer = prefs[Keys.DOUBAN_IMAGE_REFERER] ?: defaults.doubanImageReferer,
             doubanApiReferer = prefs[Keys.DOUBAN_API_REFERER] ?: defaults.doubanApiReferer,
             grayChannelEnabled = prefs[Keys.GRAY_CHANNEL_ENABLED] ?: defaults.grayChannelEnabled,
@@ -357,6 +363,23 @@ class SettingsDataStore(private val context: Context) {
         runCatching { context.dataStore.edit { it[Keys.START_PAGE] = page } }
     }
 
+    /** 标记首次启动引导已完成（计划 B1-1）。 */
+    suspend fun setFirstRunCompleted(completed: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.FIRST_RUN_COMPLETED] = completed } }
+    }
+
+    /**
+     * 原始读取首次启动引导键：null = 键从未写入。
+     * 用来区分「全新安装」与「升级安装」（后者不该被引导拦截），
+     * 判定逻辑见 [FirstRunPolicy.shouldShowFirstRun]。
+     */
+    suspend fun rawFirstRunCompleted(): Boolean? =
+        runCatching { context.dataStore.data.first()[Keys.FIRST_RUN_COMPLETED] }.getOrNull()
+
+    /** DataStore 里是否已有任意设置键（= 用户之前用过本应用）。 */
+    suspend fun hasStoredSettings(): Boolean =
+        runCatching { context.dataStore.data.first().asMap().isNotEmpty() }.getOrDefault(false)
+
     /** 重置所有设置到默认值。 */
     suspend fun resetAll() {
         runCatching { context.dataStore.edit { it.clear() } }
@@ -432,6 +455,11 @@ class SettingsDataStore(private val context: Context) {
     /** 豆瓣剧照开关（灰色通道，默认关）。 */
     suspend fun setDoubanPhotosEnabled(enabled: Boolean) {
         runCatching { context.dataStore.edit { it[Keys.DOUBAN_PHOTOS_ENABLED] = enabled } }
+    }
+
+    /** 豆瓣剧照防剧透（计划 B4 · 4-13）。 */
+    suspend fun setDoubanAntiSpoiler(enabled: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.DOUBAN_ANTI_SPOILER] = enabled } }
     }
 
     /** 豆瓣图片与 API 的 Referer（失效时可自行修改）。 */
@@ -582,6 +610,7 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.AIRING_REMINDER_ENABLED] = settings.airingReminderEnabled
                 prefs[Keys.SHOW_ANNUALLY_SUMMARY] = settings.showAnnuallySummary
                 prefs[Keys.START_PAGE] = settings.startPage
+                prefs[Keys.FIRST_RUN_COMPLETED] = settings.firstRunCompleted
                 prefs[Keys.ACTIVE_DATA_SOURCE_ID] = settings.activeDataSourceId
                 prefs[Keys.BANGUMI_ENDPOINT] = settings.bangumiEndpoint.name
                 prefs[Keys.STEAM_API_KEY] = settings.steamApiKey
@@ -599,6 +628,7 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.DISCOGS_TOKEN] = settings.discogsToken
                 prefs[Keys.OPENCRITIC_API_KEY] = settings.openCriticApiKey
                 prefs[Keys.DOUBAN_PHOTOS_ENABLED] = settings.doubanPhotosEnabled
+                prefs[Keys.DOUBAN_ANTI_SPOILER] = settings.doubanAntiSpoiler
                 prefs[Keys.DOUBAN_IMAGE_REFERER] = settings.doubanImageReferer
                 prefs[Keys.DOUBAN_API_REFERER] = settings.doubanApiReferer
                 prefs[Keys.GRAY_CHANNEL_ENABLED] = settings.grayChannelEnabled

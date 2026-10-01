@@ -27,4 +27,8 @@ interface ExternalIdDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<SubjectExternalIdEntity>)
+
+    /** 清空（WebDAV 同步合并后整体写回，计划 B4 · 4-8）。 */
+    @Query("DELETE FROM subject_external_ids")
+    suspend fun clearAll()
 }

@@ -55,6 +55,9 @@ private const val AUTO_BIND_THRESHOLD = 0.92f
  */
 private const val DOUBAN_AUTO_BIND_THRESHOLD = 0.86f
 
+/** 豆瓣剧照一页张数（防剧透跳过第一页时的偏移量 = 该值，见 DoubanSpoilerPolicy）。 */
+private const val DOUBAN_PHOTO_PAGE_SIZE = 40
+
 /**
  * 从文本里抠豆瓣条目 id 的正则。
  *
@@ -414,6 +417,30 @@ class SubjectDetailViewModel(
                         anitabiPointsLength = snap.anitabiPointsLength,
                         anitabiImagesLength = snap.anitabiImagesLength,
                         guessYouLike = snap.guessYouLike,
+                        // 计划 B5 · 6-4：补上此前没进快照的字段，二次进详情页不再重跑
+                        // 权威评分 / 每集评分 / TMDb / 豆瓣这几路外部源
+                        externalRatings = snap.externalRatings,
+                        steamMetacritic = snap.steamMetacritic,
+                        manualAwards = snap.manualAwards,
+                        episodeRatings = snap.episodeRatings,
+                        episodeRatingLoad = snap.episodeRatingLoad,
+                        imdbEpisodeLoad = snap.imdbEpisodeLoad,
+                        imdbEpisodeEntryEnabled = snap.imdbEpisodeEntryEnabled,
+                        imdbEntry = snap.imdbEntry,
+                        myEpisodeRatings = snap.myEpisodeRatings,
+                        tmdbSupported = snap.tmdbSupported,
+                        tmdbBinding = snap.tmdbBinding,
+                        tmdbMovieBinding = snap.tmdbMovieBinding,
+                        tmdbDetail = snap.tmdbDetail,
+                        tmdbBackdrops = snap.tmdbBackdrops,
+                        tmdbCandidates = snap.tmdbCandidates,
+                        tmdbPastedCandidate = snap.tmdbPastedCandidate,
+                        episodeStills = snap.episodeStills,
+                        doubanEnabled = snap.doubanEnabled,
+                        doubanBoundId = snap.doubanBoundId,
+                        doubanThumbs = snap.doubanThumbs,
+                        doubanImageReferer = snap.doubanImageReferer,
+                        doubanCandidates = snap.doubanCandidates,
                         isExtendedLoading = false,
                     )
                 }
@@ -545,6 +572,30 @@ class SubjectDetailViewModel(
         anitabiPointsLength = anitabiPointsLength,
         anitabiImagesLength = anitabiImagesLength,
         guessYouLike = guessYouLike,
+        // 计划 B5 · 6-4：以下字段此前不在快照里 → 二次进页面会重跑权威评分 / 每集评分 /
+        // TMDb（详情 + 剧照候选）/ 豆瓣候选，正是 README「工程待办」里记的那条
+        externalRatings = externalRatings,
+        steamMetacritic = steamMetacritic,
+        manualAwards = manualAwards,
+        episodeRatings = episodeRatings,
+        episodeRatingLoad = episodeRatingLoad,
+        imdbEpisodeLoad = imdbEpisodeLoad,
+        imdbEpisodeEntryEnabled = imdbEpisodeEntryEnabled,
+        imdbEntry = imdbEntry,
+        myEpisodeRatings = myEpisodeRatings,
+        tmdbSupported = tmdbSupported,
+        tmdbBinding = tmdbBinding,
+        tmdbMovieBinding = tmdbMovieBinding,
+        tmdbDetail = tmdbDetail,
+        tmdbBackdrops = tmdbBackdrops,
+        tmdbCandidates = tmdbCandidates,
+        tmdbPastedCandidate = tmdbPastedCandidate,
+        episodeStills = episodeStills,
+        doubanEnabled = doubanEnabled,
+        doubanBoundId = doubanBoundId,
+        doubanThumbs = doubanThumbs,
+        doubanImageReferer = doubanImageReferer,
+        doubanCandidates = doubanCandidates,
     )
 
     /** 扩展数据快照（详情页十余路并行结果的合并快照）。 */
@@ -570,6 +621,29 @@ class SubjectDetailViewModel(
         val anitabiPointsLength: Int,
         val anitabiImagesLength: Int,
         val guessYouLike: List<SubjectEntity>,
+        // ===== v6-4 补齐（计划 B5）=====
+        val externalRatings: List<com.otakup.niriko.data.remote.rating.ExternalRating>,
+        val steamMetacritic: com.otakup.niriko.data.remote.rating.ExternalRating?,
+        val manualAwards: List<com.otakup.niriko.data.local.entity.ManualAwardEntity>,
+        val episodeRatings: Map<Long, Map<String, com.otakup.niriko.data.local.entity.EpisodeRatingEntity>>,
+        val episodeRatingLoad: com.otakup.niriko.data.repository.EpisodeRatingRepository.TmdbEpisodeLoad?,
+        val imdbEpisodeLoad: com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEpisodeLoad?,
+        val imdbEpisodeEntryEnabled: Boolean,
+        val imdbEntry: com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEntryStatus?,
+        val myEpisodeRatings: Map<Long, Float>,
+        val tmdbSupported: Boolean,
+        val tmdbBinding: com.otakup.niriko.data.local.entity.SubjectExternalIdEntity?,
+        val tmdbMovieBinding: com.otakup.niriko.data.local.entity.SubjectExternalIdEntity?,
+        val tmdbDetail: com.otakup.niriko.data.remote.tmdb.dto.TmdbTvDetailDto?,
+        val tmdbBackdrops: List<com.otakup.niriko.data.remote.tmdb.dto.TmdbImageDto>,
+        val tmdbCandidates: List<com.otakup.niriko.data.remote.rating.RatingCandidate>,
+        val tmdbPastedCandidate: com.otakup.niriko.data.remote.rating.RatingCandidate?,
+        val episodeStills: Map<Long, String>,
+        val doubanEnabled: Boolean,
+        val doubanBoundId: String?,
+        val doubanThumbs: List<String>,
+        val doubanImageReferer: String?,
+        val doubanCandidates: List<com.otakup.niriko.data.remote.douban.DoubanClient.DoubanSearchItem>,
     )
 
     companion object {
@@ -1480,13 +1554,33 @@ class SubjectDetailViewModel(
             )
         }
         if (boundId == null) return
-        val photos = runCatching {
+        val headers = doubanHeaders(settings)
+        // 防剧透（B4 · 4-13，用户开关）：开启时跳过第一页；取不到图回退第 0 页，
+        // 不能因为开了防剧透就把剧照功能弄没
+        val pageSize = DOUBAN_PHOTO_PAGE_SIZE
+        val antiSpoiler = settings.doubanAntiSpoiler
+        val start = com.otakup.niriko.data.remote.douban.DoubanSpoilerPolicy
+            .photoStart(antiSpoiler, pageSize)
+        var photos = runCatching {
             com.otakup.niriko.data.remote.douban.DoubanClient.photos(
                 doubanId = boundId,
                 category = doubanCategory(subject.type),
-                headers = doubanHeaders(settings),
+                headers = headers,
+                count = pageSize,
+                start = start,
             )
         }.getOrDefault(emptyList())
+        if (photos.isEmpty() && start > 0) {
+            photos = runCatching {
+                com.otakup.niriko.data.remote.douban.DoubanClient.photos(
+                    doubanId = boundId,
+                    category = doubanCategory(subject.type),
+                    headers = headers,
+                    count = pageSize,
+                    start = 0,
+                )
+            }.getOrDefault(emptyList())
+        }
         _uiState.update { it.copy(doubanThumbs = photos) }
     }
 
@@ -1895,6 +1989,25 @@ class SubjectDetailViewModel(
             loadTmdbSupplement()
             loadEpisodeRatingData()
             loadExternalRatingData()
+        }
+    }
+
+    /**
+     * 手动指定 TMDb 季号（计划 B3 · 4-14）。
+     *
+     * 只改绑定的 subKey，然后重取 TMDb 详情（季列表/剧照）与每集评分；
+     * 每集评分链路本就以 subKey 为季号来源，因此改完即为新季数据。
+     */
+    fun setTmdbSeason(seasonNumber: Int) {
+        val subject = _uiState.value.subject ?: return
+        val repo = externalIdRepository ?: return
+        val binding = _uiState.value.tmdbBinding ?: return
+        if (binding.subKey?.toIntOrNull() == seasonNumber) return
+        extendedScope.launch {
+            repo.updateSubKey(subject.subjectId, binding.provider, seasonNumber.toString())
+            _emitSnackbar("已切换到第 $seasonNumber 季")
+            loadTmdbSupplement()
+            loadEpisodeRatingData()
         }
     }
 

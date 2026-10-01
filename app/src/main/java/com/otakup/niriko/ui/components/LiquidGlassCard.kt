@@ -11,13 +11,12 @@ package com.otakup.niriko.ui.components
 //       取消玻璃层次，保证可读性）
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.components.liquidglass.LiquidGlassConfig
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 卡片级液态玻璃（真折射，背垫"封面墙"）。
@@ -33,7 +32,7 @@ import com.otakup.niriko.ui.components.liquidglass.LiquidGlassConfig
 @Composable
 fun LiquidGlassCard(
     backdrop: @Composable (Modifier) -> Unit,
-    shape: Shape = RoundedCornerShape(20.dp),
+    shape: Shape = NirikoShapes.CardShape,
     modifier: Modifier = Modifier,
     tint: Color? = null,
     config: LiquidGlassConfig = LiquidGlassConfig.Card,

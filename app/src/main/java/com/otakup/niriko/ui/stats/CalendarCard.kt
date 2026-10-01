@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,16 +31,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,29 +54,37 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.kizitonwose.calendar.compose.ContentHeightMode
+import com.kizitonwose.calendar.compose.HorizontalCalendar
+import com.kizitonwose.calendar.compose.WeekCalendar
+import com.kizitonwose.calendar.compose.rememberCalendarState
+import com.kizitonwose.calendar.compose.weekcalendar.rememberWeekCalendarState
+import com.kizitonwose.calendar.core.DayPosition
+import com.kizitonwose.calendar.core.OutDateStyle
+import com.otakup.niriko.data.calculator.CalendarRangeCalculator
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.theme.rememberChartTypeColors
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
 import com.otakup.niriko.data.model.stats.CalendarMode
 import com.otakup.niriko.ui.components.appleGlassCard
 import java.time.LocalDate
+import java.time.YearMonth
+import kotlinx.datetime.DayOfWeek as KDayOfWeek
+import kotlinx.datetime.LocalDate as KLocalDate
+import kotlinx.datetime.YearMonth as KYearMonth
+import kotlinx.datetime.toJavaLocalDate as kToJavaLocalDate
+import kotlinx.datetime.toKotlinLocalDate as kToKotlinLocalDate
+import kotlinx.datetime.toKotlinYearMonth as kToKotlinYearMonth
 
 // ==================== 颜色方案 ====================
 
-/** 作品类型颜色。 */
-val CalendarTypeColors = mapOf(
-    SubjectType.ANIME to Color(0xFF42A5F5),
-    SubjectType.MANGA to Color(0xFFEF5350),
-    SubjectType.BOOK to Color(0xFF66BB6A),
-    SubjectType.GAME to Color(0xFFAB47BC),
-    SubjectType.MUSIC to Color(0xFFFF7043),
-    SubjectType.REAL to Color(0xFFEC407A),
-    SubjectType.OTHER to Color(0xFF90A4AE),
-)
+// 作品类型颜色统一由 ui/theme/ChartPalette.kt 的主题派生色提供（chartTypeColor /
+// rememberChartTypeColors），此处不再保留第二套固定色表。
 
 /** 放送标记颜色（金色菱形 ◆）。 */
 private val BroadcastColor = Color(0xFFFDD835)
@@ -85,43 +98,79 @@ private val cellShape = RoundedCornerShape(4.dp)
 // ==================== CalendarCard（顶层容器） ====================
 
 /**
- * 作品日历卡片，支持个人记录 / 放送信息 / 全部显示三种模式。
+ * 作品日历卡片，支持个人记录 / 放送信息 / 全部显示三种模式，以及周 / 月两种视图粒度。
+ *
+ * [anchorDate] 为日历锚点：月视图显示其所在月，周视图显示其所在周（周日起始）；
+ * [expanded] = true 为整月视图（默认，与周 / 月双模改造前一致），false 为单周视图。
+ * 视图粒度与三态模式正交，互不影响。
  */
 @Composable
 fun CalendarCard(
-    year: Int,
-    month: Int,
+    anchorDate: LocalDate,
+    expanded: Boolean,
     dayEvents: Map<LocalDate, CalendarDayEvents>,
     calendarMode: CalendarMode,
     broadcastError: String?,
     onSwitchMonth: (Int) -> Unit,
     onSwitchMode: (CalendarMode) -> Unit,
     onDayClick: (LocalDate) -> Unit,
+    onSwitchView: (Boolean) -> Unit,
+    onAnchorDateChange: (LocalDate) -> Unit,
     onRefreshBroadcast: (() -> Unit)? = null,
     /** 放送日历上次成功刷新时间（0 = 从未）。 */
     broadcastLastUpdatedAt: Long = 0L,
+    /**
+     * 顶级页 Pager 手势锁。非 null 时，手指落在日历上即锁定 Pager，
+     * 避免日历横向翻页与顶级页左右滑动抢手势（R2）。
+     */
+    gestureLock: MutableState<Boolean>? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.medium),
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            // 模式切换
-            ModeSwitch(
+            // 三态模式（个人 / 放送 / 全部）+ 视图粒度（周 / 月）：两组控件互相正交
+            CalendarControlRow(
                 currentMode = calendarMode,
                 onSwitchMode = onSwitchMode,
+                expanded = expanded,
+                onSwitchView = onSwitchView,
             )
-            // 月份头部
-            MonthHeader(year = year, month = month, onSwitchMonth = onSwitchMonth)
-            // 星期表头
+            // 标题 + 翻页箭头
+            CalendarHeader(
+                anchorDate = anchorDate,
+                expanded = expanded,
+                onSwitchMonth = onSwitchMonth,
+            )
+            // 星期表头：周 / 月两种视图共用，保证列对齐始终一致
             WeekdayHeader()
-            // 日期网格
-            DayGrid(
-                year = year,
-                month = month,
-                dayEvents = dayEvents,
-                onDayClick = onDayClick,
-            )
+            // 日期网格：宽度上限收敛，折叠屏 / 平板下居中而不是把日格拉爆
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                val gridModifier = Modifier
+                    .widthIn(max = maxDayCellSize * 7)
+                    .calendarGestureLock(gestureLock)
+                if (expanded) {
+                    MonthGrid(
+                        anchorDate = anchorDate,
+                        dayEvents = dayEvents,
+                        onDayClick = onDayClick,
+                        onAnchorDateChange = onAnchorDateChange,
+                        modifier = gridModifier,
+                    )
+                } else {
+                    WeekGrid(
+                        anchorDate = anchorDate,
+                        dayEvents = dayEvents,
+                        onDayClick = onDayClick,
+                        onAnchorDateChange = onAnchorDateChange,
+                        modifier = gridModifier,
+                    )
+                }
+            }
 
             // 图例
             CalendarLegend(calendarMode = calendarMode)
@@ -138,32 +187,64 @@ fun CalendarCard(
     }
 }
 
-// ==================== 模式切换 ====================
+// ==================== 模式 / 视图切换 ====================
 
+/**
+ * 一组控件，两组语义：左侧三态模式（个人 / 放送 / 全部），右侧视图粒度（周 / 月）。
+ * 二者正交：切视图不改模式，切模式不改视图。
+ */
 @Composable
-private fun ModeSwitch(
+private fun CalendarControlRow(
     currentMode: CalendarMode,
     onSwitchMode: (CalendarMode) -> Unit,
+    expanded: Boolean,
+    onSwitchView: (Boolean) -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 4.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        CalendarMode.entries.forEach { mode ->
-            FilterChip(
-                selected = currentMode == mode,
-                onClick = { onSwitchMode(mode) },
-                label = { Text(mode.label, style = MaterialTheme.typography.labelMedium) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
-            )
+        // 三态模式：占满剩余宽度，模式变多时横滑
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CalendarMode.entries.forEach { mode ->
+                CalendarChip(
+                    label = mode.label,
+                    selected = currentMode == mode,
+                    onClick = { onSwitchMode(mode) },
+                )
+            }
         }
+        Spacer(Modifier.width(6.dp))
+        // 视图粒度
+        CalendarChip(label = "周", selected = !expanded, onClick = { onSwitchView(false) })
+        Spacer(Modifier.width(4.dp))
+        CalendarChip(label = "月", selected = expanded, onClick = { onSwitchView(true) })
     }
+}
+
+@Composable
+private fun CalendarChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+    )
 }
 
 // ==================== 图例 ====================
@@ -264,29 +345,40 @@ private fun BroadcastStatusHint(
     }
 }
 
-// ==================== 月份头部 ====================
+// ==================== 标题 + 翻页箭头 ====================
 
+/**
+ * 日历头部：左右箭头翻页，标题按粒度显示月份或周区间。
+ * 箭头与手势翻页都落在同一个锚点上，因此两条路径的结果完全一致。
+ */
 @Composable
-private fun MonthHeader(
-    year: Int,
-    month: Int,
+private fun CalendarHeader(
+    anchorDate: LocalDate,
+    expanded: Boolean,
     onSwitchMonth: (Int) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = { onSwitchMonth(-1) }) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上个月")
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = if (expanded) "上个月" else "上一周",
+            )
         }
         Text(
-            text = "%d年%d月".format(year, month),
+            text = CalendarRangeCalculator.title(anchorDate, expanded),
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )
         IconButton(onClick = { onSwitchMonth(1) }) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下个月")
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = if (expanded) "下个月" else "下一周",
+            )
         }
     }
 }
@@ -309,44 +401,188 @@ private fun WeekdayHeader() {
     }
 }
 
-// ==================== 日期网格 ====================
+// ==================== 日期网格（周 / 月双模） ====================
 
+/** 月视图可翻页的月份范围：锚点 ± 60 个月。 */
+private const val MonthsAround = 60L
+
+/** 周视图可翻页的周数范围：锚点 ± 260 周（约 5 年）。 */
+private const val WeeksAround = 260L
+
+/**
+ * 日格最大边长。日格宽度 = 可用宽度 / 7，折叠屏 / 平板下若不设上限会被拉成巨块，
+ * 因此把整行宽度收敛到 7 × 56dp 并居中。
+ */
+private val maxDayCellSize = 56.dp
+
+/**
+ * 月视图：kizitonwose 的 HorizontalCalendar，逐月分页横滑。
+ *
+ * 渲染层由库负责，数据契约仍是 Map<LocalDate, CalendarDayEvents>，与改造前完全一致。
+ * 用 [OutDateStyle.EndOfRow]（该月有几行渲染几行）而不是 EndOfGrid，短月才不会在手机上多出一整行。
+ */
 @Composable
-private fun DayGrid(
-    year: Int,
-    month: Int,
+private fun MonthGrid(
+    anchorDate: LocalDate,
     dayEvents: Map<LocalDate, CalendarDayEvents>,
     onDayClick: (LocalDate) -> Unit,
+    onAnchorDateChange: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val firstDay = LocalDate.of(year, month, 1)
-    val daysInMonth = firstDay.lengthOfMonth()
-    val firstDayOfWeek = firstDay.dayOfWeek.value % 7
+    val anchorMonth = YearMonth.from(anchorDate)
+    val kAnchorMonth = anchorMonth.toKotlinYearMonth()
+    // 范围只在首次组合确定（remember 无 key）：锚点变化时靠下面的 LaunchedEffect 滚动，
+    // 否则每次翻页都会重建 state，吞掉滚动动画
+    val calendarState = rememberCalendarState(
+        startMonth = remember { anchorMonth.minusMonths(MonthsAround).toKotlinYearMonth() },
+        endMonth = remember { anchorMonth.plusMonths(MonthsAround).toKotlinYearMonth() },
+        firstVisibleMonth = remember { anchorMonth.toKotlinYearMonth() },
+        // 项目为周日起始：必须显式指定，firstDayOfWeekFromLocale() 在中文 locale 下返回周一
+        firstDayOfWeek = KDayOfWeek.SUNDAY,
+        outDateStyle = OutDateStyle.EndOfRow,
+    )
 
-    Column {
-        var day = 1
-        for (row in 0 until 6) {
-            if (day > daysInMonth) break
-            Row(modifier = Modifier.fillMaxWidth()) {
-                for (col in 0 until 7) {
-                    val isEmptyCell = (row == 0 && col < firstDayOfWeek) || day > daysInMonth
-                    if (isEmptyCell) {
-                        Box(modifier = Modifier.weight(1f).aspectRatio(1f))
-                    } else {
-                        val date = LocalDate.of(year, month, day)
-                        val events = dayEvents[date]
-                        CalendarDayCell(
-                            date = date,
-                            events = events,
-                            onClick = { onDayClick(date) },
-                            modifier = Modifier.weight(1f).aspectRatio(1f),
-                        )
-                        day++
+    val latestAnchorDate by rememberUpdatedState(anchorDate)
+    val latestOnAnchorDateChange by rememberUpdatedState(onAnchorDateChange)
+    // ① 手势翻月 → 停下后回写锚点，让下方内容跟着切到新月份
+    LaunchedEffect(calendarState) {
+        // 把 isScrollInProgress 一起读进 flow：滑动期间的中间值会被跳过，
+        // 停下时该布尔翻回 false，保证最终停稳的那一页一定被回写（否则手势翻月不会更新下方内容）
+        snapshotFlow { calendarState.firstVisibleMonth.yearMonth to calendarState.isScrollInProgress }
+            .collect { (visible, scrolling) ->
+                if (scrolling) return@collect
+                // 必须读最新的锚点（rememberUpdatedState）：本 effect 的 key 是 state，lambda 会被长期持有，
+                // 直接用组合期的 kAnchorMonth 会变成陈旧捕获，滑回原月份时不再回写
+                if (visible != YearMonth.from(latestAnchorDate)) {
+                    // 回写可见月的 1 日：MonthGrid 只关心月份，日的部分对月视图无意义
+                    latestOnAnchorDateChange(visible.firstDay.toJavaLocalDate())
+                }
+            }
+    }
+    // ② 锚点变化（箭头翻页）→ 驱动日历滚到目标月：滑动与箭头结果一致，且不会来回振荡
+    LaunchedEffect(calendarState, anchorMonth) {
+        if (calendarState.firstVisibleMonth.yearMonth != kAnchorMonth) {
+            calendarState.animateScrollToMonth(kAnchorMonth)
+        }
+    }
+
+    HorizontalCalendar(
+        modifier = modifier,
+        state = calendarState,
+        contentHeightMode = ContentHeightMode.Wrap,
+        dayContent = { day ->
+            if (day.position == DayPosition.MonthDate) {
+                val date = day.date.toJavaLocalDate()
+                CalendarDayCell(
+                    date = date,
+                    events = dayEvents[date],
+                    onClick = { onDayClick(date) },
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                )
+            } else {
+                // 上 / 下月补位格保持空白，与改造前手绘网格一致
+                Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+            }
+        },
+    )
+}
+
+/**
+ * 周视图：kizitonwose 的 WeekCalendar，逐周分页横滑，恒定 7 天。
+ *
+ * [anchorDate] 所在的一周（周日起始）显示在同一行里，移动端纵向高度约为月视图的 1/3。
+ */
+@Composable
+private fun WeekGrid(
+    anchorDate: LocalDate,
+    dayEvents: Map<LocalDate, CalendarDayEvents>,
+    onDayClick: (LocalDate) -> Unit,
+    onAnchorDateChange: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val anchorWeekStart = CalendarRangeCalculator.weekStart(anchorDate)
+    val calendarState = rememberWeekCalendarState(
+        startDate = remember { anchorWeekStart.minusDays(7L * WeeksAround).toKotlinLocalDate() },
+        endDate = remember { anchorWeekStart.plusDays(7L * WeeksAround).toKotlinLocalDate() },
+        firstVisibleWeekDate = remember { anchorWeekStart.toKotlinLocalDate() },
+        firstDayOfWeek = KDayOfWeek.SUNDAY,
+    )
+
+    val latestAnchorDate by rememberUpdatedState(anchorDate)
+    val latestOnAnchorDateChange by rememberUpdatedState(onAnchorDateChange)
+    // ① 手势翻周 → 停下后回写锚点
+    LaunchedEffect(calendarState) {
+        // 同 MonthGrid：isScrollInProgress 一并进 flow，停稳后才回写锚点
+        snapshotFlow {
+            calendarState.firstVisibleWeek.days.first().date.toJavaLocalDate() to
+                calendarState.isScrollInProgress
+        }.collect { (visibleWeekStart, scrolling) ->
+            if (scrolling) return@collect
+            if (visibleWeekStart != CalendarRangeCalculator.weekStart(latestAnchorDate)) {
+                latestOnAnchorDateChange(visibleWeekStart)
+            }
+        }
+    }
+    // ② 锚点变化（箭头翻页 / 切回周视图）→ 驱动日历滚到目标周
+    LaunchedEffect(calendarState, anchorWeekStart) {
+        if (calendarState.firstVisibleWeek.days.first().date.toJavaLocalDate() != anchorWeekStart) {
+            calendarState.animateScrollToDate(anchorWeekStart.toKotlinLocalDate())
+        }
+    }
+
+    WeekCalendar(
+        modifier = modifier,
+        state = calendarState,
+        dayContent = { weekDay ->
+            val date = weekDay.date.toJavaLocalDate()
+            CalendarDayCell(
+                date = date,
+                events = dayEvents[date],
+                onClick = { onDayClick(date) },
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+            )
+        },
+    )
+}
+
+/**
+ * 日历按下即锁住顶级页 Pager，抬手 / 取消时解锁。
+ *
+ * 日历本身要横滑翻页，顶级页 HorizontalPager 也是横滑；不锁的话两者会抢同一个手势。
+ * 与搜索页复用同一把锁（[com.otakup.niriko.navigation.LocalSearchGestureLock]），
+ * [lock] 为 null（如预览 / 未提供 CompositionLocal 的场景）时不做任何事。
+ */
+private fun Modifier.calendarGestureLock(lock: MutableState<Boolean>?): Modifier {
+    if (lock == null) return this
+    return this.pointerInput(lock) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitFirstDown(requireUnconsumed = false)
+                lock.value = true
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.none { it.pressed }) break
                     }
+                } finally {
+                    lock.value = false
                 }
             }
         }
     }
 }
+
+// kizitonwose 用 kotlinx.datetime 类型，项目其余代码用 java.time：
+// 下面三个小转换器把边界收敛在一处，业务代码里不再出现两套日期类型混用。
+
+/** kotlinx.datetime.LocalDate → java.time.LocalDate。 */
+private fun KLocalDate.toJavaLocalDate(): LocalDate = kToJavaLocalDate()
+
+/** java.time.LocalDate → kotlinx.datetime.LocalDate。 */
+private fun LocalDate.toKotlinLocalDate(): KLocalDate = kToKotlinLocalDate()
+
+/** java.time.YearMonth → kotlinx.datetime.YearMonth。 */
+private fun YearMonth.toKotlinYearMonth(): KYearMonth = kToKotlinYearMonth()
 
 // ==================== 单日单元格（支持 2×2 封面网格） ====================
 
@@ -483,7 +719,7 @@ private fun CalendarCellCover(
  * 最多显示 4 个标记，超出显示 "+N"。
  */
 /** 构建当天标记列表（纯函数；结果由 DotsRow 缓存，避免每次重组重算）。 */
-private fun buildMarks(events: CalendarDayEvents): List<MarkInfo> {
+private fun buildMarks(events: CalendarDayEvents, typeColors: Map<SubjectType, Color>): List<MarkInfo> {
     val allMarks = mutableListOf<MarkInfo>()
 
     // 个人事件圆点：每部作品最多一个（开始优先于完成）
@@ -493,7 +729,7 @@ private fun buildMarks(events: CalendarDayEvents): List<MarkInfo> {
             processedIds.add(cws.collection.id)
             allMarks.add(
                 MarkInfo(
-                    color = cws.subject?.let { CalendarTypeColors[it.type] } ?: Color.Gray,
+                    color = cws.subject?.let { typeColors[it.type] } ?: Color.Gray,
                     type = MarkType.STARTED,
                 ),
             )
@@ -504,7 +740,7 @@ private fun buildMarks(events: CalendarDayEvents): List<MarkInfo> {
             processedIds.add(cws.collection.id)
             allMarks.add(
                 MarkInfo(
-                    color = cws.subject?.let { CalendarTypeColors[it.type] } ?: Color.Gray,
+                    color = cws.subject?.let { typeColors[it.type] } ?: Color.Gray,
                     type = MarkType.COMPLETED,
                 ),
             )
@@ -540,8 +776,10 @@ private fun buildMarks(events: CalendarDayEvents): List<MarkInfo> {
 
 @Composable
 private fun DotsRow(events: CalendarDayEvents) {
-    // 标记列表按 events 缓存：数据未变化时重组不重建
-    val allMarks = remember(events) { buildMarks(events) }
+    // 类型色表来自主题派生色（ui/theme/ChartPalette.kt）
+    val typeColors = rememberChartTypeColors()
+    // 标记列表按 events + 色表缓存：数据或主题色未变化时重组不重建
+    val allMarks = remember(events, typeColors) { buildMarks(events, typeColors) }
     val visibleMarks = allMarks.take(4)
     val remaining = allMarks.size - 4
 
@@ -625,51 +863,81 @@ private fun ReleaseMarker(size: Dp) {
 
 // ==================== 预览 ====================
 
+/** 预览用假数据：今天有开始 / 完成 / 放送，两天前有完成。 */
+private fun previewDayEvents(today: LocalDate): Map<LocalDate, CalendarDayEvents> = mapOf(
+    today to CalendarDayEvents(
+        date = today,
+        startedItems = listOf(
+            CollectionWithSubject(
+                collection = CollectionEntity(id = 1, subjectId = 328609, status = WatchStatus.WATCHING, watchedEpisodes = 3, startDate = today),
+                subject = SubjectEntity(subjectId = 328609, title = "ぼっち・ざ・ろっく！", titleCN = "孤独摇滚！", type = SubjectType.ANIME, totalEpisodes = 12, coverUrl = null),
+            ),
+        ),
+        completedItems = listOf(
+            CollectionWithSubject(
+                collection = CollectionEntity(id = 2, subjectId = 303, status = WatchStatus.COMPLETED, finishDate = today),
+                subject = SubjectEntity(subjectId = 303, title = "葬送のフリーレン", titleCN = "葬送的芙莉莲", type = SubjectType.ANIME, totalEpisodes = 28, coverUrl = null),
+            ),
+        ),
+        broadcastSubjects = listOf(
+            SubjectEntity(subjectId = 999, title = "2026年7月新番", type = SubjectType.ANIME, totalEpisodes = 12),
+        ),
+    ),
+    today.minusDays(2) to CalendarDayEvents(
+        date = today.minusDays(2),
+        startedItems = emptyList(),
+        completedItems = listOf(
+            CollectionWithSubject(
+                collection = CollectionEntity(id = 3, subjectId = 100, status = WatchStatus.COMPLETED, finishDate = today.minusDays(2)),
+                subject = SubjectEntity(subjectId = 100, title = "SPY×FAMILY", titleCN = "间谍过家家", type = SubjectType.MANGA, totalEpisodes = 12, coverUrl = null),
+            ),
+        ),
+    ),
+)
+
 @Preview(showBackground = true)
 @Composable
 private fun CalendarCardPreview() {
     val today = LocalDate.now()
-    val testEvents = mapOf(
-        today to CalendarDayEvents(
-            date = today,
-            startedItems = listOf(
-                CollectionWithSubject(
-                    collection = CollectionEntity(id = 1, subjectId = 328609, status = WatchStatus.WATCHING, watchedEpisodes = 3, startDate = today),
-                    subject = SubjectEntity(subjectId = 328609, title = "ぼっち・ざ・ろっく！", titleCN = "孤独摇滚！", type = SubjectType.ANIME, totalEpisodes = 12, coverUrl = null),
-                ),
-            ),
-            completedItems = listOf(
-                CollectionWithSubject(
-                    collection = CollectionEntity(id = 2, subjectId = 303, status = WatchStatus.COMPLETED, finishDate = today),
-                    subject = SubjectEntity(subjectId = 303, title = "葬送のフリーレン", titleCN = "葬送的芙莉莲", type = SubjectType.ANIME, totalEpisodes = 28, coverUrl = null),
-                ),
-            ),
-            broadcastSubjects = listOf(
-                SubjectEntity(subjectId = 999, title = "2026年7月新番", type = SubjectType.ANIME, totalEpisodes = 12),
-            ),
-        ),
-        today.minusDays(2) to CalendarDayEvents(
-            date = today.minusDays(2),
-            startedItems = emptyList(),
-            completedItems = listOf(
-                CollectionWithSubject(
-                    collection = CollectionEntity(id = 3, subjectId = 100, status = WatchStatus.COMPLETED, finishDate = today.minusDays(2)),
-                    subject = SubjectEntity(subjectId = 100, title = "SPY×FAMILY", titleCN = "间谍过家家", type = SubjectType.MANGA, totalEpisodes = 12, coverUrl = null),
-                ),
-            ),
-        ),
-    )
+    val testEvents = previewDayEvents(today)
 
     NirikoTheme {
         CalendarCard(
-            year = today.year,
-            month = today.monthValue,
+            anchorDate = today,
+            expanded = true,
             dayEvents = testEvents,
             calendarMode = CalendarMode.ALL,
             broadcastError = null,
             onSwitchMonth = {},
             onSwitchMode = {},
             onDayClick = {},
+            onSwitchView = {},
+            onAnchorDateChange = {},
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+/** 周视图预览：与月视图共用同一套日格渲染与图例。 */
+@Preview(showBackground = true)
+@Composable
+private fun CalendarCardWeekPreview() {
+    val today = LocalDate.now()
+    // 与月视图预览共用同一套假数据：两种粒度渲染的是同一份日格与图例
+    val testEvents = previewDayEvents(today)
+
+    NirikoTheme {
+        CalendarCard(
+            anchorDate = today,
+            expanded = false,
+            dayEvents = testEvents,
+            calendarMode = CalendarMode.ALL,
+            broadcastError = null,
+            onSwitchMonth = {},
+            onSwitchMode = {},
+            onDayClick = {},
+            onSwitchView = {},
+            onAnchorDateChange = {},
             modifier = Modifier.padding(16.dp),
         )
     }

@@ -24,4 +24,8 @@ interface ManualAwardDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(entities: List<ManualAwardEntity>)
+
+    /** 清空手动录入的权威成绩（WebDAV 同步合并后整体写回，计划 B4 · 4-8）。 */
+    @Query("DELETE FROM manual_awards")
+    suspend fun clearAll()
 }

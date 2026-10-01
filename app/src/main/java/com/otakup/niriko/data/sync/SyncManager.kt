@@ -5,8 +5,12 @@ import androidx.room.withTransaction
 import com.otakup.niriko.data.local.NirikoDatabase
 import com.otakup.niriko.data.local.WorkItem
 import com.otakup.niriko.data.local.entity.CollectionEntity
+import com.otakup.niriko.data.local.entity.EpisodeMyRatingEntity
+import com.otakup.niriko.data.local.entity.ManualAwardEntity
 import com.otakup.niriko.data.local.entity.SearchHistoryEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.local.entity.SubjectExternalIdEntity
+import com.otakup.niriko.data.settings.CoverOverrideStore
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.WorkType
@@ -24,7 +28,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
 
 private const val TAG = "SyncManager"
-private const val SYNC_VERSION = 2
+private const val SYNC_VERSION = 3
 
 /**
  * 同步结果。 */
@@ -41,12 +45,16 @@ data class SyncResult(
  * WebDAV 同步引擎。
  * 上传本地数据到 WebDAV，下载远程数据并与本地 LWW 合并。
  *
- * 同步数据格式：JSON，包含收藏(collections)、手工作品(workItems)、搜索历史(searchHistory)。
+ * 同步数据格式：JSON，包含收藏(collections)、手工作品(workItems)、搜索历史(searchHistory)，
+ * 以及 v3 起纳入的外部身份绑定(externalIds)、我的每集评分(episodeMyRatings)、
+ * 手动权威成绩(manualAwards)、封面覆盖(coverOverrides)（计划 B4 · 4-8）。
  * 不包含 subjects 表（太大且可重新拉取）。
  */
 class SyncManager(
     private val database: NirikoDatabase,
     private val webDavClient: WebDavClient,
+    /** 封面覆盖（DataStore）：v3 起随同步走，计划 B4 · 4-8。 */
+    private val coverOverrideStore: CoverOverrideStore? = null,
 ) {
 
     private val json = Json {
@@ -88,7 +96,22 @@ class SyncManager(
             val workItems = database.workDao().getAll()
             val history = database.searchHistoryDao().getAll()
 
-            val syncJson = buildSyncJson(collections, workItems, history)
+            // 计划 B4 · 4-8：此前只有 collections / workItems / history 三个字段，
+            // 外部绑定、我的每集评分、手动成绩、封面覆盖都不同步（换设备就丢）
+            val externalIds = database.externalIdDao().getAll()
+            val episodeRatings = database.externalRatingDao().getAllMyEpisodeRatings()
+            val manualAwards = database.manualAwardDao().getAll()
+            val coverOverrides = runCatching { coverOverrideStore?.all() }.getOrNull().orEmpty()
+
+            val syncJson = buildSyncJson(
+                collections = collections,
+                workItems = workItems,
+                history = history,
+                externalIds = externalIds,
+                episodeRatings = episodeRatings,
+                manualAwards = manualAwards,
+                coverOverrides = coverOverrides,
+            )
             val content = json.encodeToString(JsonObject.serializer(), syncJson)
 
             val ok = webDavClient.put("$baseUrl$REMOTE_FILE", content, user, pass)
@@ -120,21 +143,46 @@ class SyncManager(
             val remoteCollections = parseCollections(remoteRoot["collections"])
             val remoteWorkItems = parseWorkItems(remoteRoot["workItems"])
             val remoteHistory = parseSearchHistory(remoteRoot["searchHistory"])
+            // v3（计划 B4 · 4-8）：老版本的远端文件没有这些字段 → 解析为空列表，行为与之前一致
+            val remoteExternalIds = parseExternalIds(remoteRoot["externalIds"])
+            val remoteEpisodeRatings = parseEpisodeMyRatings(remoteRoot["episodeMyRatings"])
+            val remoteManualAwards = parseManualAwards(remoteRoot["manualAwards"])
+            val remoteCoverOverrides = parseCoverOverrides(remoteRoot["coverOverrides"])
 
             // 获取本地数据
             val localCollections = database.collectionDao().getAll()
             val localWorkItems = database.workDao().getAll()
             val localHistory = database.searchHistoryDao().getAll()
+            val localExternalIds = database.externalIdDao().getAll()
+            val localEpisodeRatings = database.externalRatingDao().getAllMyEpisodeRatings()
+            val localManualAwards = database.manualAwardDao().getAll()
+            val localCoverOverrides = runCatching { coverOverrideStore?.all() }.getOrNull().orEmpty()
 
             // LWW 合并
             val mergedCollections = mergeCollections(localCollections, remoteCollections)
             val mergedWorkItems = mergeWorkItems(localWorkItems, remoteWorkItems)
             val mergedHistory = mergeHistory(localHistory, remoteHistory)
+            // 有修改时间的走 LWW；封面覆盖没有时间戳 → 本地优先（见 SyncMergePolicy）
+            val mergedExternalIds = SyncMergePolicy.lastWriteWins(
+                localExternalIds, remoteExternalIds, { it.subjectId to it.provider }, { it.boundAt },
+            )
+            val mergedEpisodeRatings = SyncMergePolicy.lastWriteWins(
+                localEpisodeRatings, remoteEpisodeRatings, { it.epId }, { it.ratedAt },
+            )
+            val mergedManualAwards = SyncMergePolicy.lastWriteWins(
+                localManualAwards, remoteManualAwards, { it.id }, { it.createTime },
+            )
+            val mergedCoverOverrides = SyncMergePolicy.localFirst(localCoverOverrides, remoteCoverOverrides)
 
             // 写入数据库（整体事务：失败自动回滚，不出现半清空状态）
             database.withTransaction {
                 // FK 完整性：同步数据不含 subjects 表，先为缺失的引用插入占位条目
-                val referencedIds = mergedCollections.map { it.subjectId }.distinct()
+                val referencedIds = (
+                    mergedCollections.map { it.subjectId } +
+                        mergedExternalIds.map { it.subjectId } +
+                        mergedEpisodeRatings.map { it.subjectId } +
+                        mergedManualAwards.map { it.subjectId }
+                    ).distinct()
                 if (referencedIds.isNotEmpty()) {
                     val existing = database.subjectDao().getExistingIds(referencedIds).toSet()
                     val missing = referencedIds.filter { it !in existing }
@@ -163,10 +211,32 @@ class SyncManager(
                 if (mergedHistory.isNotEmpty()) {
                     database.searchHistoryDao().insertAll(mergedHistory)
                 }
+                // v3（计划 B4 · 4-8）
+                database.externalIdDao().clearAll()
+                if (mergedExternalIds.isNotEmpty()) {
+                    database.externalIdDao().insertAll(mergedExternalIds)
+                }
+                database.externalRatingDao().clearAllMyEpisodeRatings()
+                if (mergedEpisodeRatings.isNotEmpty()) {
+                    database.externalRatingDao().insertAllMyEpisodeRatings(mergedEpisodeRatings)
+                }
+                database.manualAwardDao().clearAll()
+                if (mergedManualAwards.isNotEmpty()) {
+                    database.manualAwardDao().insertAll(mergedManualAwards)
+                }
+            }
+
+            // 封面覆盖在 DataStore（不在 Room 事务里）：合并结果整体写回
+            // 用局部变量接一下：属性在 lambda 里拿不到智能转换
+            val coverStore = coverOverrideStore
+            if (coverStore != null && mergedCoverOverrides != localCoverOverrides) {
+                runCatching { coverStore.putAll(mergedCoverOverrides, clearFirst = true) }
             }
 
             Log.i(TAG, "Download & merge success: " +
-                    "collections=${mergedCollections.size}, workItems=${mergedWorkItems.size}")
+                    "collections=${mergedCollections.size}, workItems=${mergedWorkItems.size}, " +
+                    "externalIds=${mergedExternalIds.size}, episodeRatings=${mergedEpisodeRatings.size}, " +
+                    "manualAwards=${mergedManualAwards.size}, covers=${mergedCoverOverrides.size}")
 
             return SyncResult(
                 success = true,
@@ -237,6 +307,10 @@ class SyncManager(
         collections: List<CollectionEntity>,
         workItems: List<WorkItem>,
         history: List<SearchHistoryEntity>,
+        externalIds: List<SubjectExternalIdEntity> = emptyList(),
+        episodeRatings: List<EpisodeMyRatingEntity> = emptyList(),
+        manualAwards: List<ManualAwardEntity> = emptyList(),
+        coverOverrides: Map<Long, String> = emptyMap(),
     ): JsonObject = buildJsonObject {
         put("version", JsonPrimitive(SYNC_VERSION))
         put("syncTime", JsonPrimitive(System.currentTimeMillis()))
@@ -250,6 +324,53 @@ class SyncManager(
         put("searchHistory", buildJsonArray {
             history.forEach { add(historyToJson(it)) }
         })
+        // v3（计划 B4 · 4-8）
+        put("externalIds", buildJsonArray {
+            externalIds.forEach { add(externalIdToJson(it)) }
+        })
+        put("episodeMyRatings", buildJsonArray {
+            episodeRatings.forEach { add(episodeMyRatingToJson(it)) }
+        })
+        put("manualAwards", buildJsonArray {
+            manualAwards.forEach { add(manualAwardToJson(it)) }
+        })
+        put("coverOverrides", buildJsonObject {
+            coverOverrides.forEach { (subjectId, uri) -> put(subjectId.toString(), JsonPrimitive(uri)) }
+        })
+    }
+
+    // ===== v3 新增序列化（计划 B4 · 4-8）=====
+
+    private fun externalIdToJson(e: SubjectExternalIdEntity): JsonObject = buildJsonObject {
+        put("subjectId", JsonPrimitive(e.subjectId))
+        put("provider", JsonPrimitive(e.provider))
+        put("externalId", JsonPrimitive(e.externalId))
+        e.titleSnapshot?.let { put("titleSnapshot", JsonPrimitive(it)) }
+        put("confidence", JsonPrimitive(e.confidence.toDouble()))
+        put("bindMethod", JsonPrimitive(e.bindMethod))
+        e.subKey?.let { put("subKey", JsonPrimitive(it)) }
+        put("boundAt", JsonPrimitive(e.boundAt))
+    }
+
+    private fun episodeMyRatingToJson(r: EpisodeMyRatingEntity): JsonObject = buildJsonObject {
+        put("epId", JsonPrimitive(r.epId))
+        put("subjectId", JsonPrimitive(r.subjectId))
+        put("score", JsonPrimitive(r.score.toDouble()))
+        r.comment?.let { put("comment", JsonPrimitive(it)) }
+        put("rewatch", JsonPrimitive(r.rewatch))
+        put("ratedAt", JsonPrimitive(r.ratedAt))
+    }
+
+    private fun manualAwardToJson(a: ManualAwardEntity): JsonObject = buildJsonObject {
+        put("id", JsonPrimitive(a.id))
+        put("subjectId", JsonPrimitive(a.subjectId))
+        put("sourceId", JsonPrimitive(a.sourceId))
+        a.score?.let { put("score", JsonPrimitive(it.toDouble())) }
+        put("scoreMax", JsonPrimitive(a.scoreMax.toDouble()))
+        a.rankPosition?.let { put("rankPosition", JsonPrimitive(it)) }
+        a.note?.let { put("note", JsonPrimitive(it)) }
+        a.url?.let { put("url", JsonPrimitive(it)) }
+        put("createTime", JsonPrimitive(a.createTime))
     }
 
     private fun collectionToJson(c: CollectionEntity): JsonObject = buildJsonObject {
@@ -355,6 +476,74 @@ class SyncManager(
                 createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
             )
         }
+    }
+
+    // ===== v3 新增解析（计划 B4 · 4-8）=====
+
+    private fun parseExternalIds(element: JsonElement?): List<SubjectExternalIdEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { obj ->
+            val o = try { obj.jsonObject } catch (_: Exception) { return@mapNotNull null }
+            val subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
+            val provider = o["provider"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            val externalId = o["externalId"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            SubjectExternalIdEntity(
+                subjectId = subjectId,
+                provider = provider,
+                externalId = externalId,
+                titleSnapshot = o["titleSnapshot"]?.jsonPrimitive?.content,
+                confidence = o["confidence"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 0f,
+                bindMethod = o["bindMethod"]?.jsonPrimitive?.content ?: SubjectExternalIdEntity.METHOD_MANUAL,
+                subKey = o["subKey"]?.jsonPrimitive?.content,
+                boundAt = o["boundAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            )
+        }
+    }
+
+    private fun parseEpisodeMyRatings(element: JsonElement?): List<EpisodeMyRatingEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { obj ->
+            val o = try { obj.jsonObject } catch (_: Exception) { return@mapNotNull null }
+            val epId = o["epId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
+            val subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
+            EpisodeMyRatingEntity(
+                epId = epId,
+                subjectId = subjectId,
+                score = o["score"]?.jsonPrimitive?.content?.toFloatOrNull() ?: return@mapNotNull null,
+                comment = o["comment"]?.jsonPrimitive?.content,
+                rewatch = o["rewatch"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: false,
+                ratedAt = o["ratedAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            )
+        }
+    }
+
+    private fun parseManualAwards(element: JsonElement?): List<ManualAwardEntity> {
+        val arr = element as? JsonArray ?: return emptyList()
+        return arr.mapNotNull { obj ->
+            val o = try { obj.jsonObject } catch (_: Exception) { return@mapNotNull null }
+            val subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
+            val sourceId = o["sourceId"]?.jsonPrimitive?.content ?: return@mapNotNull null
+            ManualAwardEntity(
+                id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+                subjectId = subjectId,
+                sourceId = sourceId,
+                score = o["score"]?.jsonPrimitive?.content?.toFloatOrNull(),
+                scoreMax = o["scoreMax"]?.jsonPrimitive?.content?.toFloatOrNull() ?: 40f,
+                rankPosition = o["rankPosition"]?.jsonPrimitive?.content?.toIntOrNull(),
+                note = o["note"]?.jsonPrimitive?.content,
+                url = o["url"]?.jsonPrimitive?.content,
+                createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+            )
+        }
+    }
+
+    private fun parseCoverOverrides(element: JsonElement?): Map<Long, String> {
+        val obj = element as? JsonObject ?: return emptyMap()
+        return obj.mapNotNull { (key, value) ->
+            val subjectId = key.toLongOrNull() ?: return@mapNotNull null
+            val uri = (value as? JsonPrimitive)?.content ?: return@mapNotNull null
+            subjectId to uri
+        }.toMap()
     }
 
     private fun parseStringList(element: JsonElement?): List<String> {

@@ -73,13 +73,40 @@ private fun formatUntil(at: Long, now: Long): String {
     }
 }
 
-/** 同步与备份设置页：WebDAV 同步 + JSON 备份导出/导入。 */
+/** 同步与备份设置页（二级页外壳：脚手架 + 返回箭头 + Snackbar 宿主）。 */
 @Composable
 fun SyncBackupSettingsScreen(
     viewModel: SettingsViewModel,
     backupViewModel: BackupViewModel?,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        SettingsDetailScaffold(title = "同步与备份", onBack = onBack) {
+            SyncBackupSettingsContent(
+                viewModel = viewModel,
+                backupViewModel = backupViewModel,
+                snackbarHostState = snackbarHostState,
+            )
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}
+
+/**
+ * 「同步与备份」二级页正文（不含脚手架与返回箭头、不含 SnackbarHost 宿主）：
+ * 窄屏由 SyncBackupSettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ */
+@Composable
+fun SyncBackupSettingsContent(
+    viewModel: SettingsViewModel,
+    backupViewModel: BackupViewModel?,
+    snackbarHostState: SnackbarHostState,
 ) {
     val settings by viewModel.settings.collectAsState()
 
@@ -102,7 +129,6 @@ fun SyncBackupSettingsScreen(
     } else {
         remember { mutableStateOf(com.otakup.niriko.viewmodel.BackupUiState()) }
     }
-    val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -162,89 +188,82 @@ fun SyncBackupSettingsScreen(
         backupViewModel?.clearMessages()
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        SettingsDetailScaffold(title = "同步与备份", onBack = onBack) {
-            // ===== WebDAV =====
-            SettingsGroupTitle("WebDAV 同步")
+    Column {
+        // ===== WebDAV =====
+        SettingsGroupTitle("WebDAV 同步")
+        SettingsSplitGroup(content = listOf(
+            {
+                SettingsPickerRow(
+                    icon = Icons.Outlined.Cloud,
+                    title = "服务器地址",
+                    description = "WebDAV 服务端 URL 与账号",
+                    value = if (settings.webDavUrl.isEmpty()) "未配置" else settings.webDavUrl,
+                    onClick = { showWebDavConfig = true },
+                )
+            },
+            {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Autorenew,
+                    title = "自动同步",
+                    description = autoSyncSummary,
+                    checked = settings.webDavAutoSync,
+                    onCheckedChange = viewModel::setWebDavAutoSync,
+                )
+            },
+        ))
+        if (settings.webDavUrl.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
+                OutlinedButton(
+                    onClick = { viewModel.uploadToWebDav() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !viewModel.isSyncing.value,
+                ) {
+                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Text("上传")
+                }
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(
+                    onClick = { viewModel.downloadFromWebDav() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !viewModel.isSyncing.value,
+                ) {
+                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    else Text("下载")
+                }
+            }
+        }
+
+        // ===== 备份 =====
+        if (backupViewModel != null) {
+            SettingsGroupTitle("数据备份")
             SettingsSplitGroup(content = listOf(
                 {
-                    SettingsPickerRow(
-                        icon = Icons.Outlined.Cloud,
-                        title = "服务器地址",
-                        description = "WebDAV 服务端 URL 与账号",
-                        value = if (settings.webDavUrl.isEmpty()) "未配置" else settings.webDavUrl,
-                        onClick = { showWebDavConfig = true },
+                    SettingsActionRow(
+                        icon = Icons.Outlined.FileUpload,
+                        title = "导出备份",
+                        description = "将所有数据导出为 JSON 文件",
+                        isLoading = backupState.isExporting,
+                        showChevron = false,
+                        onClick = {
+                            backupViewModel.getExportFileName().let { name ->
+                                exportLauncher.launch(name)
+                            }
+                        },
                     )
                 },
                 {
-                    SettingsSwitchRow(
-                        icon = Icons.Outlined.Autorenew,
-                        title = "自动同步",
-                        description = autoSyncSummary,
-                        checked = settings.webDavAutoSync,
-                        onCheckedChange = viewModel::setWebDavAutoSync,
+                    SettingsActionRow(
+                        icon = Icons.Outlined.FileDownload,
+                        title = "从备份恢复",
+                        description = "从 JSON 文件恢复数据（与本地冲突的记录以本地为准）",
+                        isLoading = backupState.isImporting,
+                        showChevron = false,
+                        onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
                     )
                 },
             ))
-            if (settings.webDavUrl.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                    OutlinedButton(
-                        onClick = { viewModel.uploadToWebDav() },
-                        modifier = Modifier.weight(1f),
-                        enabled = !viewModel.isSyncing.value,
-                    ) {
-                        if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else Text("上传")
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedButton(
-                        onClick = { viewModel.downloadFromWebDav() },
-                        modifier = Modifier.weight(1f),
-                        enabled = !viewModel.isSyncing.value,
-                    ) {
-                        if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else Text("下载")
-                    }
-                }
-            }
-
-            // ===== 备份 =====
-            if (backupViewModel != null) {
-                SettingsGroupTitle("数据备份")
-                SettingsSplitGroup(content = listOf(
-                    {
-                        SettingsActionRow(
-                            icon = Icons.Outlined.FileUpload,
-                            title = "导出备份",
-                            description = "将所有数据导出为 JSON 文件",
-                            isLoading = backupState.isExporting,
-                            showChevron = false,
-                            onClick = {
-                                backupViewModel.getExportFileName().let { name ->
-                                    exportLauncher.launch(name)
-                                }
-                            },
-                        )
-                    },
-                    {
-                        SettingsActionRow(
-                            icon = Icons.Outlined.FileDownload,
-                            title = "从备份恢复",
-                            description = "从 JSON 文件恢复全部数据（将覆盖现有数据）",
-                            isLoading = backupState.isImporting,
-                            showChevron = false,
-                            onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
-                        )
-                    },
-                ))
-            }
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
     }
-
     // 导入确认弹窗
     if (showImportConfirm && pendingImportJson != null) {
         AlertDialog(
@@ -253,12 +272,21 @@ fun SyncBackupSettingsScreen(
                 pendingImportJson = null
             },
             title = { Text("恢复备份") },
-            text = { Text("此操作将覆盖当前所有数据（收藏、作品记录、搜索历史）。确定要继续吗？") },
+            text = {
+                Text(
+                    "将读取备份并与本地合并：\n" +
+                        "· 与本地冲突的记录以本地为准（本地值保留）\n" +
+                        "· 备份中本地没有的记录会被并入\n" +
+                        "· 私密收藏本来就不在备份里\n" +
+                        "确定要继续吗？",
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showImportConfirm = false
-                        backupViewModel?.import(pendingImportJson ?: "")
+                        // 计划 B2-4（用户确认：冲突则本地优先）：走合并模式，不再全覆盖
+                        backupViewModel?.import(pendingImportJson ?: "", merge = true)
                         pendingImportJson = null
                     },
                 ) { Text("确定恢复", color = MaterialTheme.colorScheme.error) }

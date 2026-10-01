@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  B6：本地单元测试（Robolectric）专用的清单。
+
+  AGP 在 testOptions.unitTests.isIncludeAndroidResources = true 时会额外跑
+  :app:processDebugUnitTestManifest，把单元测试运行时类路径上所有 AAR 的清单并进来。
+  miuix-blur-android:0.9.0 声明 minSdk 31，而本工程 minSdk 26，主清单靠
+  tools:overrideLibrary 放行；单元测试清单此前由 AGP 合成、不带这条放行，于是合并直接失败。
+
+  这里补一份等价的放行声明，语义与 app/src/main/AndroidManifest.xml:20 完全一致，
+  只作用于单元测试清单合并，不进 APK。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-sdk tools:overrideLibrary="top.yukonga.miuix.kmp.blur" />
+
+</manifest>

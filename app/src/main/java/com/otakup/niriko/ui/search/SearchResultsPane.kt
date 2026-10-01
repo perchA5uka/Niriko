@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +40,7 @@ import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.probe.ProbeResult
 import com.otakup.niriko.data.probe.SearchChainProbe
 import com.otakup.niriko.ui.components.ErrorContent
+import com.otakup.niriko.ui.components.SkeletonSubjectCard
 import com.otakup.niriko.ui.subject.PersonSearchCard
 import com.otakup.niriko.ui.subject.SearchFilterPanel
 import com.otakup.niriko.ui.subject.SearchHistorySection
@@ -226,8 +226,13 @@ fun SearchResultsPane(
                         onSubjectClick = onSubjectClick,
                         onClearSuggestions = onClearSuggestions,
                     )
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    // 搜索中：横向卡片骨架（B4），与真实结果卡同尺寸（圆角 20.dp / padding 12.dp /
+                    // 封面 80.dp × 3:4），结果到达替换时不跳版
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        repeat(3) { SkeletonSubjectCard() }
                     }
                 }
             }

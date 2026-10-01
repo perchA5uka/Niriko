@@ -9,11 +9,11 @@
 | 项目信息 | 值 |
 | --- | --- |
 | 应用名 / 包名 | Niriko · `com.otakup.niriko` |
-| 版本 | 1.0.0（versionCode 1） |
+| 版本 | 1.1.0（versionCode 2） |
 | SDK | minSdk 26 · targetSdk 34 · compileSdk 37 |
 | 技术栈 | Kotlin + Jetpack Compose + Material 3 · 单 Activity |
 | 本地存储 | Room（18 张表，v29） + DataStore Preferences |
-| 单元测试 | 436 个（纯 JVM，无需设备） |
+| 单元测试 | 628 个（JVM 单测，71 个测试类，无需设备） |
 | 开源许可 | MIT（见 `LICENSE`；第三方组件见 `THIRD-PARTY-NOTICES.md`） |
 
 ---
@@ -428,7 +428,7 @@ docs/                            # 设计与调研文档
 - **纯函数优先**：统计 / 排序 / 匹配 / 在播判定等逻辑抽成不依赖 Android 的纯函数，便于单测
 - **KDoc 用「」而非反引号**（本工程构建工具链对反引号处理不稳定）
 - **Room 迁移的 DDL 必须与 `app/schemas` 导出的 `createSql` 逐字一致**——schema 校验只在真机首次开库时执行，编译期不会报错
-- **新增逻辑请补 JVM 单测**：当前 436 个用例覆盖统计、趋势、发现排序、筛选映射、匹配打分、刷新策略、解析器等
+- **新增逻辑请补 JVM 单测**：当前 628 个用例覆盖统计、趋势、发现排序、筛选映射、匹配打分、刷新策略、解析器、图表分桶与累计、日历周/月映射、窗口尺寸类别与折痕分栏、玻璃降级判定等
 - 引入新第三方依赖前先讨论，优先使用平台 API 与已有库实现
 
 ---
@@ -480,11 +480,11 @@ docs/                            # 设计与调研文档
 ### 工程待办
 
 - WebDAV 同步尚未纳入 `subject_external_ids`、`episode_my_ratings`、`manual_awards`、封面覆盖等新增数据（JSON 备份已包含）
-- 按源限流闸门（IGDB 4 req/s、MusicBrainz 1 req/s、VNDB 200 次 / 5 分钟）尚未实现，目前靠「高置信提前停止查询」与批量查询降低请求量
-- Room 迁移测试未补（Room testing / Robolectric）
+- 按源限流闸门（IGDB 4 req/s、MusicBrainz 1 req/s、VNDB 200 次 / 5 分钟）已实现，落在 `util/SourceRateLimiter.kt` 与 `util/SourceRateLimits.kt`，已接入评分请求与 VNDB 客户端；同时继续靠「高置信提前停止查询」与批量查询进一步降低请求量
+- Room 迁移测试已有两层：静态迁移链校验（`NirikoMigrationChainTest`，5 例）+ 基于 Robolectric 真实 SQLite 的迁移测试（`RoomMigrationTest`，3 例：逐边界建库比对目标 schema、每个已导出起点升到 v29、以及 v25 schema 缺口不影响 24→25→26 链）
 - 详情页 `ExtendedSnapshot` 未包含全部新字段，二次进详情页会重跑部分外部源详情 / 剧照候选
-- 平板 / 折叠屏的自适应布局（导航栏 + 详情双栏）尚未实现
-- `release` 构建未配置签名，`assembleRelease` 产出的是未签名 APK；如需分发请自备 keystore（`*.jks` / `*.keystore` 已在 `.gitignore` 中，切勿提交）
+- 平板 / 折叠屏自适应布局已实现：宽屏（≥840dp）改用竖向玻璃 dock（`ui/bottombar/LiquidVerticalDock.kt`），详情页并排两栏且折痕处内容不跨越（`ui/adaptive/AdaptiveDetailScaffold.kt`），设置页为「分类导航列 + 二级页正文列」；帐篷模式（水平折痕上下分栏）首轮未做
+- `release` 构建已配置签名：凭据只从本地 `keystore.properties`（已在 `.gitignore` 中，切勿提交）读取，该文件不存在时 `assembleRelease` 才会退化为未签名 APK
 - `compileSdk = 37` 需要本机安装 Android SDK Platform 37.0，Android Studio 版本过旧时可能同步失败；另外 AGP 8.13.2 官方只测试到 compileSdk 36.1，构建会打印一条「未测试的 compile SDK」警告（属预期，不影响产物）
-- 仓库未附带 CI，单元测试与构建需本地执行：`.\gradlew.bat testDebugUnitTest`
-- `app/schemas` 中缺少 v25 的 schema 文件（代码里的迁移链含 24→25→26），补迁移测试时需一并补齐
+- 仓库已附带 CI（`.github/workflows/android-ci.yml`：JDK 17 → 单元测试 → 构建 → 上传测试报告），但尚未在真实 GitHub runner 上验证过；本地仍需 `.\gradlew.bat testDebugUnitTest`。CI 中**没有**截图视觉回归步骤：B6 探针已证伪该方案——kyant backdrop 与本项目自己的 AGSL 着色器在 Robolectric 的 native SkSL 下编译失败（`error: 4: 'color' is not a valid layout qualifier` 与 `error: 50/51: cannot swizzle value of type 'shader'`），失败点在 `DrawBackdropNode.onAttach`，任何走真玻璃的卡片都无法离屏光栅化
+- `app/schemas` 中确实缺少 v25 的 schema 文件，但**迁移测试不需要它**：Room 只会读起点与终点版本的 schema，`RoomMigrationTest` 直接用 `24.json` 建库再跑生产的 `MIGRATION_24_25` + `MIGRATION_25_26` 对 `26.json` 校验；该文件无法重新生成（仓库历史已被压缩，`git log -S 'version = 25'` 零命中），手工伪造 identityHash 必然错误，因此保持缺失

@@ -1,10 +1,14 @@
 package com.otakup.niriko.ui.common
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -47,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -62,7 +67,7 @@ import kotlin.math.abs
  * - 捏合缩放 + 双指平移（`detectTransformGestures`）；
  * - 双击在 1× 与 2.5× 之间切换；
  * - 缩放态下自动禁用翻页，避免手势打架；
- * - 保存到相册（MediaStore，Android 10+ 免权限写入 Pictures/Niriko）；
+ * - 保存到相册（MediaStore，Android 10+ 免权限写入 Pictures/Niriko；API ≤ 28 在**初次点击保存**时申请写存储权限，B2-1）；
  * - 用浏览器打开原图。
  *
  * 复用场景：剧照区、Anitabi 取景地、Steam 截图、封面候选预览。
@@ -87,6 +92,25 @@ fun ImageViewer(
     )
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // 计划 B2-1（用户确认：初次在使用保存功能时申请）：
+    // 只有 API ≤ 28 的 MediaStore 写入需要 WRITE_EXTERNAL_STORAGE；29+ 分区存储免权限。
+    // 拒绝后不做二次引导，用户再次点击保存仍会走系统询问。
+    var pendingSaveUrl by remember { mutableStateOf<String?>(null) }
+    val legacyStoragePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        val url = pendingSaveUrl
+        pendingSaveUrl = null
+        if (granted && url != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) { saveImageToGallery(context, url, referer) }
+                snackbarHostState.showSnackbar(if (ok) "已保存到相册（Pictures/Niriko）" else "保存失败")
+            }
+        } else if (!granted) {
+            scope.launch { snackbarHostState.showSnackbar("保存失败：未获得存储权限") }
+        }
+    }
 
     // 翻页后重置缩放
     LaunchedEffect(pagerState.currentPage) {
@@ -202,11 +226,17 @@ fun ImageViewer(
                 val currentUrl = urls.getOrNull(pagerState.currentPage)
                 IconButton(onClick = {
                     val url = currentUrl ?: return@IconButton
-                    scope.launch {
-                        val ok = withContext(Dispatchers.IO) {
-                            saveImageToGallery(context, url, referer)
+                    if (needsLegacyStoragePermission(context)) {
+                        // 只有旧系统才申请：初次点击保存时询问
+                        pendingSaveUrl = url
+                        legacyStoragePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    } else {
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                saveImageToGallery(context, url, referer)
+                            }
+                            snackbarHostState.showSnackbar(if (ok) "已保存到相册（Pictures/Niriko）" else "保存失败")
                         }
-                        snackbarHostState.showSnackbar(if (ok) "已保存到相册（Pictures/Niriko）" else "保存失败")
                     }
                 }) {
                     Icon(Icons.Filled.Download, contentDescription = "保存到相册", tint = Color.White)
@@ -296,6 +326,17 @@ internal fun saveImageToGallery(
         true
     }
 }.getOrDefault(false)
+
+/**
+ * 计划 B2-1：是否需要写外部存储权限。
+ * 只有 API ≤ 28 才需要（29+ 用 MediaStore 分区存储写入 Pictures/Niriko，免权限）。
+ */
+private fun needsLegacyStoragePermission(context: Context): Boolean =
+    Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) != PackageManager.PERMISSION_GRANTED
 
 /** 单张图片的下载上限（防止误点一张几十 MB 的原图把内存/流量打爆）。 */
 private const val MAX_DOWNLOAD_BYTES = 24L * 1024 * 1024

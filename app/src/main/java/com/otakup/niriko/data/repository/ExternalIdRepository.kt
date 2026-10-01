@@ -51,6 +51,17 @@ class ExternalIdRepository(
         }
     }
 
+    /**
+     * 手动指定季号（计划 B3 · 4-14）：只更新 subKey，保留外部 ID / 标题快照 / 置信度等其余字段。
+     * TMDb 多季作品此前只能按年份 + 集数自动挑季，挑错时没有出口。
+     */
+    suspend fun updateSubKey(subjectId: Long, provider: String, subKey: String?) {
+        runCatching {
+            val existing = dao.get(subjectId, provider) ?: return@runCatching
+            dao.upsert(existing.copy(subKey = subKey))
+        }
+    }
+
     suspend fun unbind(subjectId: Long, provider: String) {
         runCatching { dao.delete(subjectId, provider) }
     }

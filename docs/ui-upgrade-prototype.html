@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niriko · UI 升级原型 · 现状 vs 改后（含平板 / 折叠屏）</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:#08080a;color:#e8e8ea;
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    padding:28px 22px 80px;
+  }
+  h1{font-size:22px;margin-bottom:6px}
+  .lead{font-size:12.5px;color:#8b8b93;line-height:1.75;max-width:1120px;margin-bottom:4px}
+  .lead b{color:#c9c9d1}
+  .warn{border-left:3px solid #ffb300;padding:8px 12px;background:#141007;border-radius:0 8px 8px 0;margin:14px 0 22px;font-size:12.5px;color:#d8c9a0;line-height:1.8;max-width:1120px}
+
+  /* ===== 顶部 tab ===== */
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;position:sticky;top:0;z-index:50;
+        background:rgba(8,8,10,.92);backdrop-filter:blur(10px);padding:12px 0 12px;border-bottom:1px solid #1e1e23;margin-bottom:22px}
+  .tabs button{
+    background:#141418;color:#b9b9c2;border:1px solid #2a2a31;border-radius:999px;
+    padding:7px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;white-space:nowrap
+  }
+  .tabs button:hover{border-color:#4a4a55;color:#fff}
+  .tabs button.on{background:#e8e8ea;color:#0b0b0d;border-color:#e8e8ea;font-weight:700}
+
+  .panel{display:none}
+  .panel.on{display:block}
+  .ph{font-size:17px;font-weight:700;margin:0 0 4px}
+  .pdesc{font-size:12.5px;color:#8b8b93;line-height:1.8;max-width:1120px;margin-bottom:20px}
+  .pdesc code{background:#1a1a1f;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#b9d8bd}
+
+  /* ===== 对比布局 ===== */
+  .cmp{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+  .col{display:flex;flex-direction:column}
+  .col > h3{font-size:13.5px;margin-bottom:3px}
+  .col > .sub{font-size:11.5px;color:#7d7d86;margin-bottom:10px;min-height:16px}
+  .before h3{color:#ff8a80}
+  .after h3{color:#a5d6a7}
+
+  /* ===== 设备框 ===== */
+  .dev{position:relative;flex-shrink:0}
+  .phone{width:360px;height:720px;border-radius:28px;overflow:hidden;position:relative;
+         border:1px solid #2e2e36;background:#0f0f13}
+  .tablet{width:820px;height:600px;border-radius:22px;overflow:hidden;position:relative;
+          border:1px solid #2e2e36;background:#0f0f13}
+  .fold{width:760px;height:560px;border-radius:18px;overflow:hidden;position:relative;
+        border:1px solid #2e2e36;background:#0f0f13}
+  .fold::after{
+    content:"";position:absolute;left:50%;top:0;bottom:0;width:0;
+    border-left:2px dashed rgba(255,255,255,.28);transform:translateX(-1px);z-index:40;pointer-events:none
+  }
+  .foldtag{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:41;
+           font-size:10px;color:#8b8b93;background:rgba(8,8,10,.85);padding:1px 8px;border-radius:999px;border:1px solid #33333c}
+  .scroll{position:absolute;inset:0;overflow-y:auto;scrollbar-width:none}
+  .scroll::-webkit-scrollbar{display:none}
+
+  .wall{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(ellipse 80% 40% at 22% 8%, rgba(255,183,197,.30), transparent 70%),
+      radial-gradient(ellipse 60% 36% at 80% 18%, rgba(160,190,255,.22), transparent 68%),
+      radial-gradient(ellipse 70% 46% at 48% 88%, rgba(84,140,90,.30), transparent 74%),
+      linear-gradient(168deg,#241d24 0%,#1a1920 40%,#161d18 100%);
+  }
+
+  .topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;
+          padding:13px 16px;font-size:16px;font-weight:600;text-shadow:0 1px 6px rgba(0,0,0,.6);
+          background:linear-gradient(rgba(8,8,10,.55),transparent)}
+  .topbar .sp{flex:1}
+  .topbar .ic{opacity:.8;font-size:13.5px;letter-spacing:2px}
+
+  .sec{font-size:14.5px;font-weight:700;padding:16px 18px 8px;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .sec .rt{float:right;font-size:11px;color:#a5d6a7;font-weight:400}
+
+  /* ===== 现状：区块直接浮在背景上（细线、透明） ===== */
+  .before .blk{padding:2px 16px 0}
+  .before .statrow{display:flex;gap:10px;padding:0 16px}
+  .before .stat{flex:1;border-radius:14px;padding:12px 8px;text-align:center;
+                background:rgba(20,20,22,.55);border:1px solid rgba(255,255,255,.08)}
+  .before .stat .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+  .before .stat .l{font-size:10.5px;color:rgba(255,255,255,.55);margin-top:3px}
+  .before .canvasbox{margin:0 16px;border:1px dashed rgba(255,255,255,.22);border-radius:12px;
+                     padding:10px;font-size:10.5px;color:#9a9aa2;text-align:center;line-height:1.7}
+  .before .chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 18px}
+  .before .chip{font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.26);color:rgba(255,255,255,.72)}
+  .before .deadzone{margin:0 16px;border:1px dashed rgba(255,138,128,.5);border-radius:10px;
+                    padding:8px 10px;font-size:10.5px;color:#ff8a80;line-height:1.7}
+
+  /* ===== 改后：不透明容器卡 ===== */
+  .after .card{margin:13px 16px 0;background:#17171c;border-radius:20px;padding:14px 16px;
+               border-top:1px solid rgba(255,255,255,.07);
+               box-shadow:0 2px 8px rgba(0,0,0,.35),0 4px 3px rgba(0,0,0,.2);position:relative}
+  .after .card .sec{padding:0 0 9px;text-shadow:none;font-size:13.5px}
+  .after .statrow{display:flex;gap:9px}
+  .after .stat{flex:1;border-radius:12px;padding:11px 7px;text-align:center;background:#212127}
+  .after .stat .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+  .after .stat .l{font-size:10.5px;color:rgba(255,255,255,.5);margin-top:3px}
+  .after .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .after .chip{font-size:11px;padding:5px 10px;border-radius:9px;background:rgba(165,214,167,.13);color:#b9dec0}
+  .after .chip.act{background:rgba(165,214,167,.22);box-shadow:inset 0 0 0 1px rgba(165,214,167,.45)}
+
+  /* ===== 图表（CSS 绘制） ===== */
+  .chart{position:relative;height:132px;margin:4px 0 0}
+  .chart .grid{position:absolute;left:0;right:0;height:1px;background:rgba(255,255,255,.07)}
+  .chart .ln{position:absolute;left:0;right:0;height:2px;border-radius:2px}
+  .chart .ln.dash{height:0;border-top:2px dashed rgba(255,255,255,.45)}
+  .chart .dot{position:absolute;width:9px;height:9px;border-radius:50%;transform:translate(-50%,-50%);
+              box-shadow:0 0 0 2.5px #17171c}
+  .chart .dot.ext{width:12px;height:12px}
+  .chart .area{position:absolute;left:0;right:0;bottom:0;top:0;
+               background:linear-gradient(transparent,rgba(129,199,132,.22));clip-path:polygon(0 42%,10% 34%,20% 46%,30% 22%,40% 30%,50% 18%,60% 36%,70% 26%,80% 40%,90% 30%,100% 38%,100% 100%,0 100%)}
+  .chart .sel{position:absolute;top:0;bottom:0;width:1.5px;background:rgba(255,255,255,.35)}
+  .chart .tip{position:absolute;top:-2px;transform:translateX(-50%);background:#2a2a31;border:1px solid #3d3d47;
+              border-radius:6px;font-size:10px;padding:3px 7px;white-space:nowrap;color:#e8e8ea}
+  .chart.lofi canvas{display:block}
+  .axl{display:flex;justify-content:space-between;font-size:9.5px;color:#7d7d86;margin-top:4px}
+
+  /* 手绘感（现状） */
+  .sketch{width:100%;height:132px;display:block}
+  .sketch .stroke{fill:none;stroke:#8b8b93;stroke-width:2.5}
+  .sketch .stroke.d{stroke:#6b6b73;stroke-dasharray:7 6;stroke-width:2}
+  .sketch .ar{fill:rgba(139,139,147,.14);stroke:none}
+  .sketch .pt{fill:#8b8b93}
+
+  /* ===== 柱状图 ===== */
+  .bars{display:flex;align-items:flex-end;gap:3px;height:104px;padding-top:6px}
+  .bars i{flex:1;background:#3a3a44;border-radius:2px 2px 0 0;min-width:3px;position:relative}
+  .bars i.g{background:#81c784}
+  .bars i.b{background:#64b5f6}
+  .bars i.o{background:#ffb74d}
+  .bars i span{position:absolute;bottom:-15px;left:50%;transform:translateX(-50%);font-size:8.5px;color:#7d7d86;white-space:nowrap}
+  .bars.tight i{border-radius:3px 3px 0 0}
+  .legendrow{display:flex;gap:14px;font-size:10.5px;color:#9a9aa2;margin-top:20px}
+  .legendrow i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+  /* ===== 日历 ===== */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:4px}
+  .cal .h{font-size:9px;color:#7d7d86;text-align:center;padding-bottom:2px}
+  .cal .d{aspect-ratio:1;border-radius:5px;background:#212127;display:flex;flex-direction:column;
+          align-items:center;justify-content:center;font-size:10.5px;color:#c9c9d1;position:relative;gap:1px}
+  .cal .d.out{opacity:.32}
+  .cal .d.today{box-shadow:inset 0 0 0 1.5px #a5d6a7}
+  .cal .d.sel{background:#2c3a2e}
+  .cal .d .m{display:flex;gap:2px;height:5px;align-items:center}
+  .cal .d .m i{width:4px;height:4px;display:block}
+  .cal .d .m i.b{background:#fdd835;transform:rotate(45deg)}
+  .cal .d .m i.r{background:#66bb6a;border-radius:50%}
+  .cal .d .m i.p{background:#64b5f6;border-radius:50%}
+  .week{cursor:default}
+  .weekstrip .d{border-radius:8px;aspect-ratio:auto;height:62px}
+  .weekstrip .d .m{margin-top:2px}
+  .wlabel{font-size:9.5px;color:#7d7d86;text-align:center;padding:4px 0 0}
+
+  /* ===== 侧栏（平板） ===== */
+  .scaffold{position:absolute;inset:0;display:flex}
+  .rail{width:86px;flex-shrink:0;border-right:1px solid rgba(255,255,255,.08);
+        background:rgba(14,14,17,.6);backdrop-filter:blur(18px) saturate(1.4);
+        display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:8px;position:relative}
+  .rail .brand{width:30px;height:30px;border-radius:9px;background:linear-gradient(140deg,#81c784,#4a8a52);margin-bottom:12px}
+  .rail .it{width:66px;padding:9px 0;border-radius:12px;font-size:9.5px;color:#9a9aa2;text-align:center;line-height:1.5}
+  .rail .it em{display:block;font-style:normal;font-size:15px;opacity:.75;margin-bottom:2px}
+  .rail .it.on{background:rgba(165,214,167,.14);color:#c8e6c9;box-shadow:inset 0 0 0 1px rgba(165,214,167,.3)}
+  .rail .it.on em{opacity:1}
+  .rail .bot{margin-top:auto;font-size:9px;color:#6b6b73}
+  .content{flex:1;position:relative;overflow:hidden}
+  .content .scroll{position:absolute;inset:0;overflow-y:auto}
+
+  /* ===== ⑫ 竖向液态玻璃 dock（悬浮胶囊，不是贴边 rail） ===== */
+  .vdock{
+    position:absolute;top:50%;transform:translateY(-50%);z-index:30;
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    padding:12px 10px;border-radius:999px;
+    background:rgba(26,26,31,.52);
+    backdrop-filter:blur(22px) saturate(1.5);
+    -webkit-backdrop-filter:blur(22px) saturate(1.5);
+    border:1px solid rgba(255,255,255,.16);
+    box-shadow:0 10px 32px rgba(0,0,0,.5),
+               inset 0 1px 0 rgba(255,255,255,.16),
+               inset 0 -1px 0 rgba(0,0,0,.28);
+  }
+  .vdock .vi{
+    width:46px;padding:8px 0;border-radius:16px;text-align:center;color:#9a9aa2;
+    font-size:9px;line-height:1.4;position:relative;
+  }
+  .vdock .vi em{display:block;font-style:normal;font-size:15px;opacity:.72;margin-bottom:2px}
+  .vdock .vi.on{
+    background:rgba(165,214,167,.15);color:#c8e6c9;
+    box-shadow:inset 0 0 0 1px rgba(165,214,167,.34)
+  }
+  .vdock .vi.on em{opacity:1}
+  .vdock .vsep{width:26px;height:1px;background:rgba(255,255,255,.10);margin:3px 0}
+
+  /* 竖排 dock 的加宽版（大平板 / 更松间距） */
+  .vdock.tall{padding:16px 12px;gap:9px}
+  .vdock.tall .vi{width:52px;padding:11px 0}
+
+  /* 收起态：只剩一条玻璃边（复用 bottomBarHideFraction 的收起行为） */
+  .vdock.edge{padding:10px 7px;gap:4px;opacity:.92}
+  .vdock.edge .vi{width:30px;padding:6px 0;font-size:0;border-radius:11px}
+  .vdock.edge .vi em{font-size:13px;margin-bottom:0}
+
+  /* 平板双栏 */
+  .twocol{display:flex;gap:16px;padding:14px 18px 40px;align-items:flex-start}
+  .paneL{width:296px;flex-shrink:0;display:flex;flex-direction:column;gap:13px}
+  .paneR{flex:1;min-width:0;display:flex;flex-direction:column;gap:13px}
+  .hcard{border-radius:16px;height:190px;position:relative;overflow:hidden;
+         background:
+            radial-gradient(ellipse 90% 55% at 28% 14%, rgba(255,183,197,.9), transparent 70%),
+            radial-gradient(ellipse 80% 55% at 50% 88%, rgba(84,110,61,.9), transparent 74%),
+            linear-gradient(165deg,#f2c9d4 0%,#d8a8b8 34%,#7a8a5c 66%,#3d4a30 100%)}
+  .ptitle2{font-size:19px;font-weight:700}
+  .psub2{font-size:11.5px;color:#9a9aa2;margin-top:2px}
+  .metaline{font-size:11.5px;color:#b9b9c2;line-height:1.9}
+  .metaline b{color:#a5d6a7}
+
+  /* 折痕提示 */
+  .hinge-note{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);z-index:41;
+              font-size:10px;color:#ffb300;background:rgba(8,8,10,.9);padding:2px 9px;
+              border-radius:999px;border:1px solid rgba(255,179,0,.4);white-space:nowrap}
+  .fold-ok{border:1px dashed rgba(165,214,167,.55);border-radius:12px;padding:10px;margin:0 14px}
+  .fold-bad{border:1px dashed rgba(255,138,128,.55);border-radius:12px;padding:10px;margin:0 14px}
+
+  /* ===== 骨架屏 ===== */
+  .sk{border-radius:6px;background:#232329;position:relative;overflow:hidden}
+  .sk::after{content:"";position:absolute;inset:0;
+             background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.10) 50%,transparent 80%);
+             transform:translateX(-100%);animation:sh 1.5s infinite}
+  @keyframes sh{to{transform:translateX(100%)}}
+  .sk.static::after{display:none}
+  .skgeo{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .skcard{aspect-ratio:3/4;border-radius:10px;background:#232329}
+  .skrow{display:flex;gap:9px}
+  .skline{height:11px;border-radius:6px;background:#232329}
+
+  /* ===== 编号标注 ===== */
+  .badge{position:absolute;z-index:20;min-width:24px;height:24px;border-radius:999px;padding:0 6px;
+         background:#ffb300;color:#1a1200;font-size:13px;font-weight:800;
+         display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.55)}
+  .badge.keep{background:#546e7a;color:#eceff1;font-size:10px;font-weight:600;padding:0 8px}
+
+  /* ===== 图例 ===== */
+  .legend{width:400px;font-size:12.5px;line-height:1.9;color:#b9b9c2;padding-top:6px}
+  .legend b{color:#ffb300;margin-right:6px}
+  .legend .keep{color:#90a4ae;font-weight:600}
+  .legend hr{border:0;border-top:1px solid #24242b;margin:12px 0}
+  .legend .tagline{display:inline-block;font-size:10.5px;border:1px solid #33333c;border-radius:999px;
+                   padding:1px 8px;margin-right:6px;color:#9a9aa2}
+  .note{font-size:11.5px;color:#8b8b93;line-height:1.85;margin-top:10px;max-width:1120px}
+  .note code{background:#1a1a1f;padding:1px 5px;border-radius:4px;font-size:11px;color:#b9d8bd}
+  .devicecap{font-size:11px;color:#7d7d86;margin-top:8px;line-height:1.7}
+  .stack{display:flex;flex-direction:column;gap:26px}
+  .cvt{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .cvt .legend{width:340px}
+  .foot{border-top:1px solid #1e1e23;margin-top:44px;padding-top:16px;font-size:11.5px;color:#6b6b73;line-height:1.9}
+</style>
+</head>
+<body>
+
+<h1>Niriko · UI 升级原型 · 现状 vs 改后</h1>
+<p class="lead">配套计划：<b>docs/ui-upgrade-plan-2026.md</b>。本页只画<b>改动面</b>，不重画整页；未标注的区域表示<b>保持现状</b>。手机框用手机尺寸，平板 / 折叠屏单独给形态。</p>
+<p class="lead">使用方式：上方 tab 切换批次（B1 图表 / B2 自适应 / B3 日历 / B4 加载态 / B5 玻璃 / B6 回归）。每个对比块左侧是<b>现状</b>、右侧是<b>改后</b>，圆圈里的数字对应右下角图例。</p>
+<div class="warn">
+<b>范围提示（已按你的确认更新）</b>：① AniHyou（AniList 层工程化）与 ⑤ Reorderable（长按拖拽自定义排序）已移出，本页不含这两项，也<b>不含任何数据库迁移</b>。<br>
+<b>标注含义</b>：<span style="color:#ffb300">橙色数字</span> = 本次改动点；<span style="color:#90a4ae">灰色「保持现状」</span> = 明确不改的区域。扁平圆角标记（<span class="tagline">采纳</span>/<span class="tagline">否决</span>/<span class="tagline">待确认</span>）分别表示已定、已排除、需你拍板。<br>
+<b>实现前提</b>：本页是形态稿，不是最终视觉稿；配色取自项目现有 <code>ChartPalette</code> / 玻璃令牌，最终以真机截图基线（B6）为准。
+</div>
+
+<nav class="tabs">
+  <button class="on" data-t="b1">B1 · 图表（Vico）</button>
+  <button data-t="b2">B2 · 平板 / 折叠屏</button>
+  <button data-t="b3">B3 · 日历周月双模</button>
+  <button data-t="b4">B4 · 加载态骨架屏</button>
+  <button data-t="b5">B5 · 玻璃与形状</button>
+  <button data-t="b6">B6 · 截图回归矩阵</button>
+</nav>
+
+<!-- ==================== B1 ==================== -->
+<section class="panel on" id="p-b1">
+  <h2 class="ph">B1 · 图表体系：Vico 替换手绘 Canvas</h2>
+  <p class="pdesc">剧集评分曲线与统计页图表全部由手绘 <code>Canvas</code> 换成 <code>com.patrykandpatrick.vico:compose-m3</code>；顺带把已写好却未被渲染的「收藏月度趋势」与「评分对比」接回统计页。剧集曲线上新增缩放与点选准星，统计页删掉 <code>nativeCanvas</code> 的硬编码 <code>#8C8C8C</code>。</p>
+
+  <div class="stack">
+
+    <!-- ① 剧集评分曲线 -->
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 剧集评分曲线</h3>
+        <div class="sub">只能点按，不能缩放 / 不能横滑</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">‹ 作品详情<span class="sp"></span><span class="ic">⤴ ⬈</span></div>
+              <div class="sec">剧集</div>
+              <div class="blk">
+                <div class="canvasbox">
+                  <svg class="sketch" viewBox="0 0 320 132" preserveAspectRatio="none">
+                    <rect class="ar" x="0" y="52" width="320" height="80"></rect>
+                    <line x1="0" y1="34" x2="320" y2="34" stroke="rgba(255,255,255,.07)"></line>
+                    <line x1="0" y1="74" x2="320" y2="74" stroke="rgba(255,255,255,.07)"></line>
+                    <line x1="0" y1="114" x2="320" y2="114" stroke="rgba(255,255,255,.07)"></line>
+                    <line class="stroke d" x1="0" y1="46" x2="320" y2="46"></line>
+                    <polyline class="stroke" points="12,60 44,52 76,66 108,40 140,48 172,34 204,52 236,42 268,58 300,50"></polyline>
+                    <polyline class="stroke d" points="12,58 44,56 76,58 108,52 140,50 172,46 204,48 236,48 268,50 300,50" style="stroke:#6b6b73"></polyline>
+                    <circle class="pt" cx="172" cy="34" r="4"></circle>
+                    <circle class="pt" cx="76" cy="66" r="4"></circle>
+                  </svg>
+                  <div style="margin-top:6px">点按曲线查看单集 · <b>无缩放 / 无准星 / 无横向滚动</b></div>
+                </div>
+              </div>
+              <div class="before" style="padding:10px 16px">
+                <div style="display:flex;gap:14px;font-size:10.5px;color:#9a9aa2">
+                  <span>平均 <b style="color:#fff">8.02</b></span><span>最高 <b style="color:#fff">8.8</b></span><span>趋势 <b style="color:#fff">▲ +0.04/集</b></span>
+                </div>
+              </div>
+              <div style="height:70px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">数据源已就绪：<code>EpisodeRatingAnalyzer.analyze()</code> 是纯函数且有单测，本批次只换渲染层。</div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · Vico 折线 + 缩放 + 准星</h3>
+        <div class="sub">捏合缩放 1~12 集 · 点选显示集号/标题/票数</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">‹ 作品详情<span class="sp"></span><span class="ic">⤴ ⬈</span></div>
+              <div class="sec">剧集</div>
+              <div class="card">
+                <div class="chart">
+                  <div class="area"></div>
+                  <div class="grid" style="top:22px"></div>
+                  <div class="grid" style="top:62px"></div>
+                  <div class="grid" style="top:102px"></div>
+                  <div class="ln dash" style="top:56px"></div>
+                  <div class="sel" style="left:36%"></div>
+                  <svg class="sketch" viewBox="0 0 320 132" preserveAspectRatio="none" style="position:absolute;inset:0;height:132px">
+                    <polyline points="12,60 44,52 76,66 108,40 140,48 172,34 204,52 236,42 268,58 300,50"
+                              style="fill:none;stroke:#81c784;stroke-width:3"></polyline>
+                    <polyline points="12,58 44,56 76,58 108,52 140,50 172,46 204,48 236,48 268,50 300,50"
+                              style="fill:none;stroke:#64b5f6;stroke-width:2.5;opacity:.9"></polyline>
+                  </svg>
+                  <div class="dot" style="left:12px;top:60px;background:#81c784"></div>
+                  <div class="dot" style="left:44px;top:52px;background:#81c784"></div>
+                  <div class="dot" style="left:76px;top:66px;background:#ffb74d"></div>
+                  <div class="dot" style="left:108px;top:40px;background:#81c784"></div>
+                  <div class="dot" style="left:140px;top:48px;background:#81c784"></div>
+                  <div class="dot ext" style="left:31%;top:26px;background:#ffb74d"></div>
+                  <div class="dot" style="left:204px;top:52px;background:#81c784"></div>
+                  <div class="dot" style="left:236px;top:42px;background:#81c784"></div>
+                  <div class="dot" style="left:268px;top:58px;background:#81c784"></div>
+                  <div class="dot" style="left:300px;top:50px;background:#81c784"></div>
+                  <div class="tip" style="left:32%">EP7 · 8.8 · 412 票</div>
+                </div>
+                <div class="axl"><span>EP1</span><span>EP5</span><span>EP9</span><span>EP13</span></div>
+                <div class="legendrow">
+                  <span><i style="background:#81c784"></i>单集评分</span>
+                  <span><i style="background:#64b5f6"></i>移动平均</span>
+                  <span><i style="background:#6b6b73"></i>全季均线</span>
+                  <span><i style="background:#ffb74d"></i>极值回</span>
+                </div>
+                <div class="badge" style="top:-10px;right:12px">①</div>
+                <div class="badge" style="bottom:-10px;left:12px">⑪</div>
+              </div>
+              <div style="padding:10px 16px">
+                <div style="display:flex;gap:14px;font-size:10.5px;color:#9a9aa2">
+                  <span>平均 <b style="color:#fff">8.02</b></span><span>最高 <b style="color:#fff">8.8 (EP7)</b></span><span>趋势 <b style="color:#fff">▲ +0.04/集</b></span>
+                </div>
+              </div>
+              <div style="height:70px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">捏合缩放 = Vico <code>rememberZoomState()</code>；点选 = <code>CartesianMarkerVisibilityListener</code>。函数签名不变，调用方 <code>EpisodeRatingSections.kt:158</code> 不动。</div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">封面、标题、集数列表、结论条（平均 / 最高 / 最低 / 趋势 / 波动）均保持现状。</span><hr>
+        <b>①</b> 手绘 Canvas → Vico 折线：保留 4 条语义线（单集、移动平均、全季均线、极值高亮），新增<b>捏合缩放</b>（1~12 集）与<b>点选准星</b>（显示「第 N 集 · 标题 · 分数（票数）」）。<br>
+        <b>⑪</b> 极值点（高光回 / 崩坏回）：现在只是圆点变大，改后加<b>语义色区分</b>（高光 / 崩坏用不同色）——<code>EpisodeRatingAnalyzer.highlights()</code> 早已实现，此前未接到 UI。<br>
+        <hr>
+        <span class="tagline">顺手修掉</span>KDoc 里「<b>不引入第三方图表库</b>」这句是有意决策，本批次推翻它，必须把理由写进新注释（交互能力、主题自适应、删掉 <code>nativeCanvas</code> 硬编码），不留自相矛盾的说明。
+      </div>
+    </div>
+
+    <!-- ② 月度趋势 + ④ 评分分布 -->
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 统计页（月度趋势与评分对比不显示）</h3>
+        <div class="sub">已写好但未被渲染 → 死代码</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="blk"><div class="canvasbox" style="height:66px;display:flex;align-items:center;justify-content:center">作品日历（B3 单独一屏）</div></div>
+              <div class="sec">收藏概览</div>
+              <div class="statrow">
+                <div class="stat"><div class="v">128</div><div class="l">作品数</div></div>
+                <div class="stat"><div class="v">7.4</div><div class="l">均分</div></div>
+                <div class="stat"><div class="v">62%</div><div class="l">完成率</div></div>
+              </div>
+              <div class="sec">作品类型分布</div>
+              <div class="before" style="padding:0 18px">
+                <div class="skline" style="background:#4a4a52;margin-bottom:6px"></div>
+                <div class="skline" style="background:#4a4a52;width:70%;margin-bottom:6px"></div>
+                <div class="skline" style="background:#4a4a52;width:45%"></div>
+              </div>
+              <div class="sec">评分分布</div>
+              <div class="before" style="padding:0 18px">
+                <div class="bars" style="height:64px">
+                  <i style="height:20%"></i><i style="height:34%"></i><i style="height:58%"></i><i style="height:82%"></i><i style="height:46%"></i><i style="height:22%"></i>
+                </div>
+                <div style="font-size:9.5px;color:#7d7d86;margin-top:16px">固定 <code style="font-size:9px">#8C8C8C</code> 标签色 · 深色下对比度不可控</div>
+              </div>
+              <div class="deadzone" style="margin-top:14px">
+                ✕ <b>收藏月度趋势</b>：<code>MonthlyTrendSection()</code> 已实现（StatsScreen.kt:382），但 LazyColumn 里没有它的 item 键 → 用户看不到<br>
+                ✕ <b>评分对比（个人 vs Bangumi）</b>：<code>RatingComparisonSection()</code> 同为死代码（:590），且只是裸文本
+              </div>
+              <div style="height:50px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">「作品类型分布」用的是 <code>LinearProgressIndicator</code> 画的过程条，不是图表 —— 本批次<b>不动它</b>（它属于进度语义）。</div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 两块死代码复活 + 分组柱</h3>
+        <div class="sub">月度趋势接入 · 评分对比图形化 · 删掉硬编码色</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card">
+                <div class="sec">收藏月度趋势<span class="rt">近 12 个月</span></div>
+                <div class="bars tight">
+                  <i class="g" style="height:34%"></i><i class="g" style="height:52%"></i><i class="g" style="height:28%"></i>
+                  <i class="g" style="height:70%"></i><i class="g" style="height:44%"></i><i class="g" style="height:88%"></i>
+                  <i class="g" style="height:36%"></i><i class="g" style="height:64%"></i><i class="g" style="height:50%"></i>
+                  <i class="g" style="height:92%"></i><i class="g" style="height:58%"></i><i class="g" style="height:76%"></i>
+                </div>
+                <div class="legendrow"><span><i style="background:#81c784"></i>当月新增收藏</span><span style="opacity:.7">峰值 16（10 月）</span></div>
+                <div class="badge" style="top:-10px;right:12px">②</div>
+              </div>
+              <div class="card">
+                <div class="sec">评分对比<span class="rt">个人 vs Bangumi</span></div>
+                <div class="bars tight" style="height:96px">
+                  <i class="o" style="height:74%"></i><i class="b" style="height:82%"></i>
+                  <i class="o" style="height:56%"></i><i class="b" style="height:60%"></i>
+                  <i class="o" style="height:88%"></i><i class="b" style="height:52%"></i>
+                  <i class="o" style="height:40%"></i><i class="b" style="height:58%"></i>
+                  <i class="o" style="height:66%"></i><i class="b" style="height:70%"></i>
+                </div>
+                <div class="legendrow"><span><i style="background:#ffb74d"></i>我的评分</span><span><i style="background:#64b5f6"></i>Bangumi</span><span style="opacity:.7">按差值排序，前 10</span></div>
+                <div class="badge" style="top:-10px;right:12px">③</div>
+              </div>
+              <div class="card">
+                <div class="sec">评分分布</div>
+                <div class="bars tight" style="height:80px">
+                  <i class="o" style="height:72%"></i><i class="b" style="height:78%"></i>
+                  <i class="o" style="height:85%"></i><i class="b" style="height:88%"></i>
+                  <i class="o" style="height:52%"></i><i class="b" style="height:58%"></i>
+                  <i class="o" style="height:34%"></i><i class="b" style="height:40%"></i>
+                  <i class="o" style="height:22%"></i><i class="b" style="height:30%"></i>
+                  <i class="o" style="height:12%"></i><i class="b" style="height:16%"></i>
+                </div>
+                <div class="axl" style="margin-top:16px"><span>1-2</span><span>3-4</span><span>5-6</span><span>7-8</span><span>9</span><span>10</span></div>
+                <div class="legendrow"><span><i style="background:#ffb74d"></i>我的评分</span><span><i style="background:#64b5f6"></i>Bangumi</span></div>
+                <div class="badge" style="top:-10px;right:12px">④</div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">同一坐标系分组柱替代「两块上下排列的独立 BarChart」；分桶超过 12 个时保留横向滚动，不压缩柱宽。</div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">作品日历（独立一屏，见 B3）、收藏概览胶囊、作品类型分布（进度条语义）、年度总结、标签词云、照片墙 —— 保持现状。</span><hr>
+        <b>②</b> <b>收藏月度趋势</b>接回统计页（插在「类型分布」与「评分分布」之间）。数据源 <code>StatsUiState.monthlyTrend</code> 早已存在，UI 也早已写好 —— 本批次只是把它挂进 LazyColumn 的 item 键。<br>
+        <b>③</b> <b>评分对比</b>接回统计页并按差值排序取前 10，把「7.8 / 8.2」裸文本换成成对柱 —— <code>RatingComparison(myRating, bangumiRating)</code> 模型现成。<br>
+        <b>④</b> 评分分布：两组独立 BarChart → 同一坐标系分组柱，<b>删掉 <code>nativeCanvas.drawText</code> 的固定 <code>#8C8C8C</code> 与手算字号</b>，深色 / OLED 下可读性由主题保证。<br>
+        <hr>
+        <span class="tagline">串行约束</span>B1 与 B3 都改 <code>StatsScreen.kt</code> → <b>先 B1 后 B3</b>。
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ==================== B2 ==================== -->
+<section class="panel" id="p-b2">
+  <h2 class="ph">B2 · 平板 / 折叠屏自适应布局</h2>
+  <p class="pdesc">直接销掉 README「工程待办」第 5 条（<b>平板 / 折叠屏的自适应布局尚未实现</b>）。用 <code>androidx.compose.material3.adaptive</code> 的 <code>currentWindowAdaptiveInfo()</code> 做尺寸判定，宽屏下把底部胶囊换成左侧栏、详情页改为双栏、海报网格增加列数；折叠屏额外保证<b>折痕不切断内容</b>。<b>手机端要求零变化</b>（作为硬验收项）。</p>
+
+  <div class="stack">
+
+    <!-- ⑫ 竖向液态玻璃 dock（取代原「左侧栏」方案） -->
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 平板（宽屏被拉长的手机界面）</h3>
+        <div class="sub">820×600，底栏居中 · 内容单列拉满 · 网格列数固定</div>
+        <div class="dev">
+          <div class="tablet">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">作品库<span class="sp"></span><span class="ic">⌕ ⚙</span></div>
+              <div class="blk">
+                <div class="chips" style="padding:0">
+                  <span class="chip">想看</span><span class="chip">在看</span><span class="chip">看过</span>
+                  <span class="chip">搁置</span><span class="chip">抛弃</span><span class="chip">排序 ▾</span><span class="chip">视图 ▾</span>
+                </div>
+              </div>
+              <div style="padding:12px 16px">
+                <div class="skgeo" style="grid-template-columns:repeat(4,1fr)">
+                  <div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div>
+                  <div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div>
+                </div>
+              </div>
+              <div class="deadzone" style="margin:4px 16px">
+                ✕ 每行仍只有 4 列 → 宽屏大量留白；每张海报被拉大，一屏能看到的信息更少<br>
+                ✕ 底栏居中悬浮，与左右两端各留一大段空白，拇指也要移动很远<br>
+                ✕ 筛选条把 5 个状态 + 排序 + 视图挤在一行横向滚动
+              </div>
+              <div style="height:80px"></div>
+            </div>
+            <div class="dock" style="position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:10;
+                 display:flex;gap:10px;padding:12px 24px;border-radius:999px;background:rgba(28,28,32,.6);
+                 backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.16);font-size:13px;font-weight:600;white-space:nowrap">
+              作品库<span style="opacity:.45">·</span>发现<span style="opacity:.45">·</span><span style="color:#a5d6a7">统计</span><span style="opacity:.45">·</span>设置
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 平板（左侧栏 + 自适应列数）</h3>
+        <div class="sub">≥840dp：竖向液态玻璃 dock（悬浮）× 每行 6 列 · 筛选条不再横向滚动</div>
+        <div class="dev">
+          <div class="tablet">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar" style="padding-left:96px">作品库<span class="sp"></span><span class="ic">⌕ ⚙</span></div>
+              <div class="blk" style="padding-left:96px">
+                <div class="chips" style="padding:0">
+                  <span class="chip">想看</span><span class="chip act">在看</span><span class="chip">看过</span>
+                  <span class="chip">搁置</span><span class="chip">抛弃</span><span class="chip">排序 ▾</span><span class="chip">视图 ▾</span>
+                </div>
+              </div>
+              <div style="padding:12px 16px 12px 96px">
+                <div class="skgeo" style="grid-template-columns:repeat(6,1fr)">
+                  <div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div>
+                  <div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div>
+                </div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+            <div class="vdock" style="left:16px">
+              <div class="vi"><em>▤</em>作品库</div>
+              <div class="vi"><em>◈</em>发现</div>
+              <div class="vi on"><em>▦</em>统计</div>
+              <div class="vi"><em>⚙</em>设置</div>
+              <div class="badge" style="top:-10px;right:-10px">⑫</div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">竖向 dock <b>悬浮</b>在内容之上（真折射壁纸）；内容用约 96dp 起始内边距让开，与底栏「内容可滚到胶囊后方」的现有处理同源。</div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">四个顶级页的图标与顺序、玻璃材质、壁纸层、筛选逻辑、卡片内容 —— 全部保持现状。</span><hr>
+        <b>⑫</b> 悬浮胶囊底栏 → <b>竖向液态玻璃 dock</b>：形状仍是「胶囊」（<code>RoundedCornerShape(50.dp)</code> 在 72dp 宽 / 内容高下自动钳位为<strong>短边半圆</strong>，宽度不变），只是从 <code>Row</code> 变 <code>Column</code>。<br>
+        <span class="tagline">复用而非重写</span><code>LiquidBottomTabs.kt</code> 的 <code>drawBackdrop</code> 链（<code>vibrancy + blur(8dp) + lens(24dp)</code>）、<code>DampedDragAnimation</code>、<code>InteractiveHighlight</code> 与「选中项 56dp 玻璃片 + 色散」三层结构<b>整体沿用</b>，只把 <code>x</code> 方向的手势与测量换成 <code>y</code> 方向。<br>
+        <span class="tagline">真折射已就绪</span><code>windowKyantBackdrop</code> 在 <code>MainActivity.kt:253</code> 捕获的是<b>全窗口</b>内容（壁纸 + Scaffold），所以左侧 dock 折射壁纸<b>不需要新增捕获层</b>。<br>
+        <span class="tagline">色散方向</span>透镜 shader 的色散项是 <code>x·y/(hx·hy)</code>（四叶反对称，<b>两条中轴上恒为 0</b>）→ 竖排 dock 的彩虹落在<b>短边</b>（即底栏的 90° 旋转结果），长边保持干净。这是固定行为，不需要改 shader。<br>
+        <span class="tagline">需要调参</span><code>gradRadius = min(radius×1.5, min(halfSize.x, halfSize.y))</code> —— 竖排 dock 的窄边会把透镜半径钳到 ~36dp，等效于「整条 dock 都在折射」。<code>LiquidGlassConfig</code> 需新增 <code>VerticalDock</code> 预设（比 40dp 更小的 <code>cornerRadius</code>、更克制的 <code>refractionHeight</code> / <code>dispersion</code>），这属于 <b>B5 的调参范围</b>。<br>
+        <span class="tagline">收起行为可复用</span>已确认项目存在 <code>bottomBarHideFraction</code>（滚动隐藏，当前位移 8dp + 透明度 0.15）—— 竖排 dock 可复用同一 trait，收起方向改为向左滑出。<br>
+        <hr>
+        <b>顺带</b>：海报网格列数按宽度类别取 2 / 3 / <b>4~6</b>（现为固定值）；筛选条在宽屏下不再横向滚动；设置页「分类导航 + 二级内容」并排。<br>
+        <b>断点</b>：&lt;600dp 手机（现状）· 600~839dp 小平板 / 折叠屏折叠（网格 +1 列，底栏保留）· ≥840dp 平板 / 折叠屏展开（竖向 dock）。<br>
+        <b>已否决的替代</b>：贴边满高 <code>NavigationRail</code>（Material 默认观感，与现有玻璃语言不一致，且 <code>NavigationSuiteScaffold</code> 承载不了跟手动画）—— 见下方对比稿。
+      </div>
+    </div>
+
+    <!-- ⑨ 详情双栏 -->
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 详情页单列</h3>
+        <div class="sub">2400 行单列；评分 / 剧集 / 剧照 / 角色全是横向滚动卡</div>
+        <div class="dev">
+          <div class="tablet">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">‹ 作品详情<span class="sp"></span><span class="ic">⤴ ⬈</span></div>
+              <div style="padding:0 16px">
+                <div class="hcard" style="height:150px"></div>
+              </div>
+              <div class="sec">冰菓 <span style="font-size:12px;font-weight:400;color:#9a9aa2">氷菓</span></div>
+              <div class="metaline" style="padding:0 18px"><b>动画</b>　评分：<b>8.2</b>　TV · 26集　2012-04-22</div>
+              <div class="sec">评分</div>
+              <div class="before" style="padding:0 18px">
+                <div class="canvasbox" style="margin:0" >我的评分 · Bangumi · 权威评分 · 评分分布 —— <b>横向滚动卡</b>（宽屏下横向空间被浪费）</div>
+              </div>
+              <div class="sec">剧集</div>
+              <div class="before" style="padding:0 18px">
+                <div class="canvasbox" style="margin:0;height:78px;display:flex;align-items:center;justify-content:center">评分走势曲线（B1 独立一屏）</div>
+              </div>
+              <div class="deadzone" style="margin:12px 16px">
+                ✕ 宽屏下每一区块都拉满整行宽度：一行文本过长、横向滚动卡只露出 2~3 张<br>
+                ✕ 剧集列表在页面很下方，需要滚动很久才能看到；右侧 2/3 屏幕长期空闲
+              </div>
+              <div style="height:50px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 详情双栏</h3>
+        <div class="sub">左：概览 / 剧照 / 角色　｜　右：评分 / 剧集 / 走势（两列独立滚动）</div>
+        <div class="dev">
+          <div class="tablet">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="twocol" style="padding-left:100px">
+                <div class="paneL">
+                      <div class="hcard"></div>
+                      <div>
+                        <div class="ptitle2">冰菓</div>
+                        <div class="psub2">氷菓</div>
+                        <div class="metaline"><b>动画</b>　评分 <b>8.2</b><br>TV · 26集<br>2012-04-22</div>
+                      </div>
+                      <div class="card" style="margin:0">
+                        <div class="sec">标签</div>
+                        <div class="chips"><span class="chip">京阿尼</span><span class="chip">校园</span><span class="chip">推理</span><span class="chip">青春</span></div>
+                      </div>
+                      <div class="card" style="margin:0">
+                        <div class="sec">剧照<span class="rt">↗ 全部</span></div>
+                        <div class="skgeo" style="grid-template-columns:repeat(2,1fr)">
+                          <div class="skcard" style="aspect-ratio:16/10"></div><div class="skcard" style="aspect-ratio:16/10"></div>
+                        </div>
+                      </div>
+                      <div class="badge" style="top:8px;right:8px">⑨</div>
+                    </div>
+                    <div class="paneR">
+                      <div class="card" style="margin:0">
+                        <div class="sec">评分</div>
+                        <div class="statrow">
+                          <div class="stat"><div class="v">–</div><div class="l">我的评分</div></div>
+                          <div class="stat"><div class="v" style="color:#a5d6a7">8.2</div><div class="l">Bangumi 3.3万人</div></div>
+                          <div class="stat"><div class="v" style="color:#a8e6ec">9.8</div><div class="l">Bilibili 8.4万人</div></div>
+                        </div>
+                      </div>
+                      <div class="card" style="margin:0">
+                        <div class="sec">剧集<span class="rt">评分走势</span></div>
+                        <div class="chart" style="height:104px">
+                          <div class="area"></div>
+                          <div class="grid" style="top:18px"></div><div class="grid" style="top:58px"></div><div class="grid" style="top:94px"></div>
+                          <div class="ln dash" style="top:48px"></div>
+                          <svg class="sketch" viewBox="0 0 320 104" preserveAspectRatio="none" style="position:absolute;inset:0;height:104px">
+                            <polyline points="12,48 44,42 76,54 108,32 140,38 172,26 204,42 236,34 268,46 300,40"
+                                      style="fill:none;stroke:#81c784;stroke-width:3"></polyline>
+                            <polyline points="12,46 44,46 76,46 108,42 140,40 172,36 204,38 236,38 268,40 300,40"
+                                      style="fill:none;stroke:#64b5f6;stroke-width:2.5;opacity:.9"></polyline>
+                          </svg>
+                        </div>
+                        <div class="axl"><span>EP1</span><span>EP9</span><span>EP18</span><span>EP26</span></div>
+                      </div>
+                      <div class="card" style="margin:0">
+                        <div class="sec">剧集列表</div>
+                        <div style="display:flex;flex-direction:column;gap:7px">
+                          <div class="skrow"><div class="sk" style="width:52px;height:32px"></div><div style="flex:1"><div class="skline" style="margin-bottom:6px"></div><div class="skline" style="width:52%"></div></div></div>
+                          <div class="skrow"><div class="sk" style="width:52px;height:32px"></div><div style="flex:1"><div class="skline" style="margin-bottom:6px"></div><div class="skline" style="width:44%"></div></div></div>
+                          <div class="skrow"><div class="sk" style="width:52px;height:32px"></div><div style="flex:1"><div class="skline" style="margin-bottom:6px"></div><div class="skline" style="width:60%"></div></div></div>
+                        </div>
+                      </div>
+                      <div class="badge" style="top:8px;right:8px">⑨</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="vdock" style="left:16px">
+                <div class="vi on"><em>▤</em>作品库</div>
+                <div class="vi"><em>◈</em>发现</div>
+                <div class="vi"><em>▦</em>统计</div>
+                <div class="vi"><em>⚙</em>设置</div>
+                <div class="vsep"></div>
+                <div class="vi"><em>‹</em>返回</div>
+                <div class="badge" style="top:-10px;right:-10px">⑫</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+        <div class="devicecap">两列<b>各自独立滚动</b>（外层不滚），避免双栏 + 单滚动容器产生的手势互抢；竖向 dock 悬浮其上，二级页保留（宽屏下详情与列表可共存，与手机端「隐藏底栏」不同）。</div>
+
+      <div class="legend">
+        <span class="keep">封面头、标题 / 元信息、评分横滑卡的内容、剧集列表、角色 / 制作 / 关联作品 —— 内容保持现状，只重新分栏。</span><hr>
+        <b>⑨</b> 单列 → <b>双栏</b>：左列放「看一眼就够」的概览信息（封面 / 标题 / 标签 / 剧照），右列放「要反复用」的内容（评分 / 剧集走势 / 剧集列表）。<br>
+        <b>⑫</b> 竖向 dock 在二级页<b>保留</b>（含「返回」），这是与手机端行为的一处刻意差异：宽屏下详情与列表共存，隐藏导航反而让人迷失。手机端仍按现状隐藏底栏。<br>
+        <hr>
+        <span class="tagline">待确认 Q1</span>官方 <code>ListDetailPaneScaffold</code> 自带返回栈语义，与现有 <code>NavHost</code> + <code>NavController</code> 可能冲突（同一导航状态两处管理）。<b>建议先自建两栏</b>（Row + 两个可滚动列），把返回栈留给自己管。<br>
+        <span class="tagline">分两步</span>第一步只做「尺寸类别 + 竖向 dock」（不碰详情页），验收通过后再做双栏 —— 各自独立可回滚。
+      </div>
+
+    <!-- ⑩ 折叠屏 -->
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 折叠屏展开（内容跨越折痕）</h3>
+        <div class="sub">折痕处的内容会被物理折弯 / 遮挡</div>
+        <div class="dev">
+          <div class="fold">
+            <div class="foldtag">折痕（铰链）</div>
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card" style="margin:12px 14px">
+                <div class="sec">收藏状态分布</div>
+                <div class="statrow">
+                  <div class="stat"><div class="v">20</div><div class="l">想看</div></div>
+                  <div class="stat"><div class="v">15</div><div class="l">在看</div></div>
+                  <div class="stat"><div class="v">80</div><div class="l">看过</div></div>
+                  <div class="stat"><div class="v">8</div><div class="l">搁置</div></div>
+                  <div class="stat"><div class="v">5</div><div class="l">抛弃</div></div>
+                </div>
+              </div>
+              <div class="fold-bad" style="background:rgba(255,138,128,.06)">
+                <div style="font-size:11px;color:#ff8a80;line-height:1.8">
+                  ✕ 正中间的「在看」胶囊正好压在折痕上 → 数字被折弯<br>
+                  ✕ 图表若横跨整行，曲线中段落在铰链上，读数困难<br>
+                  ✕ 没有任何折痕感知：折叠屏只是被当成一块更宽的屏幕
+                </div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+            <div class="hinge-note">✕ 内容压线</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 折叠屏展开（折痕作为天然分栏线）</h3>
+        <div class="sub">按折痕 bounds 把内容分成两栏，不跨越铰链</div>
+        <div class="dev">
+          <div class="fold">
+            <div class="foldtag">折痕（铰链）</div>
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div style="display:flex;gap:14px;padding:8px 14px 0;align-items:flex-start">
+                <div style="flex:1;min-width:0">
+                  <div class="card" style="margin:0">
+                    <div class="sec">收藏状态分布</div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                      <div class="statrow"><div class="stat"><div class="v">80</div><div class="l">看过</div></div></div>
+                      <div class="statrow"><div class="stat"><div class="v">20</div><div class="l">想看</div></div></div>
+                      <div class="statrow"><div class="stat"><div class="v">15</div><div class="l">在看</div></div></div>
+                    </div>
+                  </div>
+                </div>
+                <div style="flex:1;min-width:0">
+                  <div class="card" style="margin:0">
+                    <div class="sec">收藏月度趋势</div>
+                    <div class="bars tight" style="height:96px">
+                      <i class="g" style="height:34%"></i><i class="g" style="height:52%"></i><i class="g" style="height:28%"></i>
+                      <i class="g" style="height:70%"></i><i class="g" style="height:44%"></i><i class="g" style="height:88%"></i>
+                      <i class="g" style="height:36%"></i><i class="g" style="height:64%"></i><i class="g" style="height:50%"></i>
+                    </div>
+                    <div class="legendrow" style="margin-top:18px"><span><i style="background:#81c784"></i>当月新增</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="fold-ok" style="background:rgba(165,214,167,.05);margin-top:12px">
+                <div style="font-size:11px;color:#a5d6a7;line-height:1.8">
+                  ✓ 折痕 = 两栏之间的分隔线：左侧放「状态分布」，右侧放「月度趋势」<br>
+                  ✓ 用 <code style="font-size:10px">collectFoldingFeaturesAsState()</code> 取 <code style="font-size:10px">FoldingFeature.bounds</code>，按实际铰链宽度做 padding<br>
+                  ✓ 铰链区域不放可点 / 可读内容，避免「手指按在折痕上点不到」
+                </div>
+              </div>
+              <div class="badge" style="top:60px;left:50%;transform:translate(-50%,-50%)">⑩</div>
+              <div style="height:60px"></div>
+            </div>
+            <div class="hinge-note" style="color:#a5d6a7;border-color:rgba(165,214,167,.4)">✓ 折痕即分栏</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">内容本身完全不变 —— 状态分布、月度趋势、概览胶囊的数据与文案一致，只是「怎么摆」变了。</span><hr>
+        <b>⑩</b> 折叠屏分两件事，不要混：<br>
+        &nbsp;&nbsp;<b>① 窗口尺寸类别</b>（宽 / 窄）→ 决定侧栏与双栏；<br>
+        &nbsp;&nbsp;<b>② 折痕（FoldingFeature）</b>→ 决定「内容不能压线」，书本式展开时折痕天然成为分栏线。<br>
+        <hr>
+        <span class="tagline">首轮不做</span><b>帐篷模式</b>（上半屏画面 / 下半屏操作）留到第二轮 —— 它需要独立的姿态判定与布局，混进来会让本批次无法验收。<br>
+        <span class="tagline">零变化硬要求</span>手机（&lt;600dp）下布局与现状必须完全一致，本项与「竖向 dock」在 B6 截图里各覆盖一张，作为回归保护。
+      </div>
+    </div>
+
+    <!-- ⑫ 竖向 dock 形态对比 -->
+    <div class="cvt">
+      <div class="col">
+        <h3>现状 · 横向底栏（手机形态）</h3>
+        <div class="sub">Row 布局 · 底边居中悬浮</div>
+        <div class="dev">
+          <div class="phone" style="height:520px">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="blk"><div class="canvasbox" style="height:56px;display:flex;align-items:center;justify-content:center">收藏概览 / 图表</div></div>
+              <div style="height:300px"></div>
+            </div>
+            <div style="position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:10;
+                 display:flex;gap:12px;padding:13px 24px;border-radius:999px;background:rgba(26,26,31,.52);
+                 backdrop-filter:blur(22px) saturate(1.5);border:1px solid rgba(255,255,255,.16);
+                 box-shadow:0 10px 32px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.16);
+                 font-size:12px;font-weight:600;white-space:nowrap">
+              <span style="color:#a5d6a7">▤ 作品库</span><span style="color:#9a9aa2">◈ 发现</span><span style="color:#9a9aa2">▦ 统计</span><span style="color:#9a9aa2">⚙ 设置</span>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">这就是要「竖过来」的那条：<b>同一材质、同一交互模型</b>，只是把 <code>Row</code> 换成 <code>Column</code>。</div>
+      </div>
+
+      <div class="col">
+        <h3>⑫ 采纳 · 竖向液态玻璃 dock</h3>
+        <div class="sub">悬浮胶囊 · 真折射壁纸 · 选中片色散 · 复用现有三层结构</div>
+        <div class="dev">
+          <div class="tablet" style="height:520px">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar" style="padding-left:96px">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div style="padding:0 16px 0 96px">
+                <div class="card" style="margin:8px 0 0">
+                  <div class="sec">收藏概览</div>
+                  <div class="statrow">
+                    <div class="stat"><div class="v">128</div><div class="l">作品数</div></div>
+                    <div class="stat"><div class="v">7.4</div><div class="l">均分</div></div>
+                  </div>
+                </div>
+                <div class="card" style="margin:12px 0 0">
+                  <div class="sec">收藏月度趋势</div>
+                  <div class="bars tight" style="height:88px">
+                    <i class="g" style="height:34%"></i><i class="g" style="height:52%"></i><i class="g" style="height:28%"></i>
+                    <i class="g" style="height:70%"></i><i class="g" style="height:44%"></i><i class="g" style="height:88%"></i>
+                    <i class="g" style="height:36%"></i><i class="g" style="height:64%"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="vdock tall" style="left:16px">
+              <div class="vi on"><em>▤</em>作品库</div>
+              <div class="vi"><em>◈</em>发现</div>
+              <div class="vi"><em>▦</em>统计</div>
+              <div class="vi"><em>⚙</em>设置</div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">长边无色散（中轴恒为 0）、短边出七彩 —— <b>与底部胶囊是同一套光学行为，只是转了 90°</b>。</div>
+      </div>
+
+      <div class="col">
+        <h3>✕ 已否决 · 贴边满高 NavigationRail</h3>
+        <div class="sub">Material 默认观感 · 直角满高无折射 · 跟手动画无处安放</div>
+        <div class="dev">
+          <div class="phone" style="height:520px;width:320px">
+            <div class="wall"></div>
+            <div class="scaffold">
+              <div class="rail" style="width:78px">
+                <div class="brand"></div>
+                <div class="it" style="width:60px"><em>▤</em>作品库</div>
+                <div class="it" style="width:60px"><em>◈</em>发现</div>
+                <div class="it on" style="width:60px"><em>▦</em>统计</div>
+                <div class="it" style="width:60px"><em>⚙</em>设置</div>
+                <div class="bot">v1.0.0</div>
+              </div>
+              <div class="content">
+                <div class="scroll">
+                  <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+                  <div style="padding:0 14px">
+                    <div class="card" style="margin:8px 0 0">
+                      <div class="sec">收藏概览</div>
+                      <div class="statrow">
+                        <div class="stat"><div class="v">128</div><div class="l">作品数</div></div>
+                        <div class="stat"><div class="v">7.4</div><div class="l">均分</div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">与 Niriko 现在「悬浮胶囊折射壁纸」的语言不是一套东西；<code>NavigationSuiteScaffold</code> 也承载不了跟手动画。</div>
+      </div>
+
+      <div class="col">
+        <h3>⑬ 收起态（滚动时）</h3>
+        <div class="sub">复用 <code>bottomBarHideFraction</code> · 向左滑出，只留一条玻璃边</div>
+        <div class="dev">
+          <div class="tablet" style="height:520px">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div style="padding:0 16px">
+                <div class="card" style="margin:8px 0 0">
+                  <div class="sec">照片墙（我的收藏）</div>
+                  <div class="skgeo" style="grid-template-columns:repeat(4,1fr)">
+                    <div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div>
+                    <div class="skcard"></div><div class="skcard"></div><div class="skcard"></div><div class="skcard"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="vdock edge" style="left:10px">
+              <div class="vi on"><em>▤</em></div>
+              <div class="vi"><em>◈</em></div>
+              <div class="vi"><em>▦</em></div>
+              <div class="vi"><em>⚙</em></div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">收起时文字先消失、宽度收窄，图标保留可点 —— 位移方向由纵向改为横向。</div>
+      </div>
+
+      <div class="legend">
+        <b>⑫</b> 四种形态放在一起看：横向底栏（现状）→ <b>竖向玻璃 dock（采纳）</b>；贴边满高 Rail（否决）。<br>
+        <span class="tagline">采纳</span><b>悬浮竖排玻璃胶囊</b> —— 与底部胶囊同一材质、同一交互模型，形状只是「把水平胶囊竖过来」。<br>
+        <span class="tagline">否决</span><b>贴边满高 NavigationRail</b> —— 直角、满高、无折射，等于在玻璃项目里插一块 Material 面板。<br>
+        <b>⑬</b> <span class="tagline">收起</span>项目已有 <code>bottomBarHideFraction</code>（当前：位移 8dp + alpha 0.15）；竖排 dock 复用同一 trait，位移方向改为向左，收起后保留图标可点。<br>
+        <hr>
+        <span class="tagline">要新增的代码</span>一个近似 <code>LiquidBottomTabs.kt</code> 的竖排组件（<code>ui/bottombar/LiquidVerticalDock.kt</code>），以及 <code>LiquidGlassConfig</code> 的 <code>VerticalDock</code> 预设。<b>不修改</b> <code>LiquidBottomTabs.kt</code> —— 手机端保持零风险。<br>
+        <span class="tagline">唯一的行为差异</span>二级页（详情 / 搜索）在宽屏下<b>保留</b> dock（含返回项），手机端仍隐藏底栏。
+      </div>
+  </div>
+
+</section>
+
+<!-- ==================== B3 ==================== -->
+<section class="panel" id="p-b3">
+  <h2 class="ph">B3 · 日历：周 / 月双模</h2>
+  <p class="pdesc">用 <code>com.kizitonwose.calendar:compose</code> 替换手写的月网格，并新增<b>周视图</b>。只替换渲染层：<code>Map&lt;LocalDate, CalendarDayEvents&gt;</code> 与 <code>CalendarDaySheet</code> 全部不动，因此「按精确时刻落格 / 跨月正确归类」的既有能力不受影响。</p>
+
+  <div class="stack">
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 只有月视图</h3>
+        <div class="sub">手写 DayGrid / MonthHeader / WeekdayHeader（约 300 行）</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card">
+                <div class="sec">作品日历</div>
+                <div class="chips" style="margin-bottom:10px">
+                  <span class="chip">个人记录</span><span class="chip act">放送信息</span><span class="chip">全部显示</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600;padding:2px 0 8px">
+                  <span>‹</span><span>2026 年 10 月</span><span>›</span>
+                </div>
+                <div class="cal">
+                  <div class="h">日</div><div class="h">一</div><div class="h">二</div><div class="h">三</div><div class="h">四</div><div class="h">五</div><div class="h">六</div>
+                  <div class="d out">28</div><div class="d out">29</div><div class="d out">30</div><div class="d">1</div><div class="d">2</div><div class="d">3</div><div class="d">4</div>
+                  <div class="d">5</div><div class="d">6</div><div class="d">7</div><div class="d">8</div><div class="d">9</div><div class="d">10</div><div class="d">11</div>
+                  <div class="d today">12</div><div class="d">13</div><div class="d">14</div><div class="d">15</div><div class="d">16</div><div class="d">17</div><div class="d">18</div>
+                  <div class="d">19</div><div class="d">20</div><div class="d">21</div><div class="d">22</div><div class="d">23</div><div class="d">24</div><div class="d">25</div>
+                  <div class="d">26</div><div class="d">27</div><div class="d">28</div><div class="d">29</div><div class="d">30</div><div class="d">31</div><div class="d out">1</div>
+                </div>
+                <div class="deadzone" style="margin:12px 0 0">
+                  ✕ <b>没有周视图</b>：只想看「本周放送」时必须看整月，信息密度不匹配<br>
+                  ✕ 月视图固定占据约 1/3 屏高，往下滚才能看到时间线<br>
+                  ✕ 横向滑动翻月会与顶级页 Pager 的左右滑切换<b>抢手势</b>
+                </div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 周视图（默认）+ 可展开为月</h3>
+        <div class="sub">同一周日不跳变 · 三态模式在两种粒度下都生效</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card">
+                <div class="sec">作品日历<span class="rt">▾ 展开为月</span></div>
+                <div class="chips" style="margin-bottom:10px">
+                  <span class="chip">个人记录</span><span class="chip act">放送信息</span><span class="chip">全部显示</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600;padding:0 0 6px">
+                  <span>‹</span><span>10 月 12 日 – 10 月 18 日</span><span>›</span>
+                </div>
+                <div class="cal weekstrip">
+                  <div class="h">日</div><div class="h">一</div><div class="h">二</div><div class="h">三</div><div class="h">四</div><div class="h">五</div><div class="h">六</div>
+                  <div class="d"><span style="font-size:9.5px;color:#7d7d86">12</span><div class="m"><i class="b"></i><i class="r"></i></div></div>
+                  <div class="d sel"><span style="font-size:9.5px;color:#7d7d86">13</span><div class="m"><i class="b"></i><i class="p"></i></div></div>
+                  <div class="d"><span style="font-size:9.5px;color:#7d7d86">14</span><div class="m"><i class="r"></i></div></div>
+                  <div class="d"><span style="font-size:9.5px;color:#7d7d86">15</span><div class="m"><i class="b"></i></div></div>
+                  <div class="d"><span style="font-size:9.5px;color:#7d7d86">16</span><div class="m"><i class="b"></i><i class="b"></i></div></div>
+                  <div class="d"><span style="font-size:9.5px;color:#7d7d86">17</span><div class="m"><i class="r"></i></div></div>
+                  <div class="d today"><span style="font-size:9.5px;color:#7d7d86">18</span><div class="m"><i class="b"></i><i class="p"></i></div></div>
+                </div>
+                <div class="wlabel">◆ 放送　● 我的记录　● 发售</div>
+                <div class="badge" style="top:-10px;right:12px">⑤</div>
+              </div>
+              <div class="card">
+                <div class="sec">10 月 13 日</div>
+                <div style="font-size:11.5px;color:#c9c9d1;line-height:1.9">
+                  放送中：《作品 A》EP7 · 21:30<br>
+                  我的记录：看完《作品 B》EP3
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">时间线</div>
+                <div class="skrow" style="margin-bottom:7px"><div class="sk" style="width:30px;height:38px"></div><div style="flex:1"><div class="skline" style="margin-bottom:6px"></div><div class="skline" style="width:56%"></div></div></div>
+                <div class="skrow"><div class="sk" style="width:30px;height:38px"></div><div style="flex:1"><div class="skline" style="margin-bottom:6px"></div><div class="skline" style="width:44%"></div></div></div>
+                <div style="font-size:10px;color:#7d7d86;margin-top:8px">周视图让「时间线」从首屏外回到首屏内</div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">三态模式（个人记录 / 放送信息 / 全部显示）、放送金色菱形 ◆、发售绿标记、日期详情弹窗（<code>CalendarDaySheet</code>，464 行）、「上次更新 X 分钟前」+ 强制刷新 —— 全部保持现状。</span><hr>
+        <b>⑤</b> 新增<b>周 / 月双模</b>：这是<b>两个正交维度</b> —— 视图粒度（周 / 月）× 数据来源（个人 / 放送 / 全部），四种状态都要能组合。<br>
+        <hr>
+        <span class="tagline">手势锁</span>项目已有 <code>SearchGestureLock</code>（搜索交互期间锁 Pager 翻页）作为先例 —— <b>日历必须加同类锁</b>，否则「横滑翻月」会变成「切换顶级页」。<br>
+        <span class="tagline">双向同步</span>改为可滑动翻月后，箭头与手势需要双向同步（pager 滑动 → 更新 <code>_calendarYear/_calendarMonth</code>；<code>switchMonth()</code> → 驱动 pager 滚动），这一处最容易出现状态不同步，需专项验收。<br>
+        <span class="tagline">可删</span>预计删除约 300 行手写布局（<code>MonthHeader</code> / <code>WeekdayHeader</code> / <code>DayGrid</code>）。<br>
+        <span class="tagline">待确认 Q2</span>用纯 Android 的 <code>compose</code> 还是 KMP 的 <code>compose-multiplatform</code> 变体（为 <code>docs/ios-port/</code> 铺路）—— 建议后者，避免二次返工。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== B4 ==================== -->
+<section class="panel" id="p-b4">
+  <h2 class="ph">B4 · 加载态：shimmer 骨架屏</h2>
+  <p class="pdesc">项目已有骨架屏（<code>StateComponents.kt</code> 的 <code>SkeletonList</code> / <code>SkeletonCircle</code>），但实现是「alpha 呼吸」且几乎没被用（<code>LoadingContent()</code> 只有 4 个调用点，其余 49 处是转圈）。本批次换成 <code>ShimmerBrush</code> 扫光 + 按页面语义换骨架，并<b>强制遵守「减少动态效果」约定</b>。</p>
+
+  <div class="stack">
+    <!-- ⑥ 统计页加载态 -->
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 统计页加载中</h3>
+        <div class="sub">一行文字（StatsScreen.kt:175）</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div style="height:200px;display:flex;align-items:center;justify-content:center">
+                <div style="font-size:13px;color:#9a9aa2">正在加载统计数据…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">没有形状预告 —— 用户不知道即将出现什么，体感是「卡住了」。</div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 按页面语义的骨架</h3>
+        <div class="sub">日历格 + 图表 + 概览胶囊的形状预告</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card">
+                <div class="sec">作品日历</div>
+                <div class="cal">
+                  <div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div>
+                  <div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div>
+                  <div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div>
+                  <div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div>
+                  <div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div>
+                  <div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div><div class="sk" style="height:22px;border-radius:5px"></div>
+                </div>
+                <div class="badge" style="top:-10px;right:12px">⑥</div>
+              </div>
+              <div class="card">
+                <div class="sec">收藏概览</div>
+                <div class="statrow">
+                  <div class="sk" style="height:52px;border-radius:12px;flex:1"></div>
+                  <div class="sk" style="height:52px;border-radius:12px;flex:1"></div>
+                  <div class="sk" style="height:52px;border-radius:12px;flex:1"></div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">收藏月度趋势</div>
+                <div class="bars">
+                  <i class="sk" style="height:34%"></i><i class="sk" style="height:52%"></i><i class="sk" style="height:28%"></i>
+                  <i class="sk" style="height:70%"></i><i class="sk" style="height:44%"></i><i class="sk" style="height:88%"></i>
+                  <i class="sk" style="height:36%"></i><i class="sk" style="height:64%"></i><i class="sk" style="height:50%"></i>
+                </div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">数据到达后的真实内容完全不变；骨架尺寸与真实区块一致，避免加载完成时跳版（CLS）。</span><hr>
+        <b>⑥</b> 文字加载态 → <b>形状预告</b>：日历格 / 概览胶囊 / 图表的骨架，让用户知道「马上要出现什么」。<br>
+        <hr>
+        <span class="tagline">硬约束</span>项目在 <code>RevealOnScroll.kt:43</code> 已立规矩「减少动态效果时跳过一切入场动画」，<code>MainActivity.kt:175</code> 还把系统 <code>animator_duration_scale=0</code> 并入了 <code>reduceMotion</code>。<b>shimmer 是无限动画，reduceMotion 为真时必须退化为静态灰块</b>，否则等于自己破自己的约定。
+      </div>
+    </div>
+
+    <!-- ⑦ 三种降级态 + 保留项 -->
+    <div class="cvt">
+      <div class="col">
+        <h3>⑥ 降级：减少动态效果 <span style="font-size:11px;color:#7d7d86">（同一屏的静止态）</span></h3>
+        <div class="sub">不扫光、不呼吸，静态灰块占位</div>
+        <div class="dev">
+          <div class="phone" style="height:420px">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card">
+                <div class="sec">作品日历<span class="rt" style="color:#7d7d86">静态占位</span></div>
+                <div class="cal">
+                  <div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div>
+                  <div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div>
+                  <div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div>
+                  <div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div><div class="sk static" style="height:22px;border-radius:5px"></div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">收藏月度趋势</div>
+                <div class="bars">
+                  <i class="sk static" style="height:34%"></i><i class="sk static" style="height:52%"></i><i class="sk static" style="height:28%"></i>
+                  <i class="sk static" style="height:70%"></i><i class="sk static" style="height:44%"></i><i class="sk static" style="height:88%"></i>
+                  <i class="sk static" style="height:36%"></i><i class="sk static" style="height:64%"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="devicecap">由纯函数 <code>ShimmerPolicy.shouldAnimate(reduceMotion, systemAnimatorOff, glassEffect)</code> 裁决，单独有单测。</div>
+      </div>
+
+      <div class="col">
+        <h3>保留 · 进度语义与行内转圈</h3>
+        <div class="sub">这些不是占位，是「真实进度」与「这个按钮正在处理」</div>
+        <div class="dev">
+          <div class="phone" style="height:420px">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">‹ 作品详情<span class="sp"></span><span class="ic">⤴ ⬈</span></div>
+              <div style="margin:0 0 0;height:3px;background:#81c784;width:46%"></div>
+              <div style="font-size:10px;color:#7d7d86;padding:6px 16px">顶部细条 = 详情页正在刷新（真实进度，保留 LinearProgressIndicator）</div>
+              <div class="card" style="margin-top:8px">
+                <div class="sec">外部绑定</div>
+                <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#c9c9d1">
+                  <span class="sk" style="width:14px;height:14px;border-radius:50%;background:#2f4033"></span>
+                  TMDb 绑定检查中…
+                </div>
+                <div style="font-size:10px;color:#7d7d86;margin-top:8px">
+                  ✕ 不要换成骨架：这是「这个按钮正在处理」，不是一个待填充的内容区
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">搜索结果建议</div>
+                <div style="height:4px;background:#2a2a31;border-radius:3px;overflow:hidden"><div style="height:100%;width:62%;background:#81c784"></div></div>
+                <div style="font-size:10px;color:#7d7d86;margin-top:8px">
+                  ✕ 保留 <code style="font-size:9px">LinearProgressIndicator</code>（<code style="font-size:9px">SearchResultsPane:359</code>）与 B 站导入进度（<code style="font-size:9px">BilibiliSyncScreen:309</code>）
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <b>不要一律替换</b>：49 处指示器里分三类 ——<br>
+        <span class="tagline">换骨架</span>首屏 / 列表 / 详情的<b>内容占位</b>（统计页、作品库、详情页分区、搜索趋势、角色 / 人物 / Staff 列表）<br>
+        <span class="tagline">保留</span><b>真实进度</b>：详情页顶部细条、搜索建议进度、B 站导入进度<br>
+        <span class="tagline">保留</span><b>行内小转圈</b>（14/16/20dp，如绑定按钮、设置项保存中）—— 换成骨架反而看不懂<br>
+        <hr>
+        <span class="tagline">并行</span>本批次纯 UI、零迁移，可与任意批次并行（只注意 <code>StatsScreen.kt</code> 的改动位置与 B1 / B3 协调）。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== B5 ==================== -->
+<section class="panel" id="p-b5">
+  <h2 class="ph">B5 · 玻璃与形状：材质分层 + 圆角令牌</h2>
+  <p class="pdesc">底子已经很好（<code>GlassCard.kt</code> 389 行 + <code>GlassControls.kt</code> 181 行 + <code>LiquidGlassTokens.kt</code> 令牌），本批次只做两件事：把 5 个色令牌变成 <b>backdrop 1.0.6 的真实材质层</b>（高光 / 阴影 / 内阴影），以及把散落的圆角字面量收敛为<b>形状令牌</b>（含 squircle 平滑圆角）。</p>
+
+  <div class="warn" style="margin-top:0">
+  <b>两条硬约束（本文档必须纠正的事实）</b><br>
+  ① <code>LiquidGlassTokens.kt</code> 的 KDoc 写「参考库 AndroidLiquidGlassView(<b>QmDeve, MIT</b>)」——那是<b>另一个仓库</b>。实际依赖的 <code>kyant0:backdrop</code> 来自 <b>Kyant0/AndroidLiquidGlass（Apache-2.0）</b>，最新 2.0.1 <b>需 Compose 1.12</b>，本项目是 1.10.x → <b>不能升</b>。<br>
+  ② miuix 最新 0.9.4 需 <b>Kotlin 2.3.20</b>（本项目 2.3.10），且会把 <code>material-color-utilities</code> 从 2.1.1 顶到 4.1.1，而 <code>SeedColorScheme.kt</code> / <code>ThemeColorPicker.kt</code> 直接依赖它 → <b>只做源码移植，不升依赖</b>。
+  </div>
+
+  <div class="stack">
+    <div class="cvt">
+      <div class="col before">
+        <h3>现状 · 玻璃卡（色令牌叠加）</h3>
+        <div class="sub">5 个色令牌直接叠 Box；圆角是散落字面量</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card" style="background:#1b1b1f;box-shadow:0 2px 8px rgba(0,0,0,.35);border-top:1px solid rgba(255,255,255,.07)">
+                <div class="sec">收藏概览<span class="rt" style="color:#7d7d86">圆角 20dp（字面量）</span></div>
+                <div class="statrow">
+                  <div class="stat"><div class="v">128</div><div class="l">作品数</div></div>
+                  <div class="stat"><div class="v">7.4</div><div class="l">均分</div></div>
+                </div>
+                <div class="deadzone" style="margin:12px 0 0">
+                  ✕ 高光 / 边界反射是<b>固定色叠加</b>：壁纸换了颜色，边缘反射不变<br>
+                  ✕ 圆角散落：<code>20.dp</code> / <code>shapes.medium</code> / <code>999.dp</code> / <code>trackHeight/2</code> 四种写法并存<br>
+                  ✕ 开关与滑块是<b>手写手势 + 自绘圆钮</b>（<code>GlassControls.kt</code> 181 行）
+                </div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col after">
+        <h3>改后 · 材质分层 + 形状令牌</h3>
+        <div class="sub">高光 / 内阴影 / 浮起阴影分层；圆角收敛为 4 档令牌</div>
+        <div class="dev">
+          <div class="phone">
+            <div class="wall"></div>
+            <div class="scroll">
+              <div class="topbar">收藏统计<span class="sp"></span><span class="ic">⟳</span></div>
+              <div class="card" style="background:linear-gradient(160deg,rgba(255,255,255,.055),rgba(255,255,255,.012) 42%,rgba(0,0,0,.06));
+                   border:1px solid rgba(255,255,255,.10);
+                   box-shadow:0 1px 0 rgba(255,255,255,.16) inset,0 -1px 0 rgba(0,0,0,.22) inset,
+                              0 2px 8px rgba(0,0,0,.35),0 4px 3px rgba(0,0,0,.2);border-radius:22px">
+                <div class="sec">收藏概览<span class="rt">squircle 平滑圆角</span></div>
+                <div class="statrow">
+                  <div class="stat" style="background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.01))"><div class="v">128</div><div class="l">作品数</div></div>
+                  <div class="stat" style="background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.01))"><div class="v">7.4</div><div class="l">均分</div></div>
+                </div>
+                <div class="badge" style="top:-10px;right:12px">⑦</div>
+              </div>
+              <div class="card">
+                <div class="sec">控件（形状令牌统一）</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+                  <span style="font-size:12px;color:#c9c9d1">玻璃开关</span>
+                  <span style="width:52px;height:30px;border-radius:15px;background:linear-gradient(160deg,rgba(255,255,255,.12),rgba(255,255,255,.03));
+                               border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;padding:3px">
+                    <span style="margin-left:22px;width:24px;height:24px;border-radius:50%;background:#81c784;box-shadow:0 1px 3px rgba(0,0,0,.4)"></span>
+                  </span>
+                </div>
+                <div style="margin-top:12px">
+                  <div style="font-size:12px;color:#c9c9d1;margin-bottom:8px">玻璃滑块（0.5 步进保留）</div>
+                  <div style="height:34px;border-radius:999px;background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.02));
+                              border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;padding:0 14px">
+                    <div style="flex:1;height:8px;border-radius:999px;background:rgba(255,255,255,.10);position:relative">
+                      <div style="position:absolute;left:0;top:0;bottom:0;width:64%;background:#81c784;border-radius:999px"></div>
+                      <div style="position:absolute;left:64%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;border-radius:50%;background:#81c784"></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="badge" style="top:-10px;right:12px">⑦</div>
+              </div>
+              <div class="card">
+                <div class="sec">形状令牌</div>
+                <div style="display:flex;gap:8px;font-size:10.5px;color:#b9b9c2;flex-wrap:wrap">
+                  <span style="padding:6px 12px;border:1px solid rgba(255,255,255,.14);border-radius:8px">control 8</span>
+                  <span style="padding:6px 12px;border:1px solid rgba(255,255,255,.14);border-radius:14px">card 16</span>
+                  <span style="padding:6px 12px;border:1px solid rgba(255,255,255,.14);border-radius:22px">section 22</span>
+                  <span style="padding:6px 12px;border:1px solid rgba(255,255,255,.14);border-radius:999px">pill 999</span>
+                </div>
+              </div>
+              <div style="height:60px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="keep">公开 API <code>appleGlassCard()</code> 不变；深色模式仍回退 <code>surfaceContainer</code>（取消玻璃层次）—— 这是既有决策，不改。</span><hr>
+        <b>⑦</b> 5 个色令牌（HighlightTop / HighlightBottom / BorderLight / BorderDark / CardShadow）→ backdrop 1.0.6 的 <b>highlights / shadow / innerShadow DSL</b>，关键是<b>边缘反射随壁纸内容变化</b>，而不是固定色叠加。<br>
+        <hr>
+        <span class="tagline">保留手势模型</span><code>GlassSlider</code> 的 <code>offsetToValue</code>（0~10 共 21 档、0.5 步进）是已验证可用且有单测价值的纯函数 —— <b>只换视觉层，保留 <code>pointerInput</code> 与步进语义</b>。<br>
+        <span class="tagline">9 档矩阵</span><code>CardGlassLevel</code>（全开 / 仅收藏 / 关闭）× <code>GlassEffectLevel</code>（全效果 / 降低 / 关闭）= <b>9 种组合</b>，B6 的截图矩阵直接取这 9 档，不另建维度。<br>
+        <span class="tagline">与 B2 联动</span>侧栏形态下折射源的几何关系变了（<code>LiquidGlassConfig</code> 默认 <code>cornerRadius 40dp</code> 对底栏合适、对竖排 rail 过大），需新增 <code>Rail</code> 预设 → <b>B5 与 B2 合并验收</b>。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== B6 ==================== -->
+<section class="panel" id="p-b6">
+  <h2 class="ph">B6 · 截图回归矩阵 + Room 迁移测试</h2>
+  <p class="pdesc">当前 59 个测试类 / 493 个用例<b>全是纯函数测试，UI 层零自动化覆盖</b>。用 Roborazzi（JVM 上真实渲染，<b>不需要设备</b>）给玻璃降级、主题、图表可读性加回归保护；同时补齐 Room 迁移测试（含缺失的 <code>app/schemas/25.json</code>）。</p>
+
+  <div class="cvt">
+    <div class="col">
+      <h3>改后 · 截图矩阵（4 页 × 3 玻璃档 × 2 主题 × 2 宽度）</h3>
+      <div class="sub">48 张基线；不再多取，否则 review 成本超过收益</div>
+      <div class="dev">
+        <div class="tablet" style="height:auto;padding:18px">
+          <div class="wall"></div>
+          <div style="position:relative;z-index:2">
+            <div style="font-size:12px;font-weight:700;margin-bottom:10px">玻璃档位 × 页面（浅色 / 深色各一张）</div>
+            <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+              <tr style="color:#8b8b93;text-align:left">
+                <th style="padding:5px 6px;border-bottom:1px solid #26262d">页面</th>
+                <th style="padding:5px 6px;border-bottom:1px solid #26262d">全开 FULL</th>
+                <th style="padding:5px 6px;border-bottom:1px solid #26262d">仅收藏 COLLECTION_ONLY</th>
+                <th style="padding:5px 6px;border-bottom:1px solid #26262d">关闭 OFF</th>
+              </tr>
+              <tr><td style="padding:5px 6px;border-bottom:1px solid #1c1c22">作品库</td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk static" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td></tr>
+              <tr><td style="padding:5px 6px;border-bottom:1px solid #1c1c22">详情（单列 + 双栏）</td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk static" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td></tr>
+              <tr><td style="padding:5px 6px;border-bottom:1px solid #1c1c22">统计（周 / 月）</td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px;border-bottom:1px solid #1c1c22"><span class="sk static" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td></tr>
+              <tr><td style="padding:5px 6px">设置</td>
+                <td style="padding:5px 6px"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px"><span class="sk" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td>
+                <td style="padding:5px 6px"><span class="sk static" style="display:inline-block;width:52px;height:34px;border-radius:5px"></span></td></tr>
+            </table>
+            <div style="font-size:10.5px;color:#7d7d86;margin-top:12px;line-height:1.8">
+              同理再取一遍「深色 / OLED 纯黑」，以及「手机 / 平板」两档宽度 → 4 × 3 × 2 × 2 = <b>48 张</b><br>
+              主题色（HCT 派生）单独 1 张，用于捕捉 <code>material-color-utilities</code> 升级导致的配色漂移
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="devicecap">测试入口：<code>.\gradlew.bat verifyRoborazziDebug</code>（校验）/ <code>recordRoborazziDebug</code>（重录，只在批次末尾执行）。</div>
+    </div>
+
+    <div class="legend">
+      <b>⑪</b> 为什么要覆盖这 9 档：<code>GlassCard.kt:187</code> 的 <code>FULL || (COLLECTION_ONLY && isCollectionCard)</code> 是<b>最容易改一行就静默坏掉</b>的地方（无壁纸时自动退化为静态玻璃，肉眼很难发现差异）；再叠加 <code>GlassEffectLevel</code> 三档共 9 种组合，靠手点是测不完的。<br>
+      <hr>
+      <span class="tagline">必开</span><code>@GraphicsMode(NATIVE)</code> + Robolectric —— 默认 Robolectric 图形是占位的，不开 Native Graphics 渲染不出真实像素。<br>
+      <span class="tagline">分开做</span><b>迁移测试</b>不需要截图，只需 Robolectric 起真实 SQLite 校验 DDL 与导出的 <code>createSql</code> 逐字一致（README 明确说「schema 校验只在真机首次开库时执行，编译期不会报错」）。<br>
+      <span class="tagline">前置</span>补 <code>app/schemas/25.json</code>（当前 v2~v24 + v26~v29，缺 25），否则 v24→v26 建不出库。<br>
+      <span class="tagline">SDK</span>Robolectric 支持上限可能低于 <code>compileSdk 37</code> → 用 <code>@Config(sdk = [34])</code> 固定到 <code>targetSdk</code>（也是用户实际看到的版本）。<br>
+      <hr>
+      <span class="tagline">最后做</span>UI 稳定后再录基线，否则每改一处圆角就要重录全部快照。<br>
+      <span class="tagline">Q5</span>README 说明仓库当前<b>无 CI</b> —— 本轮只把命令与基线定下来，是否引入 CI 单独决策。
+    </div>
+  </div>
+
+  <div class="stack" style="margin-top:34px">
+    <div class="cvt">
+      <div class="col">
+        <h3>顺带更正 · README 过期口径</h3>
+        <div class="sub">动工前先做，避免后续以错误基线决策</div>
+        <div class="card" style="margin:0;max-width:620px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <tr style="color:#8b8b93;text-align:left">
+              <th style="padding:6px;border-bottom:1px solid #26262d">位置</th>
+              <th style="padding:6px;border-bottom:1px solid #26262d">README 现状</th>
+              <th style="padding:6px;border-bottom:1px solid #26262d">实测</th>
+            </tr>
+            <tr><td style="padding:6px;border-bottom:1px solid #1c1c22">工程待办 / 测试数</td>
+              <td style="padding:6px;border-bottom:1px solid #1c1c22">436 个</td>
+              <td style="padding:6px;border-bottom:1px solid #1c1c22;color:#a5d6a7">493 个（59 个测试类，0 失败）</td></tr>
+            <tr><td style="padding:6px;border-bottom:1px solid #1c1c22">按源限流闸门</td>
+              <td style="padding:6px;border-bottom:1px solid #1c1c22">「尚未实现」</td>
+              <td style="padding:6px;border-bottom:1px solid #1c1c22;color:#a5d6a7">已实现（VNDB + RatingHttp 两处接入）</td></tr>
+            <tr><td style="padding:6px;border-bottom:1px solid #1c1c22">平板 / 折叠屏</td>
+              <td style="padding:6px;border-bottom:1px solid #1c1c22">「尚未实现」</td>
+              <td style="padding:6px;border-bottom:1px solid #1c1c22;color:#ffb300">本计划 B2 处理</td></tr>
+            <tr><td style="padding:6px">Room 迁移测试 / v25</td>
+              <td style="padding:6px">「未补」</td>
+              <td style="padding:6px;color:#ffb300">本计划 B6 处理</td></tr>
+          </table>
+        </div>
+        <div class="devicecap">另外：动工前工作区有 28 个已修改 + 21 个未跟踪文件（含 FirstRunPolicy、AiringNotificationComposer、SyncMergePolicy、SourceRateLimiter 等未提交改动）—— <b>建议先提交或 stash</b>，否则本批次改动会与它们混在同一份 diff 里无法回滚。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="foot">
+  配套计划文档：<b>docs/ui-upgrade-plan-2026.md</b>（含批次、落点、验收、单测、风险登记与 7 条待确认）。<br>
+  已移出范围：axiel7/AniHyou-android（AniList 层工程化）、Calvin-LL/Reorderable（拖拽自定义排序，连带取消 Room v29→v30 迁移）。<br>
+  本页是形态稿：配色取自项目现有 <code>ChartPalette</code> 与玻璃令牌，最终视觉以真机 + B6 截图基线为准；圆圈数字与计划文档章节一一对应。
+</div>
+
+<script>
+  var btns = document.querySelectorAll('.tabs button');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].addEventListener('click', function () {
+      var t = this.getAttribute('data-t');
+      for (var j = 0; j < btns.length; j++) btns[j].classList.remove('on');
+      this.classList.add('on');
+      var panels = document.querySelectorAll('.panel');
+      for (var k = 0; k < panels.length; k++) panels[k].classList.remove('on');
+      var target = document.getElementById('p-' + t);
+      if (target) target.classList.add('on');
+      window.scrollTo(0, 0);
+    });
+  }
+  // 支持 #b3 这类直达锚点
+  (function () {
+    var h = (location.hash || '').replace('#', '');
+    if (!h) return;
+    var btn = document.querySelector('.tabs button[data-t="' + h + '"]');
+    if (btn) btn.click();
+  })();
+</script>
+
+</body>
+</html>

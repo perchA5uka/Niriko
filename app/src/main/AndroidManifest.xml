@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 保存图片到相册：仅 API ≤ 28 需要（29+ 走 MediaStore 分区存储，免权限）；
+         权限在「初次点击保存」时才申请（计划 B2-1） -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <!-- 放送提醒通知（阶段 J） -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

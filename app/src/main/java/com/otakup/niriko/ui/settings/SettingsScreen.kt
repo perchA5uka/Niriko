@@ -41,15 +41,42 @@ import com.otakup.niriko.navigation.SETTINGS_DATASOURCE_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_SYNC_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_ABOUT_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_REFRESH_ROUTE
+import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
+import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
 import com.otakup.niriko.ui.common.reportBottomBarScroll
 
 /**
- * 设置分类主页（对齐 Kazumi _SettingsGroup 模式）：
- * 分组 + 类别卡片（图标 + 名称 + 一句话描述），点类别进独立二级页。
+ * 设置主页：
+ * - 窄屏（COMPACT / MEDIUM）：分组 + 类别卡片（图标 + 名称 + 一句话描述），点类别进独立二级页；
+ * - 宽屏（EXPANDED）：左列分类导航 + 右列二级页正文并排，见 SettingsExpandedScreen。
  * 二级页见 ui/settings/pages/，路由注册见 NirikoNavHost。
  */
 @Composable
 fun SettingsScreen(
+    modifier: Modifier = Modifier,
+    onNavigateToCategory: (String) -> Unit = {},
+) {
+    when (currentNirikoWindowLayout()) {
+        // 宽屏：两栏并排（B2c），右列直接嵌真实二级页正文
+        NirikoWindowLayout.EXPANDED -> SettingsExpandedScreen(
+            modifier = modifier,
+            onNavigateToCategory = onNavigateToCategory,
+        )
+
+        // 窄屏：B2c 之前的单列列表，代码路径与视觉零变化
+        NirikoWindowLayout.COMPACT,
+        NirikoWindowLayout.MEDIUM -> SettingsCategoryListScreen(
+            modifier = modifier,
+            onNavigateToCategory = onNavigateToCategory,
+        )
+    }
+}
+
+/**
+ * 窄屏（COMPACT / MEDIUM）设置主页：B2c 之前的原实现，逐字保留。
+ */
+@Composable
+private fun SettingsCategoryListScreen(
     modifier: Modifier = Modifier,
     onNavigateToCategory: (String) -> Unit = {},
 ) {

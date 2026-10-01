@@ -2,6 +2,7 @@ package com.otakup.niriko.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.materialkolor.hct.Hct
@@ -18,20 +19,36 @@ import com.otakup.niriko.data.model.WatchStatus
 @Composable
 fun chartStatusColor(status: WatchStatus): Color = statusTone(status).accent
 
-/** 作品类型 → 主题派生色（相邻近似色 + 一个补色）。 */
+/**
+ * 作品类型 → 主题派生色（相邻近似色 + 一个补色）。
+ *
+ * 这是全仓唯一的「作品类型 → 颜色」映射。日历圆点等非 @Composable 场景请改用
+ * [rememberChartTypeColors]，不要再另建一套固定色表（历史上 CalendarTypeColors
+ * 就是用固定 Material 色，换主题色时日历与图表会脱节）。
+ */
 @Composable
-fun chartTypeColor(type: SubjectType): Color {
+fun chartTypeColor(type: SubjectType): Color = typeColorMap(themeChartPalette()).getValue(type)
+
+/**
+ * 纯函数：[chartTypeColor] 的映射本体（主题色板 → 类型色表）。
+ * 供非 @Composable 的纯函数消费，例如日历圆点的 buildMarks。
+ */
+internal fun typeColorMap(palette: List<Color>): Map<SubjectType, Color> = mapOf(
+    SubjectType.ANIME to palette[0],
+    SubjectType.MANGA to palette[1],
+    SubjectType.BOOK to palette[2],
+    SubjectType.GAME to palette[3],
+    SubjectType.MUSIC to palette[4],
+    SubjectType.REAL to palette[5],
+    SubjectType.PERSON to palette[5],
+    SubjectType.OTHER to palette[5],
+)
+
+/** 类型色表（按主题色板缓存；[chartTypeColor] 的批量形态）。 */
+@Composable
+fun rememberChartTypeColors(): Map<SubjectType, Color> {
     val palette = themeChartPalette()
-    return when (type) {
-        SubjectType.ANIME -> palette[0]
-        SubjectType.MANGA -> palette[1]
-        SubjectType.BOOK -> palette[2]
-        SubjectType.GAME -> palette[3]
-        SubjectType.MUSIC -> palette[4]
-        SubjectType.REAL -> palette[5]
-        SubjectType.PERSON -> palette[5]
-        SubjectType.OTHER -> palette[5]
-    }
+    return remember(palette) { typeColorMap(palette) }
 }
 
 /** 通用柱状图主色 / 强调色。 */

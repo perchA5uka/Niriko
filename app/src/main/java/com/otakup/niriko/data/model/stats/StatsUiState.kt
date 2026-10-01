@@ -24,6 +24,14 @@ data class StatsUiState(
     val ratingComparison: List<RatingComparison> = emptyList(),
     val calendarYear: Int = LocalDate.now().year,
     val calendarMonth: Int = LocalDate.now().monthValue,
+    /**
+     * 日历锚点日期：月视图显示其所在月，周视图显示其所在周（周日起始）。
+     *
+     * 周 / 月切换只改 [calendarExpanded]，锚点不变 → 切换前后停留在同一周 / 同一月，不跳变。
+     */
+    val calendarAnchorDate: LocalDate = LocalDate.now(),
+    /** 日历是否为整月视图：true = 月视图（默认，与周 / 月双模改造前一致），false = 收起的周视图。 */
+    val calendarExpanded: Boolean = true,
     val calendarDayEvents: Map<LocalDate, CalendarDayEvents> = emptyMap(),
     val calendarMode: CalendarMode = CalendarMode.PERSONAL,
     val broadcastSchedule: Map<DayOfWeek, List<AiringSubject>> = emptyMap(),

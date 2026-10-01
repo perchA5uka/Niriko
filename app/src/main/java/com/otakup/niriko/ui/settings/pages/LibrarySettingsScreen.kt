@@ -1,5 +1,6 @@
 package com.otakup.niriko.ui.settings.pages
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Explore
@@ -24,17 +25,30 @@ import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.settings.SingleChoiceDialog
 import com.otakup.niriko.viewmodel.SettingsViewModel
 
-/** 收藏与展示设置页（收藏卡片展示 + 统计与启动项）。 */
+/** 收藏与展示设置页（二级页外壳：脚手架 + 返回箭头）。 */
 @Composable
 fun LibrarySettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SettingsDetailScaffold(title = "收藏与展示", onBack = onBack, modifier = modifier) {
+        LibrarySettingsContent(viewModel = viewModel)
+    }
+}
+
+/**
+ * 「收藏与展示」二级页正文（不含脚手架与返回箭头）：
+ * 窄屏由 LibrarySettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ */
+@Composable
+fun LibrarySettingsContent(
+    viewModel: SettingsViewModel,
+) {
     val settings by viewModel.settings.collectAsState()
     var showSortPicker by remember { mutableStateOf(false) }
 
-    SettingsDetailScaffold(title = "收藏与展示", onBack = onBack, modifier = modifier) {
+    Column {
         SettingsGroupTitle("收藏卡片")
         SettingsSplitGroup(content = listOf(
             {

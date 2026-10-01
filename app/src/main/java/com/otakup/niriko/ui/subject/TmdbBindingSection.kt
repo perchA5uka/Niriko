@@ -3,6 +3,7 @@ package com.otakup.niriko.ui.subject
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -67,6 +70,10 @@ fun TmdbBindingSection(
     candidates: List<RatingCandidate>,
     pastedCandidate: RatingCandidate?,
     detail: TmdbTvDetailDto?,
+    /** 当前生效的季号（null = 按年份 + 集数自动挑选）。计划 B3 · 4-14。 */
+    currentSeason: Int? = null,
+    /** 手动指定季号；null = 不显示季号选择器。 */
+    onSeasonSelect: ((Int) -> Unit)? = null,
     manualQuery: String,
     manualLoading: Boolean,
     manualMessage: String?,
@@ -101,6 +108,8 @@ fun TmdbBindingSection(
                         binding = bound,
                         detail = detail,
                         onUnbind = onUnbind,
+                        currentSeason = currentSeason,
+                        onSeasonSelect = onSeasonSelect,
                     )
                 } else {
                     UnboundEntry(
@@ -127,6 +136,8 @@ private fun BoundHeader(
     binding: SubjectExternalIdEntity,
     detail: TmdbTvDetailDto?,
     onUnbind: () -> Unit,
+    currentSeason: Int? = null,
+    onSeasonSelect: ((Int) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val isMovie = binding.provider == SubjectExternalIdEntity.PROVIDER_TMDB_MOVIE
@@ -204,6 +215,33 @@ private fun BoundHeader(
                 )
             }
             TmdbInfoLine("每集评分/剧照", "已同步到上方「剧集」与「剧照」区块")
+
+            // 手动指定季号（计划 B3 · 4-14）：多季作品自动挑季挑错时的出口
+            val selectableSeasons = d.seasons.filter { it.seasonNumber > 0 }
+            if (selectableSeasons.isNotEmpty() && onSeasonSelect != null) {
+                TmdbInfoLine("季号", currentSeason?.let { "第 $it 季（手动）" } ?: "按年份 + 集数自动挑选")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    selectableSeasons.forEach { season ->
+                        FilterChip(
+                            selected = currentSeason == season.seasonNumber,
+                            onClick = { onSeasonSelect(season.seasonNumber) },
+                            label = {
+                                Text(
+                                    text = "第 ${season.seasonNumber} 季" +
+                                        if ((season.episodeCount ?: 0) > 0) "（${season.episodeCount} 集）" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                        )
+                    }
+                }
+            }
             TextButton(onClick = { }) {
                 Text(
                     "提示：换封面时可用 TMDb 多语言海报候选",

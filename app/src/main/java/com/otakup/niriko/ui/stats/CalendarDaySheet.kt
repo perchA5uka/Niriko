@@ -42,6 +42,7 @@ import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.components.CoverImage
 import com.otakup.niriko.ui.components.WindowBlurBehindEffect
 import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.theme.chartTypeColor
 import com.otakup.niriko.util.TitleResolver
 import com.otakup.niriko.util.AiringStatus
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
@@ -221,7 +222,7 @@ private fun PersonalEventItem(
                 Text(
                     text = subject.type.label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = CalendarTypeColors[subject.type] ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = chartTypeColor(subject.type),
                 )
                 cws.collection.rating?.let { rating ->
                     Spacer(Modifier.width(8.dp))
@@ -335,7 +336,7 @@ private fun BroadcastEventItem(
                     Text(
                         text = subject.type.label,
                         style = MaterialTheme.typography.labelSmall,
-                        color = CalendarTypeColors[subject.type] ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = chartTypeColor(subject.type),
                     )
                     // 评分
                     subject.ratingScore?.let { score ->

@@ -606,6 +606,7 @@ class NirikoApplication : Application() {
         SyncManager(
             database = database,
             webDavClient = webDavClient,
+            coverOverrideStore = coverOverrideStore,
         )
     }
 

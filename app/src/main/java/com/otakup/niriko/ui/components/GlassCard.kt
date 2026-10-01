@@ -29,7 +29,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,7 +53,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.settings.CardGlassLevel
@@ -62,18 +60,20 @@ import com.otakup.niriko.data.settings.GlassEffectLevel
 import com.otakup.niriko.ui.components.liquidglass.LiquidGlassConfig
 import com.otakup.niriko.ui.components.liquidglass.buildFrostedRenderEffect
 import com.otakup.niriko.ui.components.liquidglass.buildLiquidGlassRenderEffect
+import com.otakup.niriko.ui.components.liquidglass.liquidGlassHighlight
+import com.otakup.niriko.ui.components.liquidglass.liquidGlassInnerShadow
+import com.otakup.niriko.ui.components.liquidglass.liquidGlassShadow
+import com.otakup.niriko.ui.components.liquidglass.liquidGlassSurfaceGradient
 import com.otakup.niriko.ui.components.liquidglass.liquidGlassTint
 import com.otakup.niriko.ui.components.liquidglass.tryLoadLiquidGlassShader
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.kyant.backdrop.backdrops.emptyBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
-import com.kyant.backdrop.shadow.Shadow
 import coil.Coil
 import coil.request.CachePolicy
 import coil.request.ImageRequest
@@ -91,7 +91,7 @@ import coil.request.ImageRequest
  */
 @Composable
 fun Modifier.appleGlassCard(
-    shape: Shape = RoundedCornerShape(16.dp),
+    shape: Shape = NirikoShapes.SectionShape,
     tintColor: Color? = null,
     isCollectionCard: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
@@ -108,19 +108,8 @@ fun Modifier.appleGlassCard(
                          else (0.20f + adaptive).coerceIn(0.14f, 0.32f)
     val glassBase = if (isDark) Color.Black.copy(alpha = glassBaseAlpha)
                     else Color.White.copy(alpha = glassBaseAlpha)
-    val highlightColors = if (isDark) {
-        listOf(
-            Color.White.copy(alpha = 0.06f),
-            Color.Transparent,
-            Color.Black.copy(alpha = 0.10f),
-        )
-    } else {
-        listOf(
-            Color.White.copy(alpha = 0.22f),
-            Color.Transparent,
-            Color.Black.copy(alpha = 0.03f),
-        )
-    }
+    // 顶部受光 → 中心透明 → 底部沉降：材质令牌（LiquidGlassPalette），组件内不再写死色值。
+    val highlightColors = liquidGlassSurfaceGradient(isDark)
     // 封面 Ambient Tint：alpha 0.05，限制在卡片上 1/3 区域（余光，不是染色）
     val tintAlpha = 0.05f
     val tintBrush = remember(tintColor) {
@@ -150,29 +139,11 @@ fun Modifier.appleGlassCard(
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
         label = "cardHighlight",
     )
-    val highlight = {
-        Highlight.Default.copy(
-            width = 1.dp,
-            blurRadius = 0.5.dp,
-            alpha = highlightAlpha,
-        )
-    }
+    val highlight = { liquidGlassHighlight(alpha = highlightAlpha) }
     // 方向性外投影：接触阴影下沉 + 环境弱化。
-    val shadow = {
-        Shadow(
-            radius = 12.dp,
-            offset = DpOffset(0.dp, 4.dp),
-            color = Color.Black.copy(alpha = if (isDark) 0.24f else 0.10f),
-        )
-    }
+    val shadow = { liquidGlassShadow(isDark = isDark) }
     // 玻璃内厚度：底部一条下沉暗边。
-    val innerShadow = {
-        InnerShadow(
-            radius = 12.dp,
-            offset = DpOffset(0.dp, 2.dp),
-            color = Color.Black.copy(alpha = if (isDark) 0.22f else 0.14f),
-        )
-    }
+    val innerShadow = { liquidGlassInnerShadow(isDark = isDark) }
     val onDrawSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
         // 玻璃 tint 底
         drawRect(color = glassBase)
@@ -183,13 +154,21 @@ fun Modifier.appleGlassCard(
         // 顶部受光 → 中心透明 → 底部沉降
         drawRect(brush = highlightBrush)
     }
-    val realEnabled = cardBackdrop != null && glassEffect != GlassEffectLevel.OFF &&
-        (glassLevel == CardGlassLevel.FULL || (glassLevel == CardGlassLevel.COLLECTION_ONLY && isCollectionCard))
-    return if (realEnabled) {
+    // 判定集中到 GlassDecision（纯函数，真值表由 GlassDecisionTest 覆盖）
+    val realEnabled = GlassDecision.cardUsesRealGlass(
+        cardBackdrop = cardBackdrop,
+        glassEffect = glassEffect,
+        cardGlassLevel = glassLevel,
+        isCollectionCard = isCollectionCard,
+    )
+    // 类型收窄：realEnabled 只可能在 cardBackdrop 非 null 时成立（判定内含判空），抽成纯函数后
+    // 编译器无法再智能转换，这里显式收窄一次，语义与抽取前逐字一致。
+    val realGlassBackdrop = if (realEnabled) cardBackdrop else null
+    return if (realGlassBackdrop != null) {
         // 真液态玻璃：和 dock 同管线 —— vibrancy → blur → lens（折射背后壁纸），
         // 再叠加发光边缘/外投影/内厚度。这就是“卡片=玻璃”。
         this.drawBackdrop(
-            backdrop = cardBackdrop,
+            backdrop = realGlassBackdrop,
             shape = { shape },
             effects = {
                 vibrancy()

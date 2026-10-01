@@ -28,7 +28,8 @@ import kotlinx.coroutines.flow.first
  * 每日周期执行：读取「在看」收藏条目，判定今日放送者并发送本地通知。
  * - 开启判定：优先拉取网络放送日历（[NirikoApplication.dataSourceChain]），
  *   无网络（拉取失败）时回退到本地 subject 字段（airWeekday + airDate + AiringStatus）。
- * - 通知文案：标题「《作品名》今日更新」，正文「今日放送，记得观看」；点击跳转详情页。
+ * - 通知文案：单条为「《作品名》今日更新」；同一天多条**合并为一条**（计划 B1-3，用户确认），
+ *   合并后点击落到作品库「在看」列表；单条点击仍直达详情页。不做免打扰时段。
  * - 未授权通知权限（API 33+ POST_NOTIFICATIONS）时不打扰，由主界面/设置页负责请求。
  * - 任一步失败静默返回 success（补充功能，不影响主流程）。
  */
@@ -67,35 +68,50 @@ class AiringReminderWorker(
             if (!granted) return Result.success()
         }
 
-        val manager = NotificationManagerCompat.from(applicationContext)
-        for (subject in airingToday) {
-            val title = "《${subject.title}》今日更新"
-            // 阶段 A：有精确放送时刻时在正文带上时间
-            val text = subject.airTimeMinutes?.let { "今日 ${formatMinutes(it)} 放送，记得观看" } ?: "今日放送，记得观看"
-            val intent = Intent(applicationContext, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra(AiringReminderScheduler.EXTRA_SUBJECT_ID, subject.subjectId)
+        // 多条合并（计划 B1-3）：收集今日命中 → 一次性构造内容
+        val content = AiringNotificationComposer.compose(
+            airingToday.map { subject ->
+                AiringNotificationItem(
+                    subjectId = subject.subjectId,
+                    title = subject.title,
+                    airTimeMinutes = subject.airTimeMinutes,
+                )
+            },
+        ) ?: return Result.success()
+
+        val intent = Intent(applicationContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (content.merged) {
+                // 合并通知：点击 → 作品库「在看」列表
+                putExtra(AiringReminderScheduler.EXTRA_OPEN_AIRING_LIST, true)
+            } else {
+                putExtra(AiringReminderScheduler.EXTRA_SUBJECT_ID, content.subjectId ?: -1L)
             }
-            val pending = PendingIntent.getActivity(
-                applicationContext,
-                subject.subjectId.toInt(),
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            val notification = NotificationCompat.Builder(
-                applicationContext,
-                AiringReminderScheduler.CHANNEL_ID,
-            )
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle(title)
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setContentIntent(pending)
-                .setAutoCancel(true)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .build()
-            runCatching { manager.notify(subject.subjectId.toInt(), notification) }
         }
+        val notificationId = if (content.merged) {
+            AiringNotificationComposer.MERGED_NOTIFICATION_ID
+        } else {
+            (content.subjectId ?: 0L).toInt()
+        }
+        val pending = PendingIntent.getActivity(
+            applicationContext,
+            notificationId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notification = NotificationCompat.Builder(
+            applicationContext,
+            AiringReminderScheduler.CHANNEL_ID,
+        )
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(content.title)
+            .setContentText(content.text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content.text))
+            .setContentIntent(pending)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        runCatching { NotificationManagerCompat.from(applicationContext).notify(notificationId, notification) }
         return Result.success()
     }
 
@@ -121,9 +137,6 @@ class AiringReminderWorker(
         val all = runCatching { app.database.subjectDao().getAll() }.getOrDefault(emptyList())
         return all.filter { it.subjectId in watchingIds && localAirsToday(it, today, todayDOW) }
     }
-
-    /** 分钟（0-1439）→ "HH:mm"。 */
-    private fun formatMinutes(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
 
     /** 本地字段判定某条目今天是否放送：ANIME/REAL、连载中、airWeekday==今天。 */
     private fun localAirsToday(subject: SubjectEntity, today: LocalDate, todayDOW: DayOfWeek): Boolean {

@@ -21,6 +21,23 @@ splashscreen = "1.0.1"
 work = "2.10.0"
 pinyin4j = "2.5.1"
 
+# ── ui-upgrade-plan-2026 批次依赖（B0 探针已通过，见 docs/ui-upgrade-plan-2026.md §十四）──
+# B1 图表：Vico 3（v3 API：CartesianChartHost/rememberCartesianChart）
+# [B0 探针] 3.3.1 已实测：对 kotlin-stdlib 下 strictly 2.4.10，并把 Compose UI 顶到 1.12.0 → 与本工程
+# Kotlin 2.3.10 + BOM 2025.12.01（Compose 1.10.3）不兼容，故先降到 3.2.0 复验（见 §十四）。
+vico = "3.2.0"
+# B3 日历周月双模（KMP 变体，为 docs/ios-port 铺路）
+calendar = "2.10.1"
+# B4 加载态骨架屏微光
+shimmer = "1.5.0"
+# B2 窗口尺寸类别：androidx.compose.material3.adaptive（currentWindowAdaptiveInfo）
+# 明令不再引入旧的 androidx.compose.material3:material3-window-size-class，
+# 两套尺寸类别判定混用会导致 dock/双栏断点不一致。
+adaptive = "1.2.0"
+# B6 Robolectric：JVM 上跑真实 Android 运行时（含 SQLite / 资源 / manifest）。
+# 其支持的 SDK 上限低于 compileSdk 37，故所有相关测试固定 @Config(sdk = [34])（= targetSdk）。
+robolectric = "4.17"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
@@ -69,6 +86,23 @@ androidx-room-runtime = { group = "androidx.room", name = "room-runtime", versio
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# ── ui-upgrade-plan-2026 批次依赖 ──
+# B1 图表（Apache-2.0）
+vico-compose-m3 = { group = "com.patrykandpatrick.vico", name = "compose-m3", version.ref = "vico" }
+# B3 日历（MIT，KMP 变体）
+kizitonwose-calendar = { group = "com.kizitonwose.calendar", name = "compose-multiplatform", version.ref = "calendar" }
+# B4 骨架屏微光（Apache-2.0）
+compose-shimmer = { group = "com.valentinilk.shimmer", name = "compose-shimmer", version.ref = "shimmer" }
+# B2 窗口尺寸类别（Apache-2.0）
+androidx-compose-material3-adaptive = { group = "androidx.compose.material3.adaptive", name = "adaptive", version.ref = "adaptive" }
+# B6 JVM 上的真实 Android 运行时（含 SQLite / 资源 / manifest），只进本地单元测试。
+# 其支持的 SDK 上限低于 compileSdk 37，故相关测试固定 @Config(sdk = [34])（= targetSdk）。
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+# B6 Room 迁移测试（与 room 同版）。MigrationTestHelper 在 AGP 单元测试下拿不到 assets，
+# 实际改用直读 app/schemas 的方式（见 RoomMigrationTest）；本坐标仍保留，用于带入
+# androidx.test.ext:junit（@RunWith(AndroidJUnit4)）。
+androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

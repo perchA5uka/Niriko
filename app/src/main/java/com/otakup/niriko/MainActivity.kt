@@ -22,8 +22,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -31,16 +33,22 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.otakup.niriko.data.settings.FirstRunPolicy
 import com.otakup.niriko.data.settings.ThemeMode
 import com.otakup.niriko.navigation.LocalSearchGestureLock
+import com.otakup.niriko.ui.onboarding.FirstRunScreen
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import com.otakup.niriko.navigation.MAIN_ROUTE
-import com.otakup.niriko.navigation.NirikoBottomBar
 import com.otakup.niriko.navigation.NirikoNavHost
 import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.navigation.rememberNirikoNavState
 import com.otakup.niriko.navigation.SETTINGS_APPEARANCE_ROUTE
 import com.otakup.niriko.navigation.rememberSearchGestureLock
+import com.otakup.niriko.ui.adaptive.NirikoNavSuite
+import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
+import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
+import com.otakup.niriko.ui.adaptive.verticalDockStartInset
 import com.otakup.niriko.ui.common.LocalBottomBarHideFraction
 import com.otakup.niriko.ui.common.rememberImageLuminance
 import com.otakup.niriko.ui.components.LocalCardGlassBackdrop
@@ -77,6 +85,10 @@ class MainActivity : ComponentActivity() {
         intent.getLongExtra(AiringReminderScheduler.EXTRA_SUBJECT_ID, -1L).takeIf { it > 0 }?.let {
             pendingAiringSubjectId.value = it
         }
+        // 合并放送通知点击（计划 B1-3）：打开作品库「在看」列表，由作品库页消费后清空
+        if (intent.getBooleanExtra(AiringReminderScheduler.EXTRA_OPEN_AIRING_LIST, false)) {
+            com.otakup.niriko.data.notification.AiringListFilterRequest.pending = true
+        }
         // 单 Activity 已运行时的再次打开（singleTop 重新派发）
         // onNewIntent 见下方覆写
         super.onCreate(savedInstanceState)
@@ -87,6 +99,14 @@ class MainActivity : ComponentActivity() {
         val initialSettings = kotlinx.coroutines.runBlocking {
             app.settingsDataStore.settings.first()
         }
+        // 首次启动引导（计划 B1-1）：原始键 + 是否已有历史设置 → 全新安装才展示，
+        // 升级安装的老用户不打扰（规则见 FirstRunPolicy）
+        val storedFirstRunCompleted = kotlinx.coroutines.runBlocking {
+            app.settingsDataStore.rawFirstRunCompleted()
+        }
+        val hasStoredSettings = kotlinx.coroutines.runBlocking {
+            app.settingsDataStore.hasStoredSettings()
+        }
         setContent {
             val settingsViewModel = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
@@ -95,6 +115,14 @@ class MainActivity : ComponentActivity() {
                 ),
             )
             val settings by settingsViewModel.settings.collectAsState()
+
+            // 首次启动引导（计划 B1-1）：每页都有「跳过」；走完或跳过后写入完成标记
+            var showFirstRun by remember {
+                mutableStateOf(
+                    FirstRunPolicy.shouldShowFirstRun(storedFirstRunCompleted, hasStoredSettings),
+                )
+            }
+            val firstRunScope = rememberCoroutineScope()
 
             // 首次请求通知权限（阶段 J）：开关开启且未授权（API 33+）时请求
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -163,6 +191,19 @@ class MainActivity : ComponentActivity() {
                 customSeedColor = settings.customSeedColor,
                 reduceMotion = settings.reduceMotion || systemAnimatorOff,
             ) {
+                if (showFirstRun) {
+                    // 首次启动引导：只做 TMDb API Key 设置（计划 B1-1，新增功能）
+                    FirstRunScreen(
+                        initialKey = settings.tmdbApiKey,
+                        onFinish = { key ->
+                            firstRunScope.launch {
+                                if (key.isNotBlank()) app.settingsDataStore.setTmdbApiKey(key)
+                                app.settingsDataStore.setFirstRunCompleted(true)
+                                showFirstRun = false
+                            }
+                        },
+                    )
+                } else {
                 val navState = rememberNirikoNavState()
                 // 放送提醒通知点击 → 打开对应详情页（key 用 state 值，cold/warm 均触发）
                 androidx.compose.runtime.LaunchedEffect(pendingAiringSubjectId.value) {
@@ -174,12 +215,29 @@ class MainActivity : ComponentActivity() {
                 }
                 // 顶层四页 Pager 状态：MainPager 与 NirikoBottomBar 共享（指示器跟手联动）
                 val pagerState = rememberPagerState(pageCount = { TopLevelDestination.entries.size })
+                // 合并放送通知点击（计划 B1-3）：先切到作品库页，筛选由作品库页自己消费
+                androidx.compose.runtime.LaunchedEffect(
+                    com.otakup.niriko.data.notification.AiringListFilterRequest.pending,
+                ) {
+                    if (com.otakup.niriko.data.notification.AiringListFilterRequest.pending) {
+                        runCatching {
+                            pagerState.animateScrollToPage(TopLevelDestination.Library.ordinal)
+                        }
+                    }
+                }
                 // Pager 手势锁：搜索交互按下/拖拽期间锁定 Pager 翻页（根治左划冲突）
                 val searchGestureLock = rememberSearchGestureLock()
                 val navBackStackEntry by navState.navController.currentBackStackEntryAsState()
                 val currentRoute = navBackStackEntry?.destination?.route
                 // 仅顶层 main 路由显示底栏；二级页面（详情/搜索等）隐藏
                 val showBottomBar = currentRoute == MAIN_ROUTE
+                // B2 窗口尺寸类别（自适应）：≥840dp 宽且竖向空间足够时改用竖向玻璃 dock；
+                // 不缓存到 remember —— 旋转 / 自由缩放 / 折叠展开后自动重组切换，无需重启。
+                val windowLayout = currentNirikoWindowLayout()
+                val useVerticalDock = windowLayout == NirikoWindowLayout.EXPANDED
+                // 手机端行为不变（仍只在顶层 main 路由显示胶囊底栏）；宽屏 dock 在二级页也保留（含返回项）
+                val showNavSuite = showBottomBar || useVerticalDock
+                val navSuiteScope = rememberCoroutineScope()
                 // 外部 .nirikotheme 打开：自动进入外观页（消费 ThemePackImportRequest）
                 androidx.compose.runtime.LaunchedEffect(Unit) {
                     if (com.otakup.niriko.data.themepack.ThemePackImportRequest.uri != null) {
@@ -258,6 +316,11 @@ class MainActivity : ComponentActivity() {
                                 // 详情页（subject_detail）让背景墙延伸到状态栏后：顶部不避让，仅保留 bottom/left/right；
                                 // 其他页面保持原样（由 Scaffold systemBars inset 避让）。
                                 val isSubjectDetail = currentRoute?.startsWith("subject_detail") == true
+                                // B2 宽屏：左侧悬浮竖向 dock 需要起始内边距（约 96dp），并随 dock 收起
+                                // （bottomBarHideFraction）同步收缩 —— 实现见 ui/adaptive/AdaptiveInsets.kt。
+                                // 手机端（COMPACT / MEDIUM）走原样 innerPadding，逐字不变；
+                                // B2b：详情页也吃同一份 dock 内边距（补上 5a 的缺口），宽屏详情页同样不会被竖向 dock 盖住。
+                                val showVerticalDockInset = useVerticalDock
                                 val boxPadding = if (isSubjectDetail) {
                                     PaddingValues(
                                         start = innerPadding.calculateStartPadding(LayoutDirection.Ltr),
@@ -268,7 +331,17 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     innerPadding
                                 }
-                                Box(modifier = Modifier.fillMaxSize().padding(boxPadding)) {
+                                val dockInsetModifier = if (showVerticalDockInset) {
+                                    Modifier.verticalDockStartInset { bottomBarHideFraction.floatValue }
+                                } else {
+                                    Modifier
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(boxPadding)
+                                        .then(dockInsetModifier)
+                                ) {
                                     NirikoNavHost(
                                         navController = navState.navController,
                                         pagerState = pagerState,
@@ -279,17 +352,27 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    if (showBottomBar) {
-                        NirikoBottomBar(
+                    if (showNavSuite) {
+                        NirikoNavSuite(
+                            layout = windowLayout,
                             pagerState = pagerState,
                             backdrop = windowKyantBackdrop,
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            onDestinationSelected = { page ->
+                                navSuiteScope.launch {
+                                    // 宽屏二级页也保留 dock：先回顶层 main 路由，再切页
+                                    if (currentRoute != MAIN_ROUTE) {
+                                        navState.navController.popBackStack(MAIN_ROUTE, false)
+                                    }
+                                    pagerState.animateScrollToPage(page)
+                                }
+                            },
                         )
                     }
                     }
                     // 开屏动画已按用户要求移除（系统 SplashScreen 主题与衔接动画一并删除）。
                     // Android 12+ 冷启动系统仍会绘制一帧启动画面，但现在是纯 Window 背景，
                     // 没有品牌绿底、也没有大 N 图标。
+                }
                 }
                 }
             }
@@ -302,6 +385,9 @@ class MainActivity : ComponentActivity() {
         handleThemePackIntent(intent)
         intent.getLongExtra(AiringReminderScheduler.EXTRA_SUBJECT_ID, -1L).takeIf { it > 0 }?.let {
             pendingAiringSubjectId.value = it
+        }
+        if (intent.getBooleanExtra(AiringReminderScheduler.EXTRA_OPEN_AIRING_LIST, false)) {
+            com.otakup.niriko.data.notification.AiringListFilterRequest.pending = true
         }
     }
 

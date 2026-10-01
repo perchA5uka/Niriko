@@ -185,6 +185,13 @@ class BackupManager(
         }
 
         // 写入数据库（整体事务：失败自动回滚，不出现半清空状态）
+        // 计划 B2-4（用户确认：冲突则本地优先）：合并模式下这些表的 insertAll 是 REPLACE 语义，
+        // 直接写会把本地记录覆盖成备份里的旧值，因此先按业务主键剔除「本地已有」的备份记录，
+        // 只并入本地没有的，本地值一律保留。merge=false 的全覆盖模式行为不变。
+        var insertedSubjects = 0
+        var insertedCollections = 0
+        var insertedWorkItems = 0
+        var insertedHistory = 0
         try {
             database.withTransaction {
                 if (!merge) {
@@ -196,21 +203,71 @@ class BackupManager(
                     database.personCollectionDao().clearAll()
                 }
 
+                // 本地已有键（merge=false 时为空集 → 全部插入）
+                val localSubjectIds =
+                    if (merge) database.subjectDao().getAll().map { it.subjectId }.toSet() else emptySet()
+                val localCollectionIds =
+                    if (merge) database.collectionDao().getAll().map { it.subjectId }.toSet() else emptySet()
+                val localWorkIds =
+                    if (merge) database.workDao().getAll().map { it.id }.toSet() else emptySet()
+                val localHistoryIds =
+                    if (merge) database.searchHistoryDao().getAll().map { it.id }.toSet() else emptySet()
+                val localPersonIds =
+                    if (merge) database.personCollectionDao().getAll().map { it.personId }.toSet() else emptySet()
+                val localExternalIds =
+                    if (merge) database.externalIdDao().getAll().map { it.subjectId to it.provider }.toSet()
+                    else emptySet()
+                val localEpisodeRatingIds =
+                    if (merge) database.externalRatingDao().getAllMyEpisodeRatings().map { it.epId }.toSet()
+                    else emptySet()
+                val localAwardIds =
+                    if (merge) database.manualAwardDao().getAll().map { it.id }.toSet() else emptySet()
+
+                val subjectsToInsert = RestoreMergePolicy.keepOnlyNew(subjects, localSubjectIds) { it.subjectId }
+                val collectionsToInsert =
+                    RestoreMergePolicy.keepOnlyNew(collections, localCollectionIds) { it.subjectId }
+                val workItemsToInsert = RestoreMergePolicy.keepOnlyNew(workItems, localWorkIds) { it.id }
+                val historyToInsert = RestoreMergePolicy.keepOnlyNew(history, localHistoryIds) { it.id }
+                val personsToInsert = RestoreMergePolicy.keepOnlyNew(persons, localPersonIds) { it.personId }
+                val externalIdsToInsert =
+                    RestoreMergePolicy.keepOnlyNew(validExternalIds, localExternalIds) { it.subjectId to it.provider }
+                val episodeRatingsToInsert =
+                    RestoreMergePolicy.keepOnlyNew(validMyEpisodeRatings, localEpisodeRatingIds) { it.epId }
+                val awardsToInsert =
+                    RestoreMergePolicy.keepOnlyNew(validManualAwards, localAwardIds) { it.id }
+
                 // 按 FK 顺序插入
-                if (subjects.isNotEmpty()) database.subjectDao().insertAll(subjects)
-                if (collections.isNotEmpty()) database.collectionDao().insertAll(collections)
-                if (workItems.isNotEmpty()) database.workDao().insertAll(workItems)
-                if (history.isNotEmpty()) database.searchHistoryDao().insertAll(history)
-                if (persons.isNotEmpty()) database.personCollectionDao().insertAll(persons)
+                if (subjectsToInsert.isNotEmpty()) database.subjectDao().insertAll(subjectsToInsert)
+                if (collectionsToInsert.isNotEmpty()) database.collectionDao().insertAll(collectionsToInsert)
+                if (workItemsToInsert.isNotEmpty()) database.workDao().insertAll(workItemsToInsert)
+                if (historyToInsert.isNotEmpty()) database.searchHistoryDao().insertAll(historyToInsert)
+                if (personsToInsert.isNotEmpty()) database.personCollectionDao().insertAll(personsToInsert)
                 // 阶段 7：外部身份绑定 / 我的每集评分 / 手动录入的权威成绩
                 // （这些都是"重建成本高"或"纯用户数据"，必须随备份迁移）
-                if (validExternalIds.isNotEmpty()) database.externalIdDao().insertAll(validExternalIds)
-                if (validMyEpisodeRatings.isNotEmpty()) {
-                    database.externalRatingDao().insertAllMyEpisodeRatings(validMyEpisodeRatings)
+                if (externalIdsToInsert.isNotEmpty()) database.externalIdDao().insertAll(externalIdsToInsert)
+                if (episodeRatingsToInsert.isNotEmpty()) {
+                    database.externalRatingDao().insertAllMyEpisodeRatings(episodeRatingsToInsert)
                 }
-                if (validManualAwards.isNotEmpty()) database.manualAwardDao().insertAll(validManualAwards)
+                if (awardsToInsert.isNotEmpty()) database.manualAwardDao().insertAll(awardsToInsert)
+
+                insertedSubjects = subjectsToInsert.size
+                insertedCollections = collectionsToInsert.size
+                insertedWorkItems = workItemsToInsert.size
+                insertedHistory = historyToInsert.size
             }
-            coverOverrideStore?.putAll(coverOverrides, clearFirst = !merge)
+            // 封面覆盖同样本地优先：本地已有该作品的覆盖 → 保留本地
+            val coverToWrite = if (merge) {
+                val localCoverIds = runCatching { coverOverrideStore?.all()?.keys }
+                    .getOrNull()
+                    ?.toSet()
+                    ?: emptySet()
+                // 用 Pair 列表而不是 Map.Entry：toMap() 只对 Iterable<Pair> 可用
+                val backupCovers = coverOverrides.map { it.key to it.value }
+                RestoreMergePolicy.keepOnlyNew(backupCovers, localCoverIds) { it.first }.toMap()
+            } else {
+                coverOverrides
+            }
+            coverOverrideStore?.putAll(coverToWrite, clearFirst = !merge)
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
             return ImportResult(success = false, error = "数据写入失败: ${e.message}")
@@ -221,12 +278,13 @@ class BackupManager(
         // 因此旧版本备份不再恢复设置，避免误清空 Steam/WebDAV/Bangumi 等配置。
         val settings = if (version >= 3) parseSettings(root["settings"]) else null
 
+        // 计数按「实际写入」返回：合并模式下被本地保留的冲突记录不计入
         return ImportResult(
             success = true,
-            subjectsCount = subjects.size,
-            collectionsCount = collections.size,
-            workItemsCount = workItems.size,
-            historyCount = history.size,
+            subjectsCount = insertedSubjects,
+            collectionsCount = insertedCollections,
+            workItemsCount = insertedWorkItems,
+            historyCount = insertedHistory,
             settings = settings,
         )
     }
@@ -335,6 +393,14 @@ class BackupManager(
         put("activeThemePackId", JsonPrimitive(s.activeThemePackId))
         put("reduceMotion", JsonPrimitive(s.reduceMotion))
         put("customIconMode", JsonPrimitive(s.customIconMode))
+
+        // 豆瓣（灰色通道）：此前完全没进 settings JSON，恢复时会被清成默认值（本次一并补上）
+        put("doubanPhotosEnabled", JsonPrimitive(s.doubanPhotosEnabled))
+        put("doubanAntiSpoiler", JsonPrimitive(s.doubanAntiSpoiler))
+        put("doubanImageReferer", JsonPrimitive(s.doubanImageReferer))
+        put("doubanApiReferer", JsonPrimitive(s.doubanApiReferer))
+        // 首启标记（B1 新增）：不进备份的话，恢复后会被重置为 false → 又弹一次引导
+        put("firstRunCompleted", JsonPrimitive(s.firstRunCompleted))
 
         // 收藏
         put("defaultSortOrder", JsonPrimitive(s.defaultSortOrder.name))
@@ -613,9 +679,17 @@ class BackupManager(
             } ?: defaults.bangumiSyncPriority,
             bangumiAutoSync = o["bangumiAutoSync"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.bangumiAutoSync,
 
+            // 豆瓣（灰色通道）—— 见 settingsToJson 同名键
+            doubanPhotosEnabled = o["doubanPhotosEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.doubanPhotosEnabled,
+            doubanAntiSpoiler = o["doubanAntiSpoiler"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.doubanAntiSpoiler,
+            doubanImageReferer = o["doubanImageReferer"]?.jsonPrimitive?.content ?: defaults.doubanImageReferer,
+            doubanApiReferer = o["doubanApiReferer"]?.jsonPrimitive?.content ?: defaults.doubanApiReferer,
+
             // 统计与启动
             showAnnuallySummary = o["showAnnuallySummary"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showAnnuallySummary,
             startPage = o["startPage"]?.jsonPrimitive?.content ?: defaults.startPage,
+            // 首启标记（B1 新增）：不进备份的话，恢复后会被重置为 false → 又弹一次引导
+            firstRunCompleted = o["firstRunCompleted"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.firstRunCompleted,
         )
     }
 

@@ -58,6 +58,19 @@ fun RefreshDiagnosticsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SettingsDetailScaffold(title = "刷新诊断", onBack = onBack, modifier = modifier) {
+        RefreshDiagnosticsContent(viewModel = viewModel)
+    }
+}
+
+/**
+ * 「刷新诊断」二级页正文（不含脚手架与返回箭头）：
+ * 窄屏由 RefreshDiagnosticsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ */
+@Composable
+fun RefreshDiagnosticsContent(
+    viewModel: SettingsViewModel,
+) {
     val snapshots by viewModel.refreshSnapshots.collectAsState()
     val runningKeys by viewModel.refreshRunningKeys.collectAsState()
 
@@ -76,75 +89,73 @@ fun RefreshDiagnosticsScreen(
             .sortedWith { a, b -> RefreshStatusLabels.diagnoseOrder(a, b, nowMs) }
     }
 
-    androidx.compose.foundation.layout.Box(modifier = modifier.fillMaxWidth()) {
-        SettingsDetailScaffold(title = "刷新诊断", onBack = onBack) {
-            SettingsGroupTitle("操作")
-            SettingsSplitGroup(content = listOf(
-                {
-                    SettingsActionRow(
-                        icon = Icons.Outlined.Refresh,
-                        title = "立即强制刷新应用级数据",
-                        description = "Steam 排行榜与自动匹配，绕过新鲜度与退避",
-                        showChevron = false,
-                        onClick = viewModel::forceRefreshAppResources,
-                    )
-                },
-                {
-                    SettingsActionRow(
-                        icon = Icons.Outlined.RestartAlt,
-                        title = "清除全部刷新记录",
-                        description = "不立即请求；下次进入各页面时全部重新拉取",
-                        showChevron = false,
-                        onClick = viewModel::resetAllRefreshRecords,
-                    )
-                },
-            ))
+    Column {
+        SettingsGroupTitle("操作")
+        SettingsSplitGroup(content = listOf(
+            {
+                SettingsActionRow(
+                    icon = Icons.Outlined.Refresh,
+                    title = "立即强制刷新应用级数据",
+                    description = "Steam 排行榜与自动匹配，绕过新鲜度与退避",
+                    showChevron = false,
+                    onClick = viewModel::forceRefreshAppResources,
+                )
+            },
+            {
+                SettingsActionRow(
+                    icon = Icons.Outlined.RestartAlt,
+                    title = "清除全部刷新记录",
+                    description = "不立即请求；下次进入各页面时全部重新拉取",
+                    showChevron = false,
+                    onClick = viewModel::resetAllRefreshRecords,
+                )
+            },
+        ))
 
-            if (runningKeys.isNotEmpty()) {
-                SettingsGroupTitle("进行中")
-                SettingsSplitGroup(content = runningKeys.sorted().map { key ->
-                    {
-                        SettingsInfoRow(
-                            icon = Icons.Outlined.Sync,
-                            title = RefreshStatusLabels.label(key),
-                            value = "刷新中…",
-                        )
-                    }
-                })
-            }
-
-            SettingsGroupTitle("资源状态（${rows.size}）")
-            if (rows.isEmpty()) {
-                SettingsSplitGroup(content = listOf({
+        if (runningKeys.isNotEmpty()) {
+            SettingsGroupTitle("进行中")
+            SettingsSplitGroup(content = runningKeys.sorted().map { key ->
+                {
                     SettingsInfoRow(
-                        icon = Icons.Outlined.Info,
-                        title = "暂无记录",
-                        value = "尚未发生受编排的刷新",
+                        icon = Icons.Outlined.Sync,
+                        title = RefreshStatusLabels.label(key),
+                        value = "刷新中…",
                     )
-                }))
-            } else {
-                SettingsSplitGroup(content = rows.map { (key, snapshot) ->
-                    {
-                        DiagnosticRow(
-                            icon = diagnosticIcon(snapshot.lastError, snapshot.backoffUntil > nowMs),
-                            title = RefreshStatusLabels.label(key),
-                            summary = RefreshStatusLabels.describe(snapshot, nowMs),
-                            error = snapshot.lastError,
-                            onReset = { viewModel.resetRefreshKey(key) },
-                        )
-                    }
-                })
-            }
+                }
+            })
+        }
 
-            SettingsGroupTitle("判定规则")
+        SettingsGroupTitle("资源状态（${rows.size}）")
+        if (rows.isEmpty()) {
             SettingsSplitGroup(content = listOf({
                 SettingsInfoRow(
                     icon = Icons.Outlined.Info,
-                    title = "跳过与退避",
-                    description = "命中软 TTL 的自动刷新会被跳过；失败后按 30s/60s/120s/300s 退避",
+                    title = "暂无记录",
+                    value = "尚未发生受编排的刷新",
                 )
             }))
+        } else {
+            SettingsSplitGroup(content = rows.map { (key, snapshot) ->
+                {
+                    DiagnosticRow(
+                        icon = diagnosticIcon(snapshot.lastError, snapshot.backoffUntil > nowMs),
+                        title = RefreshStatusLabels.label(key),
+                        summary = RefreshStatusLabels.describe(snapshot, nowMs),
+                        error = snapshot.lastError,
+                        onReset = { viewModel.resetRefreshKey(key) },
+                    )
+                }
+            })
         }
+
+        SettingsGroupTitle("判定规则")
+        SettingsSplitGroup(content = listOf({
+            SettingsInfoRow(
+                icon = Icons.Outlined.Info,
+                title = "跳过与退避",
+                description = "命中软 TTL 的自动刷新会被跳过；失败后按 30s/60s/120s/300s 退避",
+            )
+        }))
     }
 }
 

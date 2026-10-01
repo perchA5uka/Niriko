@@ -34,6 +34,13 @@ Niriko 本体以 **MIT License** 发布（见 [`LICENSE`](LICENSE)）。下面�
   版权声明已保留在该文件头部，按 MIT 要求不得移除。
 - `app/src/main/java/com/otakup/niriko/ui/components/liquidglass/` 内的着色器封装（模糊缓存与
   RenderEffect 策略）参考了同一上游实现。
+- `app/src/main/java/com/otakup/niriko/ui/theme/NirikoShapes.kt` 里的平滑圆角（squircle /
+  连续曲率圆角）**算法移植自 [compose-miuix-ui/miuix](https://github.com/compose-miuix-ui/miuix)**
+  （版本口径 0.9.x；本工程实际依赖 `top.yukonga.miuix.kmp:miuix-blur-android:0.9.0`），
+  **Apache License 2.0**（<https://www.apache.org/licenses/LICENSE-2.0>）。
+  说明：该实现不是上游源码的逐字拷贝，而是按公开的 corner-smoothing 几何公式
+  （cubic 过渡段 + 圆弧段拼接）独立重写，以便不引入新依赖并可在 JVM 单测中验证几何不变量；
+  几何公式与来源见该文件头部注释。
 
 ## 数据来源
 

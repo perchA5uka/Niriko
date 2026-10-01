@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +40,7 @@ import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.model.search.TrendingMode
 import com.otakup.niriko.ui.components.ErrorContent
+import com.otakup.niriko.ui.components.SkeletonSubjectCard
 import com.otakup.niriko.ui.subject.SubjectResultCard
 import com.otakup.niriko.util.toCardDisplayModel
 
@@ -190,12 +190,10 @@ fun TrendingSection(
                 }
                 item {
                     when {
-                        state.isLoadingMore -> Box(
-                            Modifier.fillMaxWidth().padding(16.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator()
-                        }
+                        // 加载更多：横向卡片骨架（B4），尺寸与上方真实结果卡一致
+                        state.isLoadingMore -> SkeletonSubjectCard(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                        )
 
                         !state.hasMore -> Box(
                             Modifier.fillMaxWidth().padding(8.dp),
@@ -222,9 +220,13 @@ fun TrendingSection(
             modifier = Modifier.padding(top = 72.dp),
         )
     } else if (state.isLoadingTrending) {
-        // 首次加载中：转圈即可（改造前这里会显示「输入关键词搜索作品」这种错位文案）
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
+        // 首次加载中：横向卡片骨架（B4）—— 与真实搜索结果卡同尺寸（改造前这里是转圈，
+        // 更早还会显示「输入关键词搜索作品」这种错位文案）
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            repeat(3) { SkeletonSubjectCard() }
         }
     } else {
         // 空态（第 6 轮 §4.2 R2）：**按模式给正确文案**。

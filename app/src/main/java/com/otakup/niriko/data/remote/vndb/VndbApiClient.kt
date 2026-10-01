@@ -34,6 +34,11 @@ object VndbApiClient {
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
+            // 按源限流（B4 · 4-12）：VNDB 官方约 200 次 / 5 分钟
+            .addInterceptor { chain ->
+                com.otakup.niriko.util.SourceRateLimits.awaitHostBlocking(chain.request().url.host)
+                chain.proceed(chain.request())
+            }
             // VNDB 要求 User-Agent；OkHttp 默认自带 UA，这里显式覆盖为可识别格式
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()

@@ -62,7 +62,7 @@ import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.settings.RatingSourceSettingsGroup
 import com.otakup.niriko.viewmodel.SettingsViewModel
 
-/** 数据源与账号设置页：数据源切换 / Steam / Bangumi 账号同步 / 第三方导入。 */
+/** 数据源与账号设置页（二级页外壳：脚手架 + 返回箭头 + Snackbar 宿主）。 */
 @Composable
 fun DataSourceSettingsScreen(
     viewModel: SettingsViewModel,
@@ -71,8 +71,37 @@ fun DataSourceSettingsScreen(
     onNavigateToBilibiliSync: () -> Unit = {},
     onNavigateToSteamSync: () -> Unit = {},
 ) {
-    val settings by viewModel.settings.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        SettingsDetailScaffold(title = "数据源与账号", onBack = onBack) {
+            DataSourceSettingsContent(
+                viewModel = viewModel,
+                snackbarHostState = snackbarHostState,
+                onNavigateToBilibiliSync = onNavigateToBilibiliSync,
+                onNavigateToSteamSync = onNavigateToSteamSync,
+            )
+        }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}
+
+/**
+ * 「数据源与账号」二级页正文（不含脚手架与返回箭头、不含 SnackbarHost 宿主）：
+ * 窄屏由 DataSourceSettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
+ */
+@Composable
+fun DataSourceSettingsContent(
+    viewModel: SettingsViewModel,
+    snackbarHostState: SnackbarHostState,
+    onNavigateToBilibiliSync: () -> Unit = {},
+    onNavigateToSteamSync: () -> Unit = {},
+) {
+
+    val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
 
     var showSteamConfig by remember { mutableStateOf(false) }
@@ -316,47 +345,42 @@ fun DataSourceSettingsScreen(
         bangumiRows.add { SettingsInfoRow(icon = Icons.Outlined.Info, title = "同步结果", value = result.message) }
     }
 
-    Box(modifier = modifier.fillMaxWidth()) {
-        SettingsDetailScaffold(title = "数据源与账号", onBack = onBack) {
-            if (datasourceRows.isNotEmpty()) {
-                SettingsGroupTitle("数据源")
-                SettingsSplitGroup(content = datasourceRows)
-            }
-            SettingsGroupTitle("Bangumi 账号")
-            SettingsSplitGroup(content = bangumiRows)
-            SettingsGroupTitle("权威数据源")
-            RatingSourceSettingsGroup(
-                viewModel = viewModel,
-                settings = settings,
-                snackbarHostState = snackbarHostState,
-            )
-            // 第 4 轮 F：灰色通道 + 连通性自检（豆瓣等非官方接口的唯一可观测手段）
-            com.otakup.niriko.ui.settings.GrayChannelSettingsGroup(
-                settings = settings,
-                onGrayChannelEnabled = viewModel::setGrayChannelEnabled,
-                onProbeHeaders = viewModel::setProbeHeaders,
-                onDoubanReferers = viewModel::setDoubanReferers,
-            )
-            SettingsGroupTitle("导入")
-            SettingsSplitGroup(content = listOf(
-                {
-                    KazumiImportSection(
-                        subjectDao = context.nirikoApp.database.subjectDao(),
-                        collectionDao = context.nirikoApp.database.collectionDao(),
-                        snackbarHost = snackbarHostState,
-                    )
-                },
-                {
-                    BilibiliImportSection(
-                        onNavigateToBilibiliSync = onNavigateToBilibiliSync,
-                    )
-                },
-            ))
+    Column {
+        if (datasourceRows.isNotEmpty()) {
+            SettingsGroupTitle("数据源")
+            SettingsSplitGroup(content = datasourceRows)
         }
-        SnackbarHost(
-            hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
+        SettingsGroupTitle("Bangumi 账号")
+        SettingsSplitGroup(content = bangumiRows)
+        SettingsGroupTitle("权威数据源")
+        RatingSourceSettingsGroup(
+            viewModel = viewModel,
+            settings = settings,
+            snackbarHostState = snackbarHostState,
         )
+        // 第 4 轮 F：灰色通道 + 连通性自检（豆瓣等非官方接口的唯一可观测手段）
+        com.otakup.niriko.ui.settings.GrayChannelSettingsGroup(
+            settings = settings,
+            onGrayChannelEnabled = viewModel::setGrayChannelEnabled,
+            onProbeHeaders = viewModel::setProbeHeaders,
+            onDoubanReferers = viewModel::setDoubanReferers,
+            onDoubanAntiSpoiler = viewModel::setDoubanAntiSpoiler,
+        )
+        SettingsGroupTitle("导入")
+        SettingsSplitGroup(content = listOf(
+            {
+                KazumiImportSection(
+                    subjectDao = context.nirikoApp.database.subjectDao(),
+                    collectionDao = context.nirikoApp.database.collectionDao(),
+                    snackbarHost = snackbarHostState,
+                )
+            },
+            {
+                BilibiliImportSection(
+                    onNavigateToBilibiliSync = onNavigateToBilibiliSync,
+                )
+            },
+        ))
     }
 
     // Steam API Key 配置弹窗（可选：公开接口无需 key，仅未来扩展用）

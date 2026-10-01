@@ -127,7 +127,8 @@ class CollectionViewModel(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = CollectionListUiState(),
+            // B4：首帧即为「加载中」，作品库先渲染海报网格骨架；第一个真实快照到达后 isLoading 变 false。
+            initialValue = CollectionListUiState(isLoading = true),
         )
 
     /** 更新筛选条件。 */
@@ -140,6 +141,28 @@ class CollectionViewModel(
         viewModelScope.launch {
             val existing = collectionRepository.getBySubjectId(subjectId) ?: return@launch
             collectionRepository.update(existing.copy(status = status))
+        }
+    }
+
+    /**
+     * 长按浮层进度快捷（计划 B1-2）：写回集进度或卷进度。
+     *
+     * 值由 [com.otakup.niriko.util.ProgressBumpPolicy] 在 UI 侧算好（含 0 下限与总集数上限），
+     * 这里只做防御性兜底与落库。
+     *
+     * @param volume true = 写 watchedVolumes（书籍/漫画），false = 写 watchedEpisodes
+     */
+    fun setProgress(subjectId: Long, value: Int, volume: Boolean = false) {
+        viewModelScope.launch {
+            val existing = collectionRepository.getBySubjectId(subjectId) ?: return@launch
+            val safe = value.coerceAtLeast(0)
+            collectionRepository.update(
+                existing.copy(
+                    watchedEpisodes = if (volume) existing.watchedEpisodes else safe,
+                    watchedVolumes = if (volume) safe else existing.watchedVolumes,
+                    updateTime = System.currentTimeMillis(),
+                ),
+            )
         }
     }
 
