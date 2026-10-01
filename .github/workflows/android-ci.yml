@@ -25,14 +25,31 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # runner 已预装 Android SDK（ANDROID_HOME=/usr/local/lib/android/sdk）。
+      # 不要用 android-actions/setup-android@v3：它内部会安装历史遗留的 tools 包，
+      # 而该包已从 Google 的 SDK 仓库移除，会让 job 以 Failed to find package 失败。
+      - name: Locate Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$SDK_ROOT" ]; then SDK_ROOT=/usr/local/lib/android/sdk; fi
+          echo "SDK_ROOT=$SDK_ROOT"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          SM_BIN="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 3 -type f -name sdkmanager 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$SM_BIN" ]; then
+            echo "::error::sdkmanager not found under $SDK_ROOT/cmdline-tools"
+            find "$SDK_ROOT" -maxdepth 2 -type d | head -40
+            exit 1
+          fi
+          echo "sdkmanager: $SM_BIN"
+          echo "$(dirname "$SM_BIN")" >> "$GITHUB_PATH"
+          "$SM_BIN" --version
 
-      # compileSdk = 37（见 app/build.gradle.kts），runner 自带 SDK 不含它，必须显式安装。
-      # 若该 platform 包在 Google 的 SDK 仓库里还不可用，这一步会失败——
-      # 届时把版本号改成仓库里可用的最新 platform。
+      # compileSdk = 37（见 app/build.gradle.kts），runner 预装 SDK 不含它，必须显式安装。
+      # 包名与本地 SDK 目录一致：platforms/android-37.0、build-tools/37.0.0。
       - name: Install compileSdk platform + build-tools
-        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          yes | sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
