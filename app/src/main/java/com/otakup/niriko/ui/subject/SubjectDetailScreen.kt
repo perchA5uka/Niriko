@@ -2,8 +2,11 @@
 
 package com.otakup.niriko.ui.subject
 
+import com.otakup.niriko.ui.animation.CompletionCelebrationHost
+import com.otakup.niriko.ui.animation.CompletionCelebrationState
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import androidx.compose.foundation.Image
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -13,10 +16,10 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.combinedClickable
@@ -63,7 +66,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -86,6 +88,11 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import com.otakup.niriko.ui.animation.AmbientTiltDemand
+import com.otakup.niriko.ui.animation.LocalAmbientTilt
+import com.otakup.niriko.ui.animation.LocalAmbientTiltDemand
+import com.otakup.niriko.ui.animation.rememberAmbientTilt
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -94,11 +101,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
+import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
@@ -154,8 +163,13 @@ import com.otakup.niriko.data.remote.vndb.vndbLanguageName
 import com.otakup.niriko.ui.adaptive.AdaptiveDetailScaffold
 import com.otakup.niriko.ui.adaptive.NirikoDetailPane
 import com.otakup.niriko.ui.animation.AnimDurationNormal
+import com.otakup.niriko.ui.animation.CrtOverlay
+import com.otakup.niriko.ui.animation.rememberEpisodeCompletionWave
+import com.otakup.niriko.ui.animation.halftoneDots
 import com.otakup.niriko.ui.animation.RevealOnScroll
 import com.otakup.niriko.ui.animation.AnimEasingDefault
+import com.otakup.niriko.data.model.cardMaterialFromRating
+import com.otakup.niriko.ui.animation.pressTilt
 import com.otakup.niriko.ui.share.ShareBitmapHost
 import com.otakup.niriko.ui.share.ShareCardData
 import com.otakup.niriko.ui.share.SharePreviewSheet
@@ -165,6 +179,21 @@ import com.otakup.niriko.ui.components.LocalDetailCoverFallback
 import com.otakup.niriko.ui.components.GlassRatingSlider
 import com.otakup.niriko.ui.components.GlassSectionCard
 import com.otakup.niriko.ui.components.GlassToggle
+import com.otakup.niriko.ui.components.ProvideCardGlassBackdrop
+import com.otakup.niriko.ui.components.pageCardGlassBackdrop
+import com.otakup.niriko.ui.components.rememberPageCardGlassBackdrop
+import com.otakup.niriko.ui.components.RichText
+import com.otakup.niriko.ui.components.topContentAlphaMask
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.foundation.layout.asPaddingValues
+import com.otakup.niriko.ui.components.TagChip
+import com.otakup.niriko.ui.components.searchGlassSurface
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.components.liquidglass.loadBlurredCover
@@ -176,6 +205,8 @@ import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import com.otakup.niriko.ui.share.ShareFlow
+import com.otakup.niriko.util.RichTextParser
+import com.otakup.niriko.util.TopFadePolicy
 import com.otakup.niriko.util.TitleResolver
 import com.otakup.niriko.util.PortalLauncher
 import kotlinx.coroutines.Dispatchers
@@ -267,16 +298,21 @@ fun SubjectDetailScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
+    val ambientDemand = remember { AmbientTiltDemand() }
+    val ambient = rememberAmbientTilt(active = true, visibleRarity = ambientDemand.visibleRarity)
     val snackbarHostState = remember { SnackbarHostState() }
+    val completionPlayback = remember { CompletionCelebrationState() }
     val haptic = LocalHapticFeedback.current
 
     // Snackbar 消息处理（保存反馈 + 自动返回）
     // 注意：showSnackbar 是挂起等待 Snackbar 消失的，不能阻塞 onBack()，
     // 否则保存后要等 3-4s 才返回（用户感知为“保存延迟”）。
     val coroutineScope = rememberCoroutineScope()
-    LaunchedEffect(state.snackbarMessage) {
+    LaunchedEffect(state.snackbarMessage, completionPlayback.isActive) {
         val msg = state.snackbarMessage ?: return@LaunchedEffect
         if (msg == "记录已保存") {
+            // Saving must not dispose the editor window before its celebration finishes.
+            if (completionPlayback.isActive) return@LaunchedEffect
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
             onBack()
@@ -285,9 +321,10 @@ fun SubjectDetailScreen(
         }
     }
 
+    CompositionLocalProvider(LocalAmbientTilt provides ambient, LocalAmbientTiltDemand provides ambientDemand) {
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        // 外层 MainActivity Scaffold 已处理状态栏 inset，内层禁用避免双重 padding（顶栏上方出现空白）
+        // The route viewport starts at window y=0; only the header owns the top inset.
         contentWindowInsets = WindowInsets(0.dp),
         modifier = modifier,
     ) { innerPadding ->
@@ -298,6 +335,10 @@ fun SubjectDetailScreen(
         }
         SubjectDetailContent(
             state = state,
+            completionEvents = viewModel.completionEvents,
+            // F14：进度写满的独立通道（剧集区块的波浪点亮）
+            episodeCompletionEvents = viewModel.episodeCompletionEvents,
+            completionPlayback = completionPlayback,
             onBack = onBack,
             onRetry = viewModel::retry,
             onAddToCollection = viewModel::addToCollection,
@@ -336,6 +377,7 @@ fun SubjectDetailScreen(
                 onClearTmdbManualMessage = viewModel::clearTmdbManualMessage,
                 onRequestCoverCandidates = viewModel::loadCoverCandidates,
                 onOpenEpisodeDetail = onOpenEpisodeDetail,
+                onLoadEpisodeReviewEntries = viewModel::loadEpisodeReviewEntries,
                 onSearchDouban = viewModel::searchDoubanCandidates,
                 onPasteDoubanId = viewModel::pasteDoubanId,
                 onBindDouban = viewModel::bindDouban,
@@ -347,6 +389,7 @@ fun SubjectDetailScreen(
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.padding(innerPadding),
         )
+    }
     }
 }
 
@@ -374,6 +417,14 @@ data class RatingSectionCallbacks(
     val onRequestCoverCandidates: () -> Unit = {},
     /** 打开单集二级页（阶段 B）。 */
     val onOpenEpisodeDetail: (Long) -> Unit = {},
+    /**
+     * F07：加载「分集评价 → 作品感想/均分」所需的条目（集号标签 + 我的分数 + 我的短评）。
+     *
+     * 参数是「拿到结果后的回调」而不是返回值：数据来自 Room，而调用它的地方在组合里
+     * （预览弹层的打开动作），不可能为了一个列表去做阻塞查询。
+     */
+    val onLoadEpisodeReviewEntries: ((List<com.otakup.niriko.util.EpisodeReviewMergePolicy.Entry>) -> Unit) -> Unit =
+        { callback -> callback(emptyList()) },
     /** 豆瓣剧照（阶段 E）：搜索候选 / 绑定 / 解绑。 */
     val onSearchDouban: () -> Unit = {},
     /** 第 4 轮 F：粘贴豆瓣 id / 链接（豆瓣搜索常被反爬拦，这条通路必须有）。 */
@@ -387,6 +438,10 @@ data class RatingSectionCallbacks(
 @Composable
 private fun SubjectDetailContent(
     state: SubjectDetailUiState,
+    completionEvents: Flow<Long>,
+    /** F14：进度写满的独立通道（波浪点亮），与状态完成的全屏庆祝分开。 */
+    episodeCompletionEvents: Flow<Long> = emptyFlow(),
+    completionPlayback: CompletionCelebrationState,
     onBack: () -> Unit,
     onRetry: () -> Unit = {},
     onAddToCollection: () -> Unit,
@@ -417,7 +472,21 @@ private fun SubjectDetailContent(
     modifier: Modifier = Modifier,
 ) {
     val subject = state.subject
+    val coverFlightActive = sharedTransitionScope?.isTransitionActive == true
     val context = LocalContext.current
+    val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // 48dp touch target plus the button's two 4dp margins, known before first measure.
+    val headerHeight = statusTop + 56.dp
+    var shareMenuExpanded by remember { mutableStateOf(false) }
+    var portalMenuExpanded by remember { mutableStateOf(false) }
+    var shareAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var portalAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val shareFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val portalFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val glassEffect = LocalGlassEffect.current
+    val menuBackdrop = rememberPageCardGlassBackdrop(
+        enabled = (shareMenuExpanded || portalMenuExpanded) && glassEffect != GlassEffectLevel.OFF,
+    )
     // 传送门可显示项（按类型过滤，缺失 ID 的目标隐藏；未安装的仅拉起目标自动隐藏）
     val portalItems = remember(subject, state) {
         subject?.let { buildPortalUiItems(it, state, context) } ?: emptyList()
@@ -432,7 +501,7 @@ private fun SubjectDetailContent(
     var showSharePreview by remember { mutableStateOf(false) }
     // 背景墙材质到达动画（Apple §12 Materialize：材质渐显，非瞬间出现）
     var bgEntered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { bgEntered = true }
+    LaunchedEffect(coverFlightActive) { if (!coverFlightActive) bgEntered = true }
     val bgAlpha by animateFloatAsState(
         targetValue = if (bgEntered) 1f else 0f,
         animationSpec = tween(durationMillis = 350, easing = AnimEasingDefault),
@@ -449,20 +518,28 @@ private fun SubjectDetailContent(
         } else null
     }
     Box(modifier = modifier.fillMaxSize()) {
+        // Capture page content and its background, with menus as uncaptured siblings.
+        Box(Modifier.fillMaxSize().pageCardGlassBackdrop(menuBackdrop)) {
         // 整页模糊背景墙（有封面且非加载/错误态时）：封面放大铺底（scale 1.2 超出边缘避免空隙）
         // + 降采样小图 + 强模糊 + 弱化蒙层，内容在其上滑动
         val hasBackground = subject?.coverUrl != null && !state.isLoading && state.error == null
         // 阶段 P：玻璃/特效强度（默认 FULL）。非 FULL 时跳过 layerBackdrop 捕获，玻璃卡退回 tint（减轻详情页开销）
-        val glassEffect = LocalGlassEffect.current
         // 毛玻璃 backdrop：捕获背景墙图层，供各 GlassSectionCard drawBackdrop 真折射
         val backdropSurface = MaterialTheme.colorScheme.surface
+        // 分区卡（miuix）：封面背景墙，逐卡显式传给 GlassSectionCard。
         val glassBackdrop = if (hasBackground) {
             rememberLayerBackdrop {
                 drawRect(backdropSurface)
                 drawContent()
             }
         } else null
+        // 卡片（kyant，R2）：把同一面背景墙声明成页内卡片的玻璃源；
+        // 只在 FULL 档捕获——REDUCED/OFF 保持旧行为（静态 tint）。
+        val pageCardBackdrop = rememberPageCardGlassBackdrop(
+            enabled = hasBackground && glassEffect == GlassEffectLevel.FULL,
+        )
         if (hasBackground) {
+            Box(modifier = Modifier.fillMaxSize().pageCardGlassBackdrop(pageCardBackdrop)) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(subject.coverUrl)
@@ -472,7 +549,7 @@ private fun SubjectDetailContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .scale(1.2f)
-                    .then(if (glassEffect == GlassEffectLevel.FULL) Modifier.layerBackdrop(glassBackdrop!!) else Modifier)
+                    .then(if (glassEffect == GlassEffectLevel.FULL && glassBackdrop != null) Modifier.layerBackdrop(glassBackdrop) else Modifier)
                     .then(if (blurEffect != null) Modifier else Modifier.blur(30.dp))
                     .graphicsLayer {
                         if (blurEffect != null) renderEffect = blurEffect
@@ -494,109 +571,42 @@ private fun SubjectDetailContent(
                     .background(overlayColor)
                     .graphicsLayer { alpha = bgAlpha },
             )
+            }
         }
-        Column(
+        ProvideCardGlassBackdrop(pageCardBackdrop) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 // 有背景墙时透明（让封面透出）；否则不透明 surface（Loading/Error/无封面）
                 .background(if (hasBackground) Color.Transparent else MaterialTheme.colorScheme.surface),
         ) {
+            val floatingButtonSource = pageCardBackdrop ?: com.otakup.niriko.ui.components.LocalCardGlassBackdrop.current
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 背景墙延伸到状态栏后，顶栏自行避让状态栏高度（返回键/标题不被遮挡）
+                    // Exact first-pass height: safe top + 48dp controls + 8dp margins.
+                    .height(headerHeight)
                     .statusBarsPadding()
-                    .padding(horizontal = 4.dp),
+                    .padding(horizontal = 4.dp)
+                    .zIndex(1f),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+                IconButton(onClick = onBack, modifier = Modifier.padding(4.dp).size(48.dp).searchGlassSurface(CircleShape, source = floatingButtonSource)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
                 Text("作品详情", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.weight(1f))
                 // 分享入口：作品详情分享 / 我的收藏分享（仅已收藏时可用）
-                var shareMenuExpanded by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { shareMenuExpanded = true }) {
+                    IconButton(onClick = { portalMenuExpanded = false; shareMenuExpanded = true }, modifier = Modifier.focusRequester(shareFocus).onGloballyPositioned { shareAnchor = it.boundsInRoot() }.padding(4.dp).size(48.dp).searchGlassSurface(CircleShape, source = floatingButtonSource)) {
                         Icon(Icons.Filled.Share, contentDescription = "分享")
                     }
-                    DropdownMenu(
-                        expanded = shareMenuExpanded,
-                        onDismissRequest = { shareMenuExpanded = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("分享作品") },
-                            onClick = {
-                                shareMenuExpanded = false
-                                subject?.let { shareScope.launch {
-                                    val cover = loadShareCover(context, it.coverUrl)
-                                    sharePreviewData = buildShareData(context, it, state, cover)
-                                    showSharePreview = true
-                                } }
-                            },
-                        )
-                        if (state.isInCollection) {
-                            DropdownMenuItem(
-                                text = { Text("分享我的收藏") },
-                                onClick = {
-                                    shareMenuExpanded = false
-                                    subject?.let { shareScope.launch {
-                                        val cover = loadShareCover(context, it.coverUrl)
-                                        sharePreviewData = buildShareData(context, it, state, cover)
-                                        showSharePreview = true
-                                    } }
-                                },
-                            )
-                        }
-                        if (subject != null) {
-                            DropdownMenuItem(
-                                text = { Text("更换封面") },
-                                onClick = {
-                                    shareMenuExpanded = false
-                                    showCoverPicker = true
-                                },
-                            )
-                        }
-                    }
+
                 }
                 // 传送门：作品跳转到其他平台 / App（P0）
-                var portalMenuExpanded by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { portalMenuExpanded = true }) {
+                    IconButton(onClick = { shareMenuExpanded = false; portalMenuExpanded = true }, modifier = Modifier.focusRequester(portalFocus).onGloballyPositioned { portalAnchor = it.boundsInRoot() }.padding(4.dp).size(48.dp).searchGlassSurface(CircleShape, source = floatingButtonSource)) {
                         Icon(Icons.AutoMirrored.Outlined.Launch, contentDescription = "传送门")
                     }
-                    DropdownMenu(
-                        expanded = portalMenuExpanded,
-                        onDismissRequest = { portalMenuExpanded = false },
-                    ) {
-                        if (portalItems.isEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text("暂无可用跳转") },
-                                onClick = { portalMenuExpanded = false },
-                            )
-                        } else {
-                            portalItems.forEach { item ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Column {
-                                            Text(item.label)
-                                            if (item.subtitle != null) {
-                                                Text(
-                                                    item.subtitle,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                        }
-                                    },
-                                    onClick = {
-                                        portalMenuExpanded = false
-                                        if (!PortalLauncher.launch(context, item.actions)) {
-                                            onPortalUnavailable()
-                                        }
-                                    },
-                                )
-                            }
-                        }
-                    }
+
                 }
             }
             if (showCoverPicker && subject != null) {
@@ -633,18 +643,19 @@ private fun SubjectDetailContent(
             }
             when {
                 // B4：首屏用分区骨架替代居中转圈（形状对齐真实正文，数据到达不跳版）
-                state.isLoading -> SubjectDetailSkeleton()
+                state.isLoading -> SubjectDetailSkeleton(topInset = headerHeight)
                 state.error != null -> ErrorContent(
                     message = state.error ?: "",
                     onRetry = onRetry,
                 )
-                subject != null -> Column {
-                    if (state.isRefreshing) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    }
+                subject != null -> Box {
                     SubjectDetailBody(
                         subject = subject, state = state,
+                        completionEvents = completionEvents,
+                episodeCompletionEvents = episodeCompletionEvents,
+                        completionPlayback = completionPlayback,
                         glassBackdrop = glassBackdrop,
+                        topInset = headerHeight,
                         onAddToCollection = onAddToCollection, onUpdateStatus = onUpdateStatus,
                     onRemoveFromCollection = onRemoveFromCollection, onSaveRecord = onSaveRecord,
                     onTagDeleted = onTagDeleted,
@@ -667,9 +678,100 @@ private fun SubjectDetailContent(
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                 )
+                    if (state.isRefreshing) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter))
+                    }
             }
         }
         }
+        }
+        }
+
+                    com.otakup.niriko.ui.components.GlassAnchoredMenu(
+                        expanded = shareMenuExpanded,
+                        anchorInRoot = shareAnchor,
+                        anchorFocusRequester = shareFocus,
+                        restoreAnchorFocus = !portalMenuExpanded && !showCoverPicker && !showSharePreview,
+                        title = "分享",
+                        source = menuBackdrop,
+                        safePadding = WindowInsets.safeDrawing.asPaddingValues(),
+                        onDismissRequest = { shareMenuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("分享作品") },
+                            onClick = {
+                                shareMenuExpanded = false
+                                subject?.let { shareScope.launch {
+                                    val cover = loadShareCover(context, it.coverUrl)
+                                    sharePreviewData = buildShareData(context, it, state, cover)
+                                    showSharePreview = true
+                                } }
+                            },
+                        )
+                        if (state.isInCollection) {
+                            DropdownMenuItem(
+                                text = { Text("分享我的收藏") },
+                                onClick = {
+                                    shareMenuExpanded = false
+                                    subject?.let { shareScope.launch {
+                                        val cover = loadShareCover(context, it.coverUrl)
+                                        sharePreviewData = buildShareData(context, it, state, cover)
+                                        showSharePreview = true
+                                    } }
+                                },
+                            )
+                        }
+                        if (subject != null) {
+                            DropdownMenuItem(
+                                text = { Text("更换封面") },
+                                onClick = {
+                                    shareMenuExpanded = false
+                                    showCoverPicker = true
+                                },
+                            )
+                        }
+                    }
+
+                    com.otakup.niriko.ui.components.GlassAnchoredMenu(
+                        expanded = portalMenuExpanded,
+                        anchorInRoot = portalAnchor,
+                        anchorFocusRequester = portalFocus,
+                        restoreAnchorFocus = !shareMenuExpanded,
+                        title = "传送门",
+                        source = menuBackdrop,
+                        safePadding = WindowInsets.safeDrawing.asPaddingValues(),
+                        onDismissRequest = { portalMenuExpanded = false },
+                    ) {
+                        if (portalItems.isEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("暂无可用跳转") },
+                                onClick = { portalMenuExpanded = false },
+                            )
+                        } else {
+                            portalItems.forEach { item ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column {
+                                            Text(item.label)
+                                            if (item.subtitle != null) {
+                                                Text(
+                                                    item.subtitle,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        portalMenuExpanded = false
+                                        if (!PortalLauncher.launch(context, item.actions)) {
+                                            onPortalUnavailable()
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
     }
 }
 
@@ -685,13 +787,14 @@ private fun SubjectDetailContent(
  */
 @Composable
 private fun SubjectDetailSkeleton(
+    topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(start = 16.dp, end = 16.dp, top = topInset + 16.dp, bottom = 16.dp),
     ) {
         // 大封面
         Box(
@@ -752,14 +855,52 @@ private fun SubjectDetailSkeleton(
 private fun SubjectDetailItemsColumn(
     activePane: NirikoDetailPane?,
     modifier: Modifier,
+    /** F13：把滚动位置回报给详情页顶部的连续渐隐（null = 不需要）。 */
+    onScrollSample: ((Int, Int) -> Unit)? = null,
+    topInset: Dp = 0.dp,
     itemsBody: LazyListScope.(NirikoDetailPane?, Boolean) -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val entryState = com.otakup.niriko.navigation.LocalDetailNavigationState.current
+    val paneKey = activePane?.name ?: "single"
+    val indexKey = "detail_scroll_" + paneKey + "_index"
+    val offsetKey = "detail_scroll_" + paneKey + "_offset"
+    val listState = rememberSaveable(entryState, paneKey, saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+        androidx.compose.foundation.lazy.LazyListState(
+            entryState?.get<Int>(indexKey) ?: 0, entryState?.get<Int>(offsetKey) ?: 0,
+        )
+    }
+    LaunchedEffect(listState, entryState, paneKey) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                if (listState.layoutInfo.totalItemsCount > 0) {
+                    entryState?.set(indexKey, index)
+                    entryState?.set(offsetKey, offset)
+                }
+            }
+    }
+    androidx.compose.runtime.DisposableEffect(listState, entryState, paneKey) {
+        onDispose {
+            if (listState.layoutInfo.totalItemsCount > 0) {
+                entryState?.set(indexKey, listState.firstVisibleItemIndex)
+                entryState?.set(offsetKey, listState.firstVisibleItemScrollOffset)
+            }
+        }
+    }
     val isScrolling = listState.isScrollInProgress
+    if (onScrollSample != null) {
+        // 只回报「首项索引 + 偏移」这一对：渐隐的判据在 TopFadePolicy 里（纯函数、有单测），
+        // 这里不做任何阈值判断 —— §8.3 明确要求连续、不要离散显隐。
+        val report = onScrollSample
+        LaunchedEffect(listState) {
+            snapshotFlow<Pair<Int, Int>> {
+                listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+            }.collect { sample -> report(sample.first, sample.second) }
+        }
+    }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         state = listState,
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         itemsBody(activePane, isScrolling)
@@ -771,12 +912,17 @@ private fun SubjectDetailItemsColumn(
  * 这是手机端行为零变化的关键；两栏时只渲染该列自己的 item，故跨列相对顺序不再保留。
  */
 private fun LazyListScope.detailPaneItem(
-    key: String,
-    pane: NirikoDetailPane,
+    id: DetailSectionId,
     activePane: NirikoDetailPane?,
+    hidden: Set<DetailSectionId>,
     content: @Composable LazyItemScope.() -> Unit,
 ) {
-    if (activePane == null || activePane == pane) item(key = key, content = content)
+    // F06：被用户关掉的部件**完全不组合**（不是画成透明）——
+    // 不组合才不会发出网络请求、不会占用测量，这才是「隐藏」应有的代价。
+    // 核心部件在 DetailLayoutPolicy 里就不可隐藏，这里再兜一层。
+    if (!DetailLayoutPolicy.isVisible(id, hidden)) return
+    val pane = id.pane
+    if (activePane == null || activePane == pane) item(key = id.key, content = content)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
@@ -784,7 +930,12 @@ private fun LazyListScope.detailPaneItem(
 private fun SubjectDetailBody(
     subject: SubjectEntity,
     state: SubjectDetailUiState,
+    completionEvents: Flow<Long> = emptyFlow(),
+    /** F14：进度写满的独立通道（波浪点亮）。 */
+    episodeCompletionEvents: Flow<Long> = emptyFlow(),
+    completionPlayback: CompletionCelebrationState = remember { CompletionCelebrationState() },
     glassBackdrop: Backdrop?,
+    topInset: Dp = 0.dp,
     onAddToCollection: () -> Unit,
     onUpdateStatus: (WatchStatus) -> Unit,
     onRemoveFromCollection: () -> Unit,
@@ -811,10 +962,17 @@ private fun SubjectDetailBody(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
     // 共享模糊封面：横向小卡毛玻璃背景的唯一模糊源（进程级缓存,只模糊一次）
+    val episodeWaveProgress by rememberEpisodeCompletionWave(episodeCompletionEvents, subject.subjectId)
     val blurredCoverContext = LocalContext.current
     var blurredCover by remember(subject.coverUrl) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(subject.coverUrl) {
         blurredCover = loadBlurredCover(blurredCoverContext, subject.coverUrl)
+    }
+    // F06：用户关掉的详情部件。规则在 DetailLayoutPolicy（纯函数）：未知 key 忽略、核心部件不可隐藏。
+    val detailSettings by blurredCoverContext.nirikoApp.settingsDataStore.settings
+        .collectAsState(initial = com.otakup.niriko.data.settings.AppSettings())
+    val hiddenSections = remember(detailSettings.detailHiddenSections) {
+        DetailLayoutPolicy.hiddenFromEncoded(detailSettings.detailHiddenSections)
     }
     // 本地编辑状态 — 使用 rememberSaveable 确保配置变更（如屏幕旋转）后状态不丢失
     // 游戏类型：watchedEpisodes 统一存分钟（Steam 导入分钟、详情页按小时输入）
@@ -840,6 +998,14 @@ private fun SubjectDetailBody(
     var startDateValue by rememberSaveable(state.collectionId) { mutableStateOf(state.startDate) }
     var finishDateValue by rememberSaveable(state.collectionId) { mutableStateOf(state.finishDate) }
     var showCollectionSheet by remember { mutableStateOf(false) }
+    // F07：分集评价合并（预览弹层）。条目按需从 ViewModel 取，不进 uiState。
+    var showEpisodeMerge by remember { mutableStateOf(false) }
+    var episodeMergeEntries by remember { mutableStateOf<List<com.otakup.niriko.util.EpisodeReviewMergePolicy.Entry>>(emptyList()) }
+    var episodeMergeMode by remember { mutableStateOf(com.otakup.niriko.util.EpisodeReviewMergePolicy.Mode.BOTH) }
+    var episodeMergeRounding by remember {
+        mutableStateOf(com.otakup.niriko.util.EpisodeReviewMergePolicy.Rounding.HALF_UP_HALF)
+    }
+    var episodeMergeOverwrite by remember { mutableStateOf(false) }
 
     // 验证
     val parsedWatched = watchedEpisodesText.toIntOrNull()
@@ -885,622 +1051,699 @@ private fun SubjectDetailBody(
         (backdropItems + stillItems + doubanItems).distinctBy { it.url }
     }
 
-    // 主体入场动画（Apple：进入 fade + scale，200-350ms）
-    var bodyEntered by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { bodyEntered = true }
-
     // 详情页所有 GlassSectionCard 共享同一张模糊封面：backdrop 不可用时一律走 BlurredGlassSurface。
     CompositionLocalProvider(LocalDetailCoverFallback provides blurredCover) {
-    AnimatedVisibility(
-        visible = bodyEntered,
-        enter = fadeIn(animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault)) +
-            scaleIn(
-                initialScale = 0.97f,
-                animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
-            ),
-    ) {
+    // NavHost owns page motion; shared covers must be present from the first composition.
+    // F06 第二步：用户自定义的部件顺序（未知 key 忽略、新部件追加到默认尾部，规则见 DetailLayoutPolicy）。
+    // 必须在组合作用域里算：下面的 itemsBody 是普通 lambda（内部装 @Composable 内容 lambda），
+    // 它内部不能调用 remember / 读 CompositionLocal。
+    val orderedSections = remember(detailSettings.detailSectionOrder) {
+        DetailLayoutPolicy.resolveOrder(detailSettings.detailSectionOrder)
+    }
+    // F13：详情页顶部的**连续**渐隐。滚动样本来自身持有滚动状态的那一层（两栏时谁被滚动就跟着谁）；
+    // 渐隐底色取 Scaffold 的容器色（background）—— 顶部栏与内容的底都是它。
+    var detailScrollSample by remember { mutableStateOf(0 to 0) }
+    val detailFadeDistancePx = with(LocalDensity.current) { TopFadePolicy.FADE_DISTANCE_DP.dp.toPx() }
+    val detailFadeAlpha = TopFadePolicy.alphaFor(
+        scrollOffsetPx = TopFadePolicy.scrollOffsetFor(detailScrollSample.first, detailScrollSample.second),
+        fadeDistancePx = detailFadeDistancePx,
+    )
     // B2b：同一份 item 列表按 activePane 分流 —— activePane == null 时全量按原顺序渲染
     //（手机端 / 中屏逐字不变），否则只渲染属于该列的 item（宽屏并排两栏，两列各自持有滚动状态）。
     val itemsBody: LazyListScope.(NirikoDetailPane?, Boolean) -> Unit = { activePane, isListScrolling ->
-        // 全宽大封面：按图片自身宽高比展示（不强制 3:4），加载完成前/异常用 3:4 兜底
-        detailPaneItem("cover", NirikoDetailPane.OVERVIEW, activePane) {
-        // 阶段 E：用户封面覆盖优先（更换封面）
-        var overrideCover by remember(subject.subjectId) { mutableStateOf<String?>(null) }
-        LaunchedEffect(subject.subjectId) {
-            overrideCover = blurredCoverContext.nirikoApp.coverOverrideStore.overrideFor(subject.subjectId)
-        }
-        val coverEffective = overrideCover ?: subject.coverUrl
-        if (coverEffective != null) {
-            // 显式超采样解码：hero 大封面放宽到 1080px 再裁切，避免默认按绘制层解码导致的发糊；原图不究其内存
-            val painter = rememberAsyncImagePainter(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(coverEffective)
-                    // 1080px 宽固定上限（宽 × 高按原比例），覆盖绝大多数屏且避免大图 OOM
-                    .size(coil.size.Size(1080, (1080f * 4f / 3f).toInt()))
-                    .build(),
-            )
-            val ratio = if (painter.state is AsyncImagePainter.State.Success) {
-                val s = painter.intrinsicSize
-                if (s.width.isFinite() && s.height.isFinite() && s.width > 0f && s.height > 0f)
-                    s.width / s.height else 3f / 4f
-            } else 3f / 4f
-            // 共享元素：与列表卡片封面同 key（"cover_${subjectId}"），实现 Kazumi 同款缩放飞入
-            val scope = sharedTransitionScope
-            val avScope = animatedVisibilityScope
-            val sharedModifier = if (scope != null && avScope != null) {
-                with(scope) {
-                    Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState("cover_${subject.subjectId}"),
-                        animatedVisibilityScope = avScope,
+        // F06 第二步：按**解析出的顺序**分发这些部件。
+        // orderedSections 在组合作用域里算好（LazyListScope lambda 不能调 remember），
+        // when 对枚举穷举 —— 以后新增部件而忘了在这里接上会直接编译失败。
+        orderedSections.forEach { sectionId ->
+            when (sectionId) {
+                DetailSectionId.COVER -> {
+            // 全宽大封面：按图片自身宽高比展示（不强制 3:4），加载完成前/异常用 3:4 兜底
+            detailPaneItem(DetailSectionId.COVER, activePane, hiddenSections) {
+            // 阶段 E：用户封面覆盖优先（更换封面）
+            val coverSeed = remember(subject.subjectId) { com.otakup.niriko.util.SubjectNavigationSeed.coverFor(subject.subjectId) }
+            var overrideCover by remember(subject.subjectId) { mutableStateOf<String?>(coverSeed?.url) }
+            LaunchedEffect(subject.subjectId) {
+                overrideCover = blurredCoverContext.nirikoApp.coverOverrideStore.overrideFor(subject.subjectId)
+                    ?: coverSeed?.url
+            }
+            val coverEffective = overrideCover ?: subject.coverUrl
+            val material = remember(state.myRating, state.isInCollection) {
+                cardMaterialFromRating(state.myRating.takeIf { state.isInCollection })
+            }
+            val record = remember(subject, state) { detailCardBackModel(subject, state) }
+            if (coverEffective != null) {
+                // 显式超采样解码：hero 大封面放宽到 1080px 再裁切，避免默认按绘制层解码导致的发糊；原图不究其内存
+                val painter = rememberAsyncImagePainter(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(coverEffective)
+                        .placeholderMemoryCacheKey(coverSeed?.takeIf { it.url == coverEffective }?.memoryCacheKey)
+                        // 1080px 宽固定上限（宽 × 高按原比例），覆盖绝大多数屏且避免大图 OOM
+                        .size(coil.size.Size(coil.size.Dimension.Pixels(1080), coil.size.Dimension.Undefined))
+                        .crossfade(false)
+                        .build(),
+                )
+                LaunchedEffect(painter.state, coverEffective, subject.subjectId) {
+                    val loaded = painter.state as? AsyncImagePainter.State.Success
+                    if (loaded != null) {
+                        val drawable = loaded.result.drawable
+                        com.otakup.niriko.util.SubjectNavigationSeed.rememberCover(
+                            subject.subjectId, coverEffective, drawable.intrinsicWidth, drawable.intrinsicHeight,
+                            loaded.result.memoryCacheKey,
+                        )
+                    }
+                }
+                val ratio = coverSeed?.takeIf { it.url == coverEffective }?.aspectRatio
+                    ?: if (painter.state is AsyncImagePainter.State.Success) {
+                    val s = painter.intrinsicSize
+                    if (s.width.isFinite() && s.height.isFinite() && s.width > 0f && s.height > 0f)
+                        s.width / s.height else 3f / 4f
+                } else 3f / 4f
+                // 共享元素：与列表卡片封面同 key（"cover_${subjectId}"），实现 Kazumi 同款缩放飞入
+                val scope = sharedTransitionScope
+                val avScope = animatedVisibilityScope
+                val sharedModifier = if (scope != null && avScope != null) {
+                    with(scope) {
+                        Modifier.sharedElement(
+                            sharedContentState = rememberSharedContentState(com.otakup.niriko.navigation.LocalDetailHeroKey.current ?: "cover_${subject.subjectId}"),
+                            animatedVisibilityScope = avScope,
+                            boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
+                        )
+                    }
+                } else Modifier
+                DetailPosterCard(
+                    subjectId = subject.subjectId,
+                    record = record,
+                    material = material,
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(ratio)
+                        .then(sharedModifier)
+                        .subjectCoverPresentation(avScope),
+                ) {
+                    Image(
+                        painter = painter,
+                        contentDescription = subject.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
                     )
                 }
-            } else Modifier
-            Box(
-                modifier = Modifier
-                    .then(sharedModifier)
-                    .fillMaxWidth()
-                    .aspectRatio(ratio)
-                    .clip(MaterialTheme.shapes.medium)
-                    .shadow(10.dp, MaterialTheme.shapes.medium),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painter,
-                    contentDescription = subject.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-        } else {
-            // 无封面：占位
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(3f / 4f)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("暂无封面", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        }
-        // 标题（统一 TitleResolver）— Apple 大标题体系：26sp 主标题 + 15sp 原名 + 小字元信息
-        detailPaneItem("title", NirikoDetailPane.OVERVIEW, activePane) {
-        Spacer(Modifier.height(16.dp))
-        val titleInfo = com.otakup.niriko.util.TitleResolver.resolve(subject.titleCN, subject.title)
-        Text(titleInfo.primary, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        titleInfo.secondary?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
-        Spacer(Modifier.height(16.dp))
-
-        // 元信息（按类型展示不同字段）
-        SubjectMetaSection(subject = subject)
-        Spacer(Modifier.height(16.dp))
-
-        // 简介
-        Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        Text(subject.summary ?: "暂无简介", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 20, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(24.dp))
-        }
-
-        // === infobox（艺术家/发行商/发售日期等，音乐类型尤其丰富） ===
-        if (state.infoBox.isNotEmpty()) {
-            detailPaneItem("infobox", NirikoDetailPane.OVERVIEW, activePane) {
-                GlassSectionCard(
-                    backdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                    modifier = Modifier.fillMaxWidth(),
-                    fallbackBitmap = blurredCover,
+            } else {
+                // 无封面：占位
+                DetailPosterCard(
+                    subjectId = subject.subjectId,
+                    record = record,
+                    material = material,
+                    shape = MaterialTheme.shapes.medium,
+                    hasCover = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(3f / 4f),
                 ) {
-                    InfoBoxSection(entries = state.infoBox)
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-
-        // === Steam 补充信息（仅游戏类型且已绑定 Steam 时显示） ===
-        if (subject.type == SubjectType.GAME && state.steam != null) {
-            detailPaneItem("steam", NirikoDetailPane.OVERVIEW, activePane) {
-                SteamInfoSection(
-                    steam = state.steam,
-                    achievements = state.achievements,
-                    chartRank = state.chartRank,
-                    backdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                    isPlaceholder = subject.isSteamPlaceholder,
-                    onRematchPlaceholder = onRematchPlaceholder,
-                    onUnbindSteam = onUnbindSteam,
-                )
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-
-        // === AniList 补充信息（不限制类型：动画/漫画/游戏等 bangumi 词条均可） ===
-        // 只要存在绑定/详情/候选就渲染；bangumi 词条即使候选为空也保留「搜索更多」卡片，不再整块消失。
-        val anilistHasData = state.anilistBinding != null || state.anilistDetail != null ||
-            state.anilistRichDetail != null || state.anilistCandidates.isNotEmpty()
-        if (anilistHasData || subject.sourceKey == null) {
-            when {
-                state.anilistDetail != null || state.anilistRichDetail != null -> {
-                    detailPaneItem("anilist", NirikoDetailPane.OVERVIEW, activePane) {
-                        AniListInfoSection(
-                            detail = state.anilistDetail,
-                            rich = state.anilistRichDetail,
-                            anilistId = state.anilistBinding?.anilistId,
-                            backdrop = glassBackdrop,
-                            isScrolling = isListScrolling,
-                            onUnbind = onUnbindAnilist,
-                            onRetry = onRetryAnilist,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
-                }
-                state.anilistBinding != null -> {
-                    detailPaneItem("anilist_pending", NirikoDetailPane.OVERVIEW, activePane) {
-                        AniListBoundPendingSection(
-                            anilistId = state.anilistBinding.anilistId,
-                            backdrop = glassBackdrop,
-                            isScrolling = isListScrolling,
-                            onRetry = onRetryAnilist,
-                            onUnbind = onUnbindAnilist,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
-                }
-                else -> {
-                    detailPaneItem("anilist_candidates", NirikoDetailPane.OVERVIEW, activePane) {
-                        // 第 4 轮 D：改用统一绑定区块（原 AniListCandidateSection 的三段式 UI
-                        // 与 VNDB/TMDb 各写一套，行为不一致且缺「粘贴 id」通路）。
-                        // GameItem → MatchCandidate 的映射只用到展示字段，绑定仍走 bindAnilist(id)。
-                        var anilistPaste by remember { mutableStateOf("") }
-                        ProviderBindingSection(                            title = "AniList 条目",
-                            unboundHint = "AniList 的评分**无需绑定**就会显示在评分区（自动匹配高置信度时）。" +
-                                "绑定后才额外提供英文名/角色/标签等深度数据。",
-                            bindingSummary = null,
-                            candidates = state.anilistCandidates.map { item ->
-                                com.otakup.niriko.data.match.MatchCandidate(
-                                    provider = "anilist",
-                                    externalId = item.sourceGameId,
-                                    title = item.title,
-                                    subtitle = item.aliases
-                                        ?: item.ratingScore?.let { "%.1f 分".format(it) },
-                                    imageUrl = item.coverUrl,
-                                )
-                            },
-                            matchReasons = emptyMap(),
-                            onBind = { candidate ->
-                                candidate.externalId.toLongOrNull()?.let(onBindAnilist)
-                            },
-                            onUnbind = {},
-                            onSearch = onSearchMoreAnilist,
-                            onPasteId = { raw ->
-                                // 直接复用搜索入口：ViewModel 会先尝试把它当 id 解析
-                                anilistPaste = raw
-                                onSearchMoreAnilist(raw)
-                            },
-                            manualMessage = state.anilistManualMessage,
-                            onClearMessage = onClearAnilistManualMessage,
-                            loading = false,
-                            pasteHint = "如 21 或 anilist.co/anime/21",
-                            glassBackdrop = glassBackdrop,
-                            isScrolling = isListScrolling,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-                        Spacer(Modifier.height(24.dp))
+                    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                        Text("暂无封面", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-        } else if (subject.sourceId == "anilist") {
-            // AniList 兜底来源条目（sourceKey=anilist:...）：展示该条目落库时的 AniList 侧数据
-            detailPaneItem("anilist_source", NirikoDetailPane.OVERVIEW, activePane) {
-                AniListSourceInfoSection(
-                    subject = subject,
-                    backdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                )
-                Spacer(Modifier.height(24.dp))
             }
-        }
-
-        // === VNDB 补充信息（仅游戏类型：已绑定显示详情，未绑定显示候选/搜索，不再整块消失） ===
-        if (subject.type == SubjectType.GAME) {
-            when {
-                state.vndbDetail != null -> {
-                    detailPaneItem("vndb", NirikoDetailPane.OVERVIEW, activePane) {
-                        VndbInfoSection(
-                            detail = state.vndbDetail,
-                            relations = state.vndbRelations,
-                            backdrop = glassBackdrop,
-                            isScrolling = isListScrolling,
-                            onBindRelation = onBindVndb,
-                            onUnbind = onUnbindVndb,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
                 }
-                state.vndbBinding != null -> {
-                    detailPaneItem("vndb_pending", NirikoDetailPane.OVERVIEW, activePane) {
-                        VndbBoundPendingSection(
-                            vndbId = state.vndbBinding.vndbId,
-                            backdrop = glassBackdrop,
-                            isScrolling = isListScrolling,
-                            onRetry = onRetryVndb,
-                            onUnbind = onUnbindVndb,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
-                }
-                else -> {
-                    detailPaneItem("vndb_candidates", NirikoDetailPane.OVERVIEW, activePane) {
-                        VndbCandidateSection(
-                            candidates = state.vndbCandidates,
-                            candidateReasons = state.vndbCandidateReasons,
-                            manualMessage = state.vndbManualMessage,
-                            backdrop = glassBackdrop,
-                            isScrolling = isListScrolling,
-                            onBind = onBindVndb,
-                            onSearchMore = onSearchMoreVndb,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                    }
-                }
-            }
-        }
-
-        // === 关联条目（前后传/版本/系列） ===
-        detailPaneItem("relations", NirikoDetailPane.OVERVIEW, activePane) {
-            RevealOnScroll {
-                RelationsSection(
-                    relations = state.relations,
-                    onRelationClick = onRelationClick,
-                    blurredCover = blurredCover,
-                    glassBackdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-            }
-            Spacer(Modifier.height(24.dp))
-        }
-
-        // === 统计卡网格（AniShelf 借鉴：评分/集数/人数）===
-        detailPaneItem("statGrid", NirikoDetailPane.OVERVIEW, activePane) {
-            DetailStatGrid(
-                subject = subject,
-                glassBackdrop = glassBackdrop,
-                isScrolling = isListScrolling,
-                episodeCount = if (subject.type == SubjectType.MUSIC) {
-                    state.episodes.count { it.type == 0 || it.type == 2 || it.type == 3 }
-                } else null,
-                vndbLengthMinutes = state.vndbDetail?.lengthMinutes,
-            )
+                DetailSectionId.TITLE -> {
+            // 标题（统一 TitleResolver）— Apple 大标题体系：26sp 主标题 + 15sp 原名 + 小字元信息
+            detailPaneItem(DetailSectionId.TITLE, activePane, hiddenSections) {
             Spacer(Modifier.height(16.dp))
-        }
-
-        // === 圣地巡礼（Anitabi 取景地标，阶段 K）===
-        if (state.anitabiPoints.isNotEmpty()) {
-            detailPaneItem("anitabi", NirikoDetailPane.OVERVIEW, activePane) {
-                AnitabiSection(
-                    subject = subject,
-                    city = state.anitabiCity.orEmpty(),
-                    points = state.anitabiPoints,
-                    pointsLength = state.anitabiPointsLength,
-                    imagesLength = state.anitabiImagesLength,
-                )
-                Spacer(Modifier.height(16.dp))
-            }
-        }
-
-        // === 猜你喜欢（阶段 F：本地 tag 共现）===
-        if (state.guessYouLike.isNotEmpty()) {
-            detailPaneItem("guess", NirikoDetailPane.OVERVIEW, activePane) {
-                GuessYouLikeSection(
-                    subjects = state.guessYouLike,
-                    onSubjectClick = onRelationClick,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-                Spacer(Modifier.height(16.dp))
-            }
-        }
-
-        // === 评分（第 3 轮回退：横滑卡太细碎，恢复「一张评分卡 + 下方纵向内容」） ===
-        detailPaneItem("rating", NirikoDetailPane.CONTENT, activePane) {
-            RatingComparisonSection(
-                subject = subject,
-                myRating = state.myRating,
-                glassBackdrop = glassBackdrop,
-                isScrolling = isListScrolling,
-                disputeLabel = state.ratingDispute,
-                localPercentile = state.localPercentile,
+            val titleInfo = com.otakup.niriko.util.TitleResolver.resolve(subject.titleCN, subject.title)
+            Text(
+                text = titleInfo.primary,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(8.dp))
-            // 评分分布（整宽柱状图，保持改造前的版式）
-            RatingDistributionChart(distribution = state.ratingDistribution)
-            Spacer(Modifier.height(20.dp))
-        }
+            titleInfo.secondary?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
+            Spacer(Modifier.height(16.dp))
 
-        // === 权威评分（多源；含 Fami通 / Billboard / Oricon 手动录入） ===
-        detailPaneItem("external_rating", NirikoDetailPane.CONTENT, activePane) {
-            ExternalRatingSection(
-                ratings = state.externalRatings.filter {
-                    it.sourceId != com.otakup.niriko.data.remote.rating.ExternalRating.SOURCE_BANGUMI &&
-                        it.sourceId != com.otakup.niriko.data.remote.rating.ExternalRating.SOURCE_BILIBILI
-                },
-                manualAwards = state.manualAwards,
-                subjectType = subject.type,
-                showManualEntry = true,
-                onRefresh = ratingCallbacks.onRefreshRatings,
-                onAddManualAward = ratingCallbacks.onAddManualAward,
-                onRemoveManualAward = ratingCallbacks.onRemoveManualAward,
-                glassBackdrop = glassBackdrop,
-                isScrolling = isListScrolling,
+            // 元信息（按类型展示不同字段）
+            SubjectMetaSection(subject = subject)
+            Spacer(Modifier.height(16.dp))
+
+            // 简介
+            Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            RichText(
+                text = subject.summary ?: "暂无简介",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 20,
             )
-            Spacer(Modifier.height(20.dp))
-        }
-
-        // === 扩展信息：角色 / 制作人员 / 社区标签 ===
-        detailPaneItem("extended", NirikoDetailPane.OVERVIEW, activePane) {
-        if (state.isExtendedLoading) {
-            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            Spacer(Modifier.height(24.dp))
             }
-        } else {
-            // 角色
-            RevealOnScroll {
-                CharacterSection(
-                    characters = state.characters,
-                    onCharacterClick = onCharacterClick,
-                    onPersonClick = onPersonClick,
-                    blurredCover = blurredCover,
-                    glassBackdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            // 制作人员
-            RevealOnScroll {
-                StaffSection(
-                    staff = state.staff,
-                    onPersonClick = onPersonClick,
-                    onViewAllClick = onViewAllStaffClick,
-                    blurredCover = blurredCover,
-                    glassBackdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-            }
-            Spacer(Modifier.height(20.dp))
-            // 社区标签（保持原样，本轮不合并背景）
-            if (subject.tags.isNotEmpty()) {
-                Text("标签", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp))
-                Spacer(Modifier.height(8.dp))
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    subject.tags.forEach { tag ->
-                        FilterChip(
-                            selected = false,
-                            onClick = {},
-                            label = { Text(tag, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            ),
-                        )
-                    }
                 }
-                Spacer(Modifier.height(20.dp))
-            }
-        }
-        } // item "extended"
-
-
-        // === 剧照 / 截图（TMDb 背景图 + 每集剧照；Steam 截图仍在 Steam 区块内） ===
-        if (thumbItems.isNotEmpty() || state.doubanEnabled) {
-            detailPaneItem("thumbs", NirikoDetailPane.OVERVIEW, activePane) {
-                if (thumbItems.isNotEmpty()) {
-                    ThumbsSection(
-                        items = thumbItems,
-                        onOpen = { urls, index -> imageViewerRequest = urls to index },
-                        glassBackdrop = glassBackdrop,
+                DetailSectionId.INFOBOX -> {
+            // === infobox（艺术家/发行商/发售日期等，音乐类型尤其丰富） ===
+            if (state.infoBox.isNotEmpty()) {
+                detailPaneItem(DetailSectionId.INFOBOX, activePane, hiddenSections) {
+                    GlassSectionCard(
+                        backdrop = glassBackdrop,
                         isScrolling = isListScrolling,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-                // 阶段 E：豆瓣剧照（灰色通道）。开启后需要先绑定豆瓣词条——
-                // 保守匹配：只搜候选，用户点选才写库（豆瓣同名作品极多，自动绑必错）。
-                if (state.doubanEnabled) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        fallbackBitmap = blurredCover,
                     ) {
-                        AssistChip(
-                            onClick = ratingCallbacks.onSearchDouban,
-                            label = {
-                                Text(
-                                    if (state.doubanLoading) "正在搜索豆瓣…" else "豆瓣剧照：搜索词条",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            },
-                        )
-                        if (state.doubanBoundId != null) {
-                            Text(
-                                "已绑定 #" + state.doubanBoundId +
-                                    "（" + state.doubanThumbs.size + " 张）",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
+                        InfoBoxSection(entries = state.infoBox)
+                    }
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+                }
+                DetailSectionId.STEAM -> {
+            // === Steam 补充信息（仅游戏类型且已绑定 Steam 时显示） ===
+            if (subject.type == SubjectType.GAME && state.steam != null) {
+                detailPaneItem(DetailSectionId.STEAM, activePane, hiddenSections) {
+                    SteamInfoSection(
+                        steam = state.steam,
+                        achievements = state.achievements,
+                        chartRank = state.chartRank,
+                        backdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                        isPlaceholder = subject.isSteamPlaceholder,
+                        onRematchPlaceholder = onRematchPlaceholder,
+                        onUnbindSteam = onUnbindSteam,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+                }
+                DetailSectionId.ANILIST -> {
+            // === AniList 补充信息（不限制类型：动画/漫画/游戏等 bangumi 词条均可） ===
+            // 只要存在绑定/详情/候选就渲染；bangumi 词条即使候选为空也保留「搜索更多」卡片，不再整块消失。
+            val anilistHasData = state.anilistBinding != null || state.anilistDetail != null ||
+                state.anilistRichDetail != null || state.anilistCandidates.isNotEmpty()
+            if (anilistHasData || subject.sourceKey == null) {
+                when {
+                    state.anilistDetail != null || state.anilistRichDetail != null -> {
+                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                            AniListInfoSection(
+                                detail = state.anilistDetail,
+                                rich = state.anilistRichDetail,
+                                anilistId = state.anilistBinding?.anilistId,
+                                backdrop = glassBackdrop,
+                                isScrolling = isListScrolling,
+                                onUnbind = onUnbindAnilist,
+                                onRetry = onRetryAnilist,
                             )
-                            Text(
-                                "解绑",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable { ratingCallbacks.onUnbindDouban() },
-                            )
-                        } else {
-                            Text(
-                                "未绑定（豆瓣剧照走非官方接口，可能被拦截）",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
-                            )
+                            Spacer(Modifier.height(24.dp))
                         }
                     }
-                    // 第 4 轮 F：手动粘贴豆瓣 id / 链接（终极兜底）。
-                    // 豆瓣的 id 来源本来就不可靠（搜索常被反爬拦），因此必须留这条通路：
-                    // 用户在浏览器里找到条目，把链接贴进来即可。
-                    if (state.doubanBoundId == null) {
-                        var doubanPasteInput by remember { mutableStateOf("") }
+                    state.anilistBinding != null -> {
+                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                            AniListBoundPendingSection(
+                                anilistId = state.anilistBinding.anilistId,
+                                backdrop = glassBackdrop,
+                                isScrolling = isListScrolling,
+                                onRetry = onRetryAnilist,
+                                onUnbind = onUnbindAnilist,
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+                    }
+                    else -> {
+                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                            // 第 4 轮 D：改用统一绑定区块（原 AniListCandidateSection 的三段式 UI
+                            // 与 VNDB/TMDb 各写一套，行为不一致且缺「粘贴 id」通路）。
+                            // GameItem → MatchCandidate 的映射只用到展示字段，绑定仍走 bindAnilist(id)。
+                            var anilistPaste by remember { mutableStateOf("") }
+                            ProviderBindingSection(                            title = "AniList 条目",
+                                unboundHint = "AniList 的评分**无需绑定**就会显示在评分区（自动匹配高置信度时）。" +
+                                    "绑定后才额外提供英文名/角色/标签等深度数据。",
+                                bindingSummary = null,
+                                // 候选的匹配度/理由已由 ViewModel 侧 AniListCandidateMapper 算好，这里只做展示
+                                candidates = state.anilistCandidates,
+                                matchReasons = state.anilistCandidates
+                                    .filter { it.reasons.isNotEmpty() }
+                                    .associate { it.externalId to it.reasons },
+                                onBind = { candidate ->
+                                    // externalId 形如 media-{id}：此前直接 toLongOrNull() 恒为 null，
+                                    // 点击静默失败（用户反馈「按下右侧绑定无反应」）。
+                                    val id = com.otakup.niriko.util.AniListIdParser.parse(candidate.externalId)
+                                    if (id != null) {
+                                        onBindAnilist(id)
+                                    } else {
+                                        // 解析不出来也要有反应，不能静默：把原文回灌给「粘贴 id」入口，
+                                        // 由 ViewModel 给出「请输入关键词或 AniList id」这类一行反馈。
+                                        onSearchMoreAnilist(candidate.externalId)
+                                    }
+                                },
+                                onUnbind = {},
+                                onSearch = onSearchMoreAnilist,
+                                onPasteId = { raw ->
+                                    // 直接复用搜索入口：ViewModel 会先尝试把它当 id 解析
+                                    anilistPaste = raw
+                                    onSearchMoreAnilist(raw)
+                                },
+                                manualMessage = state.anilistManualMessage,
+                                onClearMessage = onClearAnilistManualMessage,
+                                loading = false,
+                                pasteHint = "如 21 或 anilist.co/anime/21",
+                                glassBackdrop = glassBackdrop,
+                                isScrolling = isListScrolling,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+                    }
+                }
+            } else if (subject.sourceId == "anilist") {
+                // AniList 兜底来源条目（sourceKey=anilist:...）：展示该条目落库时的 AniList 侧数据
+                detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                    AniListSourceInfoSection(
+                        subject = subject,
+                        backdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                }
+            }
+                }
+                DetailSectionId.VNDB -> {
+            // === VNDB 补充信息（仅游戏类型：已绑定显示详情，未绑定显示候选/搜索，不再整块消失） ===
+            if (subject.type == SubjectType.GAME) {
+                when {
+                    state.vndbDetail != null -> {
+                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections) {
+                            VndbInfoSection(
+                                detail = state.vndbDetail,
+                                relations = state.vndbRelations,
+                                backdrop = glassBackdrop,
+                                isScrolling = isListScrolling,
+                                onBindRelation = onBindVndb,
+                                onUnbind = onUnbindVndb,
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+                    }
+                    state.vndbBinding != null -> {
+                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections) {
+                            VndbBoundPendingSection(
+                                vndbId = state.vndbBinding.vndbId,
+                                backdrop = glassBackdrop,
+                                isScrolling = isListScrolling,
+                                onRetry = onRetryVndb,
+                                onUnbind = onUnbindVndb,
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+                    }
+                    else -> {
+                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections) {
+                            VndbCandidateSection(
+                                candidates = state.vndbCandidates,
+                                candidateReasons = state.vndbCandidateReasons,
+                                manualMessage = state.vndbManualMessage,
+                                backdrop = glassBackdrop,
+                                isScrolling = isListScrolling,
+                                onBind = onBindVndb,
+                                onSearchMore = onSearchMoreVndb,
+                            )
+                            Spacer(Modifier.height(24.dp))
+                        }
+                    }
+                }
+            }
+                }
+                DetailSectionId.RELATIONS -> {
+            // === 关联条目（前后传/版本/系列） ===
+            detailPaneItem(DetailSectionId.RELATIONS, activePane, hiddenSections) {
+                RevealOnScroll {
+                    RelationsSection(
+                        relations = state.relations,
+                        onRelationClick = onRelationClick,
+                        blurredCover = blurredCover,
+                        glassBackdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+                }
+                DetailSectionId.STAT_GRID -> {
+            // === 统计卡网格（AniShelf 借鉴：评分/集数/人数）===
+            detailPaneItem(DetailSectionId.STAT_GRID, activePane, hiddenSections) {
+                DetailStatGrid(
+                    subject = subject,
+                    glassBackdrop = glassBackdrop,
+                    isScrolling = isListScrolling,
+                    episodeCount = if (subject.type == SubjectType.MUSIC) {
+                        state.episodes.count { it.type == 0 || it.type == 2 || it.type == 3 }
+                    } else null,
+                    vndbLengthMinutes = state.vndbDetail?.lengthMinutes,
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+                }
+                DetailSectionId.ANITABI -> {
+            // === 圣地巡礼（Anitabi 取景地标，阶段 K）===
+            if (state.anitabiPoints.isNotEmpty()) {
+                detailPaneItem(DetailSectionId.ANITABI, activePane, hiddenSections) {
+                    AnitabiSection(
+                        subject = subject,
+                        city = state.anitabiCity.orEmpty(),
+                        points = state.anitabiPoints,
+                        pointsLength = state.anitabiPointsLength,
+                        imagesLength = state.anitabiImagesLength,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+                }
+                DetailSectionId.GUESS -> {
+            // === 猜你喜欢（阶段 F：本地 tag 共现）===
+            if (state.guessYouLike.isNotEmpty()) {
+                detailPaneItem(DetailSectionId.GUESS, activePane, hiddenSections) {
+                    GuessYouLikeSection(
+                        subjects = state.guessYouLike,
+                        onSubjectClick = onRelationClick,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+                }
+                DetailSectionId.RATING -> {
+            // === 评分（第 3 轮回退：横滑卡太细碎，恢复「一张评分卡 + 下方纵向内容」） ===
+            detailPaneItem(DetailSectionId.RATING, activePane, hiddenSections) {
+                RatingComparisonSection(
+                    subject = subject,
+                    myRating = state.myRating,
+                    glassBackdrop = glassBackdrop,
+                    isScrolling = isListScrolling,
+                    disputeLabel = state.ratingDispute,
+                    localPercentile = state.localPercentile,
+                )
+                Spacer(Modifier.height(8.dp))
+                // 评分分布（整宽柱状图，保持改造前的版式）
+                RatingDistributionChart(distribution = state.ratingDistribution)
+                Spacer(Modifier.height(20.dp))
+            }
+                }
+                DetailSectionId.EXTERNAL_RATING -> {
+            // === 权威评分（多源；含 Fami通 / Billboard / Oricon 手动录入） ===
+            detailPaneItem(DetailSectionId.EXTERNAL_RATING, activePane, hiddenSections) {
+                ExternalRatingSection(
+                    ratings = state.externalRatings.filter {
+                        it.sourceId != com.otakup.niriko.data.remote.rating.ExternalRating.SOURCE_BANGUMI &&
+                            it.sourceId != com.otakup.niriko.data.remote.rating.ExternalRating.SOURCE_BILIBILI
+                    },
+                    manualAwards = state.manualAwards,
+                    subjectType = subject.type,
+                    showManualEntry = true,
+                    onRefresh = ratingCallbacks.onRefreshRatings,
+                    onAddManualAward = ratingCallbacks.onAddManualAward,
+                    onRemoveManualAward = ratingCallbacks.onRemoveManualAward,
+                    glassBackdrop = glassBackdrop,
+                    isScrolling = isListScrolling,
+                )
+                Spacer(Modifier.height(20.dp))
+            }
+                }
+                DetailSectionId.EXTENDED -> {
+            // === 扩展信息：角色 / 制作人员 / 社区标签 ===
+            detailPaneItem(DetailSectionId.EXTENDED, activePane, hiddenSections) {
+            if (state.isExtendedLoading) {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            } else {
+                // 角色
+                RevealOnScroll {
+                    CharacterSection(
+                        characters = state.characters,
+                        onCharacterClick = onCharacterClick,
+                        onPersonClick = onPersonClick,
+                        blurredCover = blurredCover,
+                        glassBackdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                // 制作人员
+                RevealOnScroll {
+                    StaffSection(
+                        staff = state.staff,
+                        onPersonClick = onPersonClick,
+                        onViewAllClick = onViewAllStaffClick,
+                        blurredCover = blurredCover,
+                        glassBackdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+                // 社区标签（保持原样，本轮不合并背景）
+                if (subject.tags.isNotEmpty()) {
+                    Text("标签", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 16.dp))
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        // F02：统一到 TagChip（与海报小件同一族材质）。
+                        // 前 3 个是权重最高的标签 → 强调态；其余保持普通态。
+                        subject.tags.forEachIndexed { index, tag ->
+                            TagChip(label = tag, emphatic = index < 3)
+                        }
+                    }
+                    Spacer(Modifier.height(20.dp))
+                }
+            }
+            } // item "extended"
+                }
+                DetailSectionId.THUMBS -> {
+            // === 剧照 / 截图（TMDb 背景图 + 每集剧照；Steam 截图仍在 Steam 区块内） ===
+            if (thumbItems.isNotEmpty() || state.doubanEnabled) {
+                detailPaneItem(DetailSectionId.THUMBS, activePane, hiddenSections) {
+                    if (thumbItems.isNotEmpty()) {
+                        ThumbsSection(
+                            items = thumbItems,
+                            onOpen = { urls, index -> imageViewerRequest = urls to index },
+                            glassBackdrop = glassBackdrop,
+                            isScrolling = isListScrolling,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    // 阶段 E：豆瓣剧照（灰色通道）。开启后需要先绑定豆瓣词条——
+                    // 保守匹配：只搜候选，用户点选才写库（豆瓣同名作品极多，自动绑必错）。
+                    if (state.doubanEnabled) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            OutlinedTextField(
-                                value = doubanPasteInput,
-                                onValueChange = { doubanPasteInput = it },
+                            AssistChip(
+                                onClick = ratingCallbacks.onSearchDouban,
                                 label = {
                                     Text(
-                                        "或粘贴豆瓣 ID / 链接（如 1292052）",
+                                        if (state.doubanLoading) "正在搜索豆瓣…" else "豆瓣剧照：搜索词条",
                                         style = MaterialTheme.typography.labelSmall,
                                     )
                                 },
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.weight(1f),
                             )
-                            Spacer(Modifier.width(6.dp))
-                            TextButton(onClick = {
-                                ratingCallbacks.onPasteDoubanId(doubanPasteInput)
-                                doubanPasteInput = ""
-                            }) { Text("绑定", style = MaterialTheme.typography.labelSmall) }
+                            if (state.doubanBoundId != null) {
+                                Text(
+                                    "已绑定 #" + state.doubanBoundId +
+                                        "（" + state.doubanThumbs.size + " 张）",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    "解绑",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { ratingCallbacks.onUnbindDouban() },
+                                )
+                            } else {
+                                Text(
+                                    "未绑定（豆瓣剧照走非官方接口，可能被拦截）",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        // 第 4 轮 F：手动粘贴豆瓣 id / 链接（终极兜底）。
+                        // 豆瓣的 id 来源本来就不可靠（搜索常被反爬拦），因此必须留这条通路：
+                        // 用户在浏览器里找到条目，把链接贴进来即可。
+                        if (state.doubanBoundId == null) {
+                            var doubanPasteInput by remember { mutableStateOf("") }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                OutlinedTextField(
+                                    value = doubanPasteInput,
+                                    onValueChange = { doubanPasteInput = it },
+                                    label = {
+                                        Text(
+                                            "或粘贴豆瓣 ID / 链接（如 1292052）",
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    },
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                TextButton(onClick = {
+                                    ratingCallbacks.onPasteDoubanId(doubanPasteInput)
+                                    doubanPasteInput = ""
+                                }) { Text("绑定", style = MaterialTheme.typography.labelSmall) }
+                            }
                         }
                     }
+                    Spacer(Modifier.height(20.dp))
                 }
-                Spacer(Modifier.height(20.dp))
             }
-        }
-
-        // === 剧集 / 章节 + 每集评分走势（对齐 Bangumi-master 的 Ep 区块） ===
-        if (subject.type == SubjectType.ANIME || subject.type == SubjectType.REAL || subject.type == SubjectType.BOOK) {
-            detailPaneItem("episodes_rating", NirikoDetailPane.CONTENT, activePane) {
-                EpisodeRatingSection(
-                    episodes = state.episodes,
-                    ratings = state.episodeRatings,
-                    myRatings = state.myEpisodeRatings,
-                    stills = state.episodeStills,
-                    loadState = state.episodeRatingLoad,
-                    imdbLoading = state.imdbEpisodesLoading,
-                    hasTmdbBinding = state.tmdbBinding != null,
-                    imdbAvailable = state.tmdbBinding != null,
-                    imdbEntry = state.imdbEntry,
-                    imdbLoadResult = state.imdbEpisodeLoad,
-                    onOpenSettings = ratingCallbacks.onOpenRatingSettings,
-                    onLoadImdb = ratingCallbacks.onLoadImdbEpisodes,
-                    onMarkWatched = { sort ->
-                        onSaveRecord(
-                            sort.toInt(),
-                            myRatingValue.takeIf { it > 0f },
-                            personalTagsText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                            personalImpressionText.takeIf { it.isNotBlank() },
-                            startDateValue,
-                            finishDateValue,
-                            watchedTrackIdsLocal,
-                            watchedVolumesText.toIntOrNull(),
-                            isPrivateLocal,
-                        )
-                    },
-                    onOpenEpisodeDetail = ratingCallbacks.onOpenEpisodeDetail,
-                    onOpenImage = { urls, index, _ -> imageViewerRequest = urls to index },
-                    watchedEpisodes = state.watchedEpisodes,
-                    glassBackdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                )
-                Spacer(Modifier.height(20.dp))
+                }
+                DetailSectionId.EPISODES_RATING -> {
+            // === 剧集 / 章节 + 每集评分走势（对齐 Bangumi-master 的 Ep 区块） ===
+            if (subject.type == SubjectType.ANIME || subject.type == SubjectType.REAL || subject.type == SubjectType.BOOK) {
+                detailPaneItem(DetailSectionId.EPISODES_RATING, activePane, hiddenSections) {
+                    // F14：这一部作品的进度**刚写满**时，剧集区块从左到右点亮一次。
+                    // 事件来自进度写入（初次加载不写库 → 不会触发），与状态完成的庆祝是两条通道。
+                    EpisodeRatingSection(
+                        completionWaveProgress = episodeWaveProgress,
+                        episodes = state.episodes,
+                        ratings = state.episodeRatings,
+                        myRatings = state.myEpisodeRatings,
+                        stills = state.episodeStills,
+                        loadState = state.episodeRatingLoad,
+                        imdbLoading = state.imdbEpisodesLoading,
+                        hasTmdbBinding = state.tmdbBinding != null,
+                        imdbAvailable = state.tmdbBinding != null,
+                        imdbEntry = state.imdbEntry,
+                        imdbLoadResult = state.imdbEpisodeLoad,
+                        onOpenSettings = ratingCallbacks.onOpenRatingSettings,
+                        onLoadImdb = ratingCallbacks.onLoadImdbEpisodes,
+                        onMarkWatched = { sort ->
+                            onSaveRecord(
+                                sort.toInt(),
+                                myRatingValue.takeIf { it > 0f },
+                                personalTagsText.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                                personalImpressionText.takeIf { it.isNotBlank() },
+                                startDateValue,
+                                finishDateValue,
+                                watchedTrackIdsLocal,
+                                watchedVolumesText.toIntOrNull(),
+                                isPrivateLocal,
+                            )
+                        },
+                        onOpenEpisodeDetail = ratingCallbacks.onOpenEpisodeDetail,
+                        onOpenImage = { urls, index, _ -> imageViewerRequest = urls to index },
+                        watchedEpisodes = state.watchedEpisodes,
+                        glassBackdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                    )
+                    Spacer(Modifier.height(20.dp))
+                }
             }
-        }
-
-
-        // === TMDb 绑定（保守匹配：只产候选，用户确认才写库） ===
-        if (state.tmdbSupported) {
-            detailPaneItem("tmdb_binding", NirikoDetailPane.CONTENT, activePane) {
-                TmdbBindingSection(
-                    binding = state.tmdbBinding,
-                    movieBinding = state.tmdbMovieBinding,
-                    candidates = state.tmdbCandidates,
-                    pastedCandidate = state.tmdbPastedCandidate,
-                    detail = state.tmdbDetail,
-                    currentSeason = state.tmdbBinding?.subKey?.toIntOrNull(),
-                    onSeasonSelect = ratingCallbacks.onSelectTmdbSeason,
-                    manualQuery = state.tmdbManualQuery,
-                    manualLoading = state.tmdbManualLoading,
-                    manualMessage = state.tmdbManualMessage,
-                    onBind = ratingCallbacks.onBindTmdb,
-                    onUnbind = ratingCallbacks.onUnbindTmdb,
-                    onSearchMore = { keyword -> ratingCallbacks.onSearchMoreTmdb(keyword) },
-                    onPasteId = ratingCallbacks.onPasteTmdbId,
-                    onClearMessage = ratingCallbacks.onClearTmdbManualMessage,
-                    onOpenSettings = ratingCallbacks.onOpenRatingSettings,
-                    glassBackdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                )
+                }
+                DetailSectionId.TMDB_BINDING -> {
+            // === TMDb 绑定（保守匹配：只产候选，用户确认才写库） ===
+            if (state.tmdbSupported) {
+                detailPaneItem(DetailSectionId.TMDB_BINDING, activePane, hiddenSections) {
+                    TmdbBindingSection(
+                        binding = state.tmdbBinding,
+                        movieBinding = state.tmdbMovieBinding,
+                        candidates = state.tmdbCandidates,
+                        pastedCandidate = state.tmdbPastedCandidate,
+                        detail = state.tmdbDetail,
+                        currentSeason = state.tmdbBinding?.subKey?.toIntOrNull(),
+                        onSeasonSelect = ratingCallbacks.onSelectTmdbSeason,
+                        manualQuery = state.tmdbManualQuery,
+                        manualLoading = state.tmdbManualLoading,
+                        manualMessage = state.tmdbManualMessage,
+                        onBind = ratingCallbacks.onBindTmdb,
+                        onUnbind = ratingCallbacks.onUnbindTmdb,
+                        onSearchMore = { keyword -> ratingCallbacks.onSearchMoreTmdb(keyword) },
+                        onPasteId = ratingCallbacks.onPasteTmdbId,
+                        onClearMessage = ratingCallbacks.onClearTmdbManualMessage,
+                        onOpenSettings = ratingCallbacks.onOpenRatingSettings,
+                        glassBackdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+            }
+                }
+                DetailSectionId.TRACKS -> Unit // Editing only; retain the persisted section key.
+                DetailSectionId.COLLECTION_BTN -> {
+            // === 收藏管理（Apple 风格：单主按钮，编辑控件收进 BottomSheet） ===
+            detailPaneItem(DetailSectionId.COLLECTION_BTN, activePane, hiddenSections) {
+                if (state.isInCollection) {
+                    DetailDock(
+                        backdrop = glassBackdrop,
+                        isScrolling = isListScrolling,
+                        statusLabel = state.currentStatus.label,
+                        ratingText = if (myRatingValue > 0) "%.1f 分".format(myRatingValue) else "未评分",
+                        progressText = if (!isGameType && parsedWatched != null && subject.totalEpisodes != null)
+                            "${parsedWatched}/${subject.totalEpisodes} 集" else null,
+                        onClick = { showCollectionSheet = true },
+                    )
+                } else {
+                    Button(onClick = onAddToCollection, enabled = !state.isUpdating, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (state.isUpdating) "添加中…" else "加入收藏")
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
             }
-        }
-
-        // === 音乐类型：曲目列表（按碟片分组，可勾选标记已听） ===
-        if (subject.type == SubjectType.MUSIC && state.episodes.isNotEmpty()) {
-            detailPaneItem("tracks", NirikoDetailPane.CONTENT, activePane) {
-                Spacer(Modifier.height(8.dp))
-                TrackListSection(
-                    episodes = state.episodes,
-                    watchedTrackIds = watchedTrackIdsLocal,
-                    onToggleTrack = { id ->
-                        watchedTrackIdsLocal = if (id in watchedTrackIdsLocal) watchedTrackIdsLocal.minus(id) else watchedTrackIdsLocal.plus(id)
-                    },
-                )
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-
-        // === 收藏管理（Apple 风格：单主按钮，编辑控件收进 BottomSheet） ===
-        detailPaneItem("collectionBtn", NirikoDetailPane.OVERVIEW, activePane) {
-            if (state.isInCollection) {
-                DetailDock(
-                    backdrop = glassBackdrop,
-                    isScrolling = isListScrolling,
-                    statusLabel = state.currentStatus.label,
-                    ratingText = if (myRatingValue > 0) "%.1f 分".format(myRatingValue) else "未评分",
-                    progressText = if (!isGameType && parsedWatched != null && subject.totalEpisodes != null)
-                        "${parsedWatched}/${subject.totalEpisodes} 集" else null,
-                    onClick = { showCollectionSheet = true },
-                )
-            } else {
-                Button(onClick = onAddToCollection, enabled = !state.isUpdating, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (state.isUpdating) "添加中…" else "加入收藏")
                 }
             }
-            Spacer(Modifier.height(16.dp))
         }
     }
 
     // B2b：宽屏（EXPANDED）并排两栏、各自独立滚动；窄屏仍走 single —— 与升级前逐字相同的一份列表。
+    // F18：书籍 / 漫画页面的半调网点。画在内容**之下**（drawWithCache 只画自己），
+    // 因此不遮挡正文、不拦点击；其他类型一律不画（HalftonePolicy 判据）。
+    val halftoneModifier = if (
+        com.otakup.niriko.util.HalftonePolicy.shouldApply(subject.type, detailSettings.halftoneEnabled)
+    ) {
+        Modifier.halftoneDots(
+            // 主题判定统一走 LocalDarkTheme（项目唯一来源），不按背景亮度猜
+            isDark = androidx.compose.foundation.isSystemInDarkTheme().let {
+                com.otakup.niriko.ui.theme.LocalDarkTheme.current
+            },
+            contentColor = MaterialTheme.colorScheme.onBackground,
+        )
+    } else {
+        Modifier
+    }
+    // F08：CRT 老电视模式（默认关闭）。只对「2000 年以前的动画 + 用户自己开启」播放约 4 秒。
+    // API 33+ 使用缓存的 AGSL 内容 shader；低版本或 shader 创建失败时降级为 Canvas 图元。返回时由组合销毁取消协程。
+    CrtOverlay(
+        airDate = subject.airDate,
+        type = subject.type,
+        userEnabled = detailSettings.crtModeEnabled,
+    ) {
     AdaptiveDetailScaffold(
-        modifier = Modifier.fillMaxSize(),
-        single = { paneModifier -> SubjectDetailItemsColumn(null, paneModifier, itemsBody) },
-        overview = { paneModifier -> SubjectDetailItemsColumn(NirikoDetailPane.OVERVIEW, paneModifier, itemsBody) },
-        content = { paneModifier -> SubjectDetailItemsColumn(NirikoDetailPane.CONTENT, paneModifier, itemsBody) },
+        modifier = Modifier.fillMaxSize().then(halftoneModifier).topContentAlphaMask(strength = { detailFadeAlpha }, hiddenHeight = TopFadePolicy.WINDOW_MASK_HIDDEN_DP.dp),
+        single = { paneModifier ->
+            SubjectDetailItemsColumn(null, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody)
+        },
+        overview = { paneModifier ->
+            SubjectDetailItemsColumn(NirikoDetailPane.OVERVIEW, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody)
+        },
+        content = { paneModifier ->
+            SubjectDetailItemsColumn(NirikoDetailPane.CONTENT, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody)
+        },
     )
-    } // AnimatedVisibility 主体入场
+    }
     } // CompositionLocalProvider(LocalDetailCoverFallback)
 
     // ========== 收藏管理 BottomSheet（编辑控件全部收纳于此） ==========
@@ -1510,34 +1753,73 @@ private fun SubjectDetailBody(
             onDismissRequest = { showCollectionSheet = false },
             sheetState = sheetState,
         ) {
-            CollectionEditSheet(
-                subject = subject, state = state,
-                watchedEpisodesText = watchedEpisodesText,
-                onWatchedEpisodesChange = { watchedEpisodesText = it },
-                watchedVolumesText = watchedVolumesText,
-                onWatchedVolumesChange = { watchedVolumesText = it },
-                isPrivateLocal = isPrivateLocal,
-                onIsPrivateChange = { isPrivateLocal = it },
-                myRatingValue = myRatingValue,
-                onMyRatingChange = { myRatingValue = it },
-                personalTagsText = personalTagsText,
-                onPersonalTagsChange = { personalTagsText = it },
-                personalImpressionText = personalImpressionText,
-                onPersonalImpressionChange = { personalImpressionText = it },
-                startDateValue = startDateValue, onStartDateChange = { startDateValue = it },
-                finishDateValue = finishDateValue, onFinishDateChange = { finishDateValue = it },
-                watchedTrackIdsLocal = watchedTrackIdsLocal,
-                isSaveEnabled = isSaveEnabled,
-                isUpdating = state.isUpdating,
-                onUpdateStatus = onUpdateStatus,
-                onSaveRecord = onSaveRecord,
-                onRemoveFromCollection = onRemoveFromCollection,
-                onShowStartDatePicker = { showStartDatePicker = true },
-                onShowFinishDatePicker = { showFinishDatePicker = true },
-                onShowRemoveConfirm = { showRemoveConfirm = true },
-                onOpenEpisodeDetail = ratingCallbacks.onOpenEpisodeDetail,
-            )
+            // ModalBottomSheet has its own window; draw feedback inside that window.
+            CompletionCelebrationHost(
+                events = completionEvents,
+                playbackState = completionPlayback,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                CollectionEditSheet(
+                    subject = subject, state = state,
+                    watchedEpisodesText = watchedEpisodesText,
+                    onWatchedEpisodesChange = { watchedEpisodesText = it },
+                    watchedVolumesText = watchedVolumesText,
+                    onWatchedVolumesChange = { watchedVolumesText = it },
+                    isPrivateLocal = isPrivateLocal,
+                    onIsPrivateChange = { isPrivateLocal = it },
+                    myRatingValue = myRatingValue,
+                    onMyRatingChange = { myRatingValue = it },
+                    personalTagsText = personalTagsText,
+                    onPersonalTagsChange = { personalTagsText = it },
+                    personalImpressionText = personalImpressionText,
+                    onPersonalImpressionChange = { personalImpressionText = it },
+                    startDateValue = startDateValue, onStartDateChange = { startDateValue = it },
+                    finishDateValue = finishDateValue, onFinishDateChange = { finishDateValue = it },
+                    watchedTrackIdsLocal = watchedTrackIdsLocal,
+                    onToggleTrack = { id ->
+                        // 与详情页曲目列表同一份状态：两处永远一致（§9.2 验收线）
+                        watchedTrackIdsLocal =
+                            if (id in watchedTrackIdsLocal) watchedTrackIdsLocal.minus(id)
+                            else watchedTrackIdsLocal.plus(id)
+                    },
+                    isSaveEnabled = isSaveEnabled,
+                    isUpdating = state.isUpdating,
+                    onUpdateStatus = onUpdateStatus,
+                    onSaveRecord = onSaveRecord,
+                    onRemoveFromCollection = onRemoveFromCollection,
+                    onShowStartDatePicker = { showStartDatePicker = true },
+                    onShowFinishDatePicker = { showFinishDatePicker = true },
+                    onShowRemoveConfirm = { showRemoveConfirm = true },
+                    onOpenEpisodeDetail = ratingCallbacks.onOpenEpisodeDetail,
+                    onRequestEpisodeMerge = {
+                        episodeMergeOverwrite = false
+                        // 打开就先取数据：预览必须是**真实数据**算出来的，不能拿现有文本猜
+                        ratingCallbacks.onLoadEpisodeReviewEntries { entries ->
+                            episodeMergeEntries = entries
+                            showEpisodeMerge = true
+                        }
+                    },
+                )
+            }
         }
+    }
+
+    // ========== F07：分集评价合并预览 ==========
+    if (showEpisodeMerge) {
+        EpisodeReviewMergeDialog(
+            entries = episodeMergeEntries,
+            // > 0 才算「已打分」：滑块停在 0 是「还没评」，不该要求用户勾选覆盖
+            currentRating = myRatingValue.takeIf { it > 0f },
+            existingImpression = personalImpressionText.takeIf { it.isNotBlank() },
+            onDismiss = { showEpisodeMerge = false },
+            onConfirm = { result ->
+                // 只写本地编辑状态：真正的持久化走下面那条唯一的「保存记录」路径。
+                // 因此「取消」天然是零副作用，用户也始终有机会再改一遍。
+                result.impression?.let { personalImpressionText = it }
+                result.average?.let { myRatingValue = it }
+                showEpisodeMerge = false
+            },
+        )
     }
 
     // ========== DatePickerDialogs ==========
@@ -1772,6 +2054,8 @@ private fun CollectionEditSheet(
     finishDateValue: LocalDate?,
     onFinishDateChange: (LocalDate?) -> Unit,
     watchedTrackIdsLocal: Set<Long>,
+    /** F04：逐首勾选曲目（只改本地状态，保存时才落库）。 */
+    onToggleTrack: (Long) -> Unit = {},
     isSaveEnabled: Boolean,
     isUpdating: Boolean,
     onUpdateStatus: (WatchStatus) -> Unit,
@@ -1781,6 +2065,8 @@ private fun CollectionEditSheet(
     onShowFinishDatePicker: () -> Unit,
     onShowRemoveConfirm: () -> Unit,
     onOpenEpisodeDetail: (Long) -> Unit = {},
+    /** F07：请求「从分集评价生成」——打开预览弹层（真正的文本由弹层算出来再填回这里）。 */
+    onRequestEpisodeMerge: () -> Unit = {},
 ) {
     // Android 14+：宿主 window 背后模糊（iOS 弹窗效果），关闭自动恢复
     WindowBlurBehindEffect()
@@ -1837,8 +2123,10 @@ private fun CollectionEditSheet(
             subject = subject,
             episodes = state.episodes,
             progressText = watchedEpisodesText,
-            onOpenEpisodeDetail = onOpenEpisodeDetail,
             onProgressChange = onWatchedEpisodesChange,
+            watchedVolumesText = watchedVolumesText,
+            onWatchedVolumesChange = onWatchedVolumesChange,
+            onOpenEpisodeDetail = onOpenEpisodeDetail,
         )
         Spacer(Modifier.height(12.dp))
 
@@ -1846,6 +2134,16 @@ private fun CollectionEditSheet(
         if (subject.type == SubjectType.MANGA || subject.type == SubjectType.BOOK) {
             OutlinedTextField(value = watchedVolumesText, onValueChange = onWatchedVolumesChange,
                 modifier = Modifier.fillMaxWidth(), label = { Text("卷进度") }, singleLine = true,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // F04：音乐曲目（只在音乐类型显示）。勾选只改本地状态 —— 取消保存就什么都不写。
+        if (subject.type == SubjectType.MUSIC && state.episodes.isNotEmpty()) {
+            TrackListSection(
+                episodes = state.episodes,
+                watchedTrackIds = watchedTrackIdsLocal,
+                onToggleTrack = onToggleTrack,
             )
             Spacer(Modifier.height(12.dp))
         }
@@ -1876,7 +2174,17 @@ private fun CollectionEditSheet(
         OutlinedTextField(value = personalImpressionText, onValueChange = onPersonalImpressionChange,
             modifier = Modifier.fillMaxWidth().height(120.dp), label = { Text("个人感想") },
         )
-        Spacer(Modifier.height(8.dp))
+        // F07：从分集评价生成（预览 → 填入编辑区；持久化仍走下面的「保存记录」，只保留一条写路径）
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onRequestEpisodeMerge) { Text("从分集评价生成…") }
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "会整块替换上次生成的内容，手写部分不受影响",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
 
         // 开始 / 完成日期（两列胶囊，AniShelf 借鉴）
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
@@ -2065,27 +2373,42 @@ private fun GuessYouLikeSection(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
 ) {
+    val parentId = com.otakup.niriko.navigation.LocalDetailSubjectId.current
     Column(modifier = Modifier.fillMaxWidth()) {
         Text("猜你喜欢", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            modifier = Modifier.horizontalScroll(rememberDetailPixelRailState("recommendations")),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            subjects.forEach { s ->
-                Column(modifier = Modifier.width(120.dp).clickable { onSubjectClick(s.subjectId) }) {
+            subjects.forEachIndexed { index, s ->
+                val coverKey = com.otakup.niriko.navigation.recommendationCoverKey(parentId, s.subjectId, index)
+                val interactionSource = remember(s.subjectId) { MutableInteractionSource() }
+                Column(
+                    modifier = Modifier.width(120.dp)
+                        .clickable(
+                            interactionSource = interactionSource,
+                            indication = LocalIndication.current,
+                            onClick = {
+                                com.otakup.niriko.navigation.SubjectCoverHandoff.prepare(s.subjectId, coverKey)
+                                com.otakup.niriko.util.SubjectNavigationSeed.prepare(s)
+                                onSubjectClick(s.subjectId)
+                            },
+                        ),
+                ) {
                     CoverImage(
                         coverUrl = s.coverUrl,
                         contentDescription = s.displayTitle,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
                         aspectRatio = 3f / 4f,
-                        sharedElementKey = "cover_${s.subjectId}",
+                        sharedElementKey = coverKey,
                         sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = animatedVisibilityScope,
                         subjectId = s.subjectId,
+                        coverContentModifier = Modifier.pressTilt(interactionSource),
                     )
-                    Text(s.displayTitle, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(s.displayTitle, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, minLines = com.otakup.niriko.util.RailCardPolicy.WIDE_TITLE_LINES, maxLines = com.otakup.niriko.util.RailCardPolicy.WIDE_TITLE_LINES, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -2171,6 +2494,9 @@ private fun ProgressInputSection(
     episodes: List<EpisodeInfo>,
     progressText: String,
     onProgressChange: (String) -> Unit,
+    /** 卷进度文本（书籍 / 漫画）。有总卷数时「卷数」选择器写的就是它。 */
+    watchedVolumesText: String = "",
+    onWatchedVolumesChange: (String) -> Unit = {},
     /** 长按某一集 → 打开单集二级页（阶段 B）。 */
     onOpenEpisodeDetail: (Long) -> Unit = {},
 ) {
@@ -2254,12 +2580,21 @@ private fun ProgressInputSection(
         }
         SubjectType.BOOK, SubjectType.MANGA -> {
             if (subject.series == false) { /* 单本不展示进度 */ } else {
-                val total = subject.volumes ?: subject.totalEpisodes
+                // B11：这一块是「卷 / 话」二选一的入口，必须和真正存进去的字段一致。
+                // 改造前的错误链条：界面把 1..总卷 的格子标成「卷数」，点击却写进
+                // watchedEpisodes（话/集进度），而收藏页进度条又拿总话数当分母 ——
+                // 《灌篮高手》选满 31 卷，存下来是 31 话，进度条显示 31/276 ≈ 11%。
+                val totalVolumes = subject.volumes?.takeIf { it > 0 }
+                val useVolume = totalVolumes != null
+                val total = totalVolumes ?: subject.totalEpisodes
+                val currentText = if (useVolume) watchedVolumesText else progressText
+                val change: (String) -> Unit = if (useVolume) onWatchedVolumesChange else onProgressChange
+                val unitLabel = if (useVolume) "卷数" else "话数"
                 // 修复 BUG-5：原来上限 52，53 集以上的长篇（海贼/柯南/长篇国产）直接退化成
-            // 纯数字输入，没有选集入口。提高到 300 并保留原有降级分支。
-            if (total != null && total in 1..300) {
-                    Text("卷数", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 4.dp))
-                    val currentProgress = progressText.toIntOrNull() ?: 0
+                // 纯数字输入，没有选集入口。提高到 300 并保留原有降级分支。
+                if (total != null && total in 1..300) {
+                    Text(unitLabel, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(bottom = 4.dp))
+                    val currentProgress = currentText.toIntOrNull() ?: 0
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2270,13 +2605,13 @@ private fun ProgressInputSection(
                             SelectionChip(
                                 selected = isRead,
                                 label = "$v",
-                                onClick = { onProgressChange(v.toString()) },
+                                onClick = { change(v.toString()) },
                             )
                         }
                     }
                 } else {
-                    OutlinedTextField(value = progressText, onValueChange = { onProgressChange(it.filter { c -> c.isDigit() }) },
-                        modifier = Modifier.fillMaxWidth(), label = { Text("阅读进度（话/卷）") }, singleLine = true,
+                    OutlinedTextField(value = currentText, onValueChange = { change(it.filter { c -> c.isDigit() }) },
+                        modifier = Modifier.fillMaxWidth(), label = { Text("阅读进度（$unitLabel）") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 }
@@ -3126,12 +3461,9 @@ private fun AniListSourceInfoSection(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    // F02：与社区标签同款
                     subject.tags.take(8).forEach { tag ->
-                        FilterChip(
-                            selected = false,
-                            onClick = {},
-                            label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
-                        )
+                        TagChip(label = tag)
                     }
                 }
             }
@@ -3269,15 +3601,10 @@ private fun VndbInfoSection(
                     // 按权重降序取前 12 个（VNDB 返回顺序不保证，必须自己排）
                     detail.tags.sortedByDescending { it.rating ?: 0.0 }.take(12).forEach { tag ->
                         val strength = (tag.rating ?: 0.0).toInt().coerceIn(0, 3)
-                        FilterChip(
-                            selected = strength >= 2,
-                            onClick = {},
-                            label = {
-                                Text(
-                                    tag.name + if (strength > 0) " " + "★".repeat(strength) else "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            },
+                        // F02：权重强度改用「强调态」表达（原来靠 FilterChip 的 selected 实心色）
+                        TagChip(
+                            label = tag.name + if (strength > 0) " " + "★".repeat(strength) else "",
+                            emphatic = strength >= 2,
                         )
                     }
                 }
@@ -3376,13 +3703,11 @@ private fun VndbInfoSection(
             detail.description?.takeIf { it.isNotBlank() }?.let { desc ->
                 Spacer(Modifier.height(10.dp))
                 var expanded by remember { mutableStateOf(false) }
-                Text(
-                    desc.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim()
-                        .let { if (expanded) it.take(1200) else it.take(160) },
+                RichText(
+                    text = desc,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = if (expanded) 20 else 3,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 TextButton(onClick = { expanded = !expanded }) {
                     Text(if (expanded) "收起简介" else "展开简介", style = MaterialTheme.typography.labelSmall)
@@ -3519,108 +3844,6 @@ private val URL_REGEX = Regex("https?://[^\\s，。；、）)\\]]+")
 private fun extractFirstUrl(text: String): String? =
     URL_REGEX.find(text)?.value?.trimEnd('.', ',', ')', '）', '。')
 
-/** 音乐类型曲目列表：按碟片（disc）分组，显示曲序/曲名/时长/OP-ED 标记，可逐首点击标记已听。 */
-@Composable
-private fun TrackListSection(
-    episodes: List<EpisodeInfo>,
-    watchedTrackIds: Set<Long> = emptySet(),
-    onToggleTrack: (Long) -> Unit = {},
-) {
-    // 按 disc 分组（disc=0 视为单碟），保持 sort 顺序
-    val grouped = episodes
-        .filter { it.type == 0 || it.type == 2 || it.type == 3 } // 本篇/OP/ED 曲目
-        .groupBy { it.disc.takeIf { d -> d > 0 } ?: 1 }
-        .toSortedMap(compareBy { it })
-    val totalCount = grouped.values.sumOf { it.size }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            "曲目（已听 ${watchedTrackIds.size.coerceAtMost(totalCount)} / $totalCount 首）",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Text("点击曲目标记/取消已听", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(8.dp))
-        grouped.forEach { (disc, tracks) ->
-            val sorted = tracks.sortedBy { it.sort }
-            if (grouped.size > 1) {
-                Text("Disc $disc", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.height(4.dp))
-            }
-            sorted.forEach { track ->
-                TrackRow(
-                    track = track,
-                    isWatched = track.id in watchedTrackIds,
-                    onClick = { onToggleTrack(track.id) },
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
-/** 单曲行：曲序 + 曲名 + 时长 + 类型标记 + 已听勾选。 */
-@Composable
-private fun TrackRow(
-    track: EpisodeInfo,
-    isWatched: Boolean = false,
-    onClick: () -> Unit = {},
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            track.sort.toInt().toString(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(28.dp),
-        )
-        Column(modifier = Modifier.weight(1f)) {
-            // name_cn 常返回空字符串（非 null），需 isNotBlank 回退 name
-            val title = track.nameCn?.takeIf { it.isNotBlank() } ?: track.name
-            Text(
-                if (title.isBlank()) "曲目 ${track.sort.toInt()}" else title,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (isWatched) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            )
-            val sub = listOfNotNull(
-                track.typeLabel().takeIf { it != null },
-                track.durationSeconds.takeIf { it > 0 }?.let { formatDuration(it) }
-                    ?: track.duration?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ")
-            if (sub.isNotBlank()) {
-                Text(sub, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        // 已听勾选标记
-        Icon(
-            imageVector = if (isWatched) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-            contentDescription = if (isWatched) "已听" else "未听",
-            tint = if (isWatched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-            modifier = Modifier.size(20.dp),
-        )
-    }
-}
-
-/** 曲目类型标记（0=本篇 无标记，2=OP，3=ED，1=SP）。 */
-private fun EpisodeInfo.typeLabel(): String? = when (type) {
-    2 -> "OP"
-    3 -> "ED"
-    1 -> "SP"
-    else -> null
-}
-
-/** 秒数 → "mm:ss"。 */
-private fun formatDuration(seconds: Int): String {
-    val m = seconds / 60
-    val s = seconds % 60
-    return "%d:%02d".format(m, s)
-}
 
 // ==================== 分享 ====================
 
@@ -3707,7 +3930,7 @@ private fun buildShareData(
         tags = if (isColl) state.personalTags else emptyList(),
         impressions = if (isColl) state.personalImpression else null,
         dateText = dateText,
-        summary = subject.summary,
+        summary = RichTextParser.toPlainText(subject.summary).takeIf { it.isNotBlank() },
         communityTags = subject.tags.take(10),
     )
 }
@@ -3734,7 +3957,7 @@ private suspend fun shareSubject(
             communityScore = if (s.shareIncludeRating) subject.ratingScore else null,
             ratingTotal = if (s.shareIncludeRating) subject.ratingTotal?.let { "$it 人" } else null,
             metaText = metaText,
-            summary = subject.summary,
+            summary = RichTextParser.toPlainText(subject.summary).takeIf { it.isNotBlank() },
             communityTags = subject.tags.take(10),
         ),
     )
@@ -3745,8 +3968,9 @@ private suspend fun shareSubject(
         }
         append("\n类型：${subject.type.label}")
         subject.ratingScore?.let { append(" · 评分 $it") }
-        if (!subject.summary.isNullOrBlank()) {
-            append("\n\n${subject.summary}")
+        val shareSummary = RichTextParser.toPlainText(subject.summary)
+        if (shareSummary.isNotBlank()) {
+            append("\n\n$shareSummary")
         }
         append("\n\n—— 来自 Niriko")
     }

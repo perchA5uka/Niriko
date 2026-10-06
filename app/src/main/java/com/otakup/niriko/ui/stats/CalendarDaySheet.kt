@@ -4,6 +4,8 @@ package com.otakup.niriko.ui.stats
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,15 +20,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,7 +41,7 @@ import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.components.CoverImage
-import com.otakup.niriko.ui.components.WindowBlurBehindEffect
+import com.otakup.niriko.ui.components.NirikoNonModalSheet
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.ui.theme.chartTypeColor
 import com.otakup.niriko.util.TitleResolver
@@ -52,10 +53,12 @@ import java.time.format.DateTimeFormatter
 private val dateFormat = DateTimeFormatter.ofPattern("yyyy年M月d日")
 
 /**
- * 日历日详情底部弹窗。
+ * 日历日详情底部面板。
+ *
+ * R6：非模态（无 scrim）—— 面板之外仍可滚动日历，用户能边看日详情边扫日历。
+ * 手势关闭靠顶部把手，键盘返回靠 [BackHandler]。
  * 使用单一 LazyColumn 避免嵌套滚动崩溃。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarDaySheet(
     date: LocalDate,
@@ -64,18 +67,11 @@ fun CalendarDaySheet(
     onDismiss: () -> Unit,
     onSubjectClick: (Long) -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    // Android 14+：宿主 window 背后模糊（iOS 弹窗效果），关闭自动恢复
-    WindowBlurBehindEffect()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-    ) {
+    NirikoNonModalSheet(onDismiss = onDismiss) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
+                .weight(1f)
                 .padding(bottom = 32.dp),
         ) {
             // 标题
@@ -193,11 +189,17 @@ private fun PersonalEventItem(
 ) {
     val subject = cws.subject ?: return
     val titleInfo = TitleResolver.resolve(subject.titleCN, subject.title)
+    val interactionSource = remember(subject.subjectId) { MutableInteractionSource() }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressTilt(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            )
             .padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -264,6 +266,7 @@ private fun BroadcastEventItem(
     episodes: List<EpisodeInfo> = emptyList(),
 ) {
     val titleInfo = TitleResolver.resolve(subject.titleCN, subject.title)
+    val interactionSource = remember(subject.subjectId) { MutableInteractionSource() }
     val airState = StatsCalculator.computeEpisodeAirState(episodes, subject.totalEpisodes)
 
     val statusLabel = when (AiringStatus.getPhase(subject)) {
@@ -283,7 +286,12 @@ private fun BroadcastEventItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .pressTilt(interactionSource)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = LocalIndication.current,
+                    onClick = onClick,
+                )
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

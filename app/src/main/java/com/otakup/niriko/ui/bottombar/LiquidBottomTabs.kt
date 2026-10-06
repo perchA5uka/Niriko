@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -20,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -30,6 +32,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -56,6 +59,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
+import kotlin.math.roundToInt
 
 @Composable
 fun LiquidBottomTabs(
@@ -64,6 +68,8 @@ fun LiquidBottomTabs(
     backdrop: Backdrop,
     tabsCount: Int,
     modifier: Modifier = Modifier,
+    /** 点按**已选中**的 tab（F11）：切页之外的第二条语义，由导航层决定回顶/刷新。 */
+    onTabReselected: (index: Int) -> Unit = {},
     content: @Composable RowScope.() -> Unit
 ) {
     val isLightTheme = !LocalDarkTheme.current
@@ -82,7 +88,7 @@ fun LiquidBottomTabs(
         }
 
         val offsetAnimation = remember { Animatable(0f) }
-        val panelOffset by remember(density) {
+        val panelOffset by remember(density, constraints.maxWidth) {
             derivedStateOf {
                 val fraction = (offsetAnimation.value / constraints.maxWidth).fastCoerceIn(-1f, 1f)
                 with(density) {
@@ -102,7 +108,15 @@ fun LiquidBottomTabs(
         val dragTarget = remember(selectedTabIndex) {
             mutableFloatStateOf(selectedTabIndex().toFloat())
         }
-        val dampedDragAnimation = remember(animationScope) {
+        val latestSelected by rememberUpdatedState(selectedTabIndex)
+        val latestSelect by rememberUpdatedState(onTabSelected)
+        val latestReselect by rememberUpdatedState(onTabReselected)
+        val touchSlop = LocalViewConfiguration.current.touchSlop
+        val contentMarginPx = with(density) { 4.dp.toPx() }
+        val touchState = remember(tabWidth, tabsCount, isLtr) {
+            DockTouchState(tabsCount, tabWidth, reverse = !isLtr)
+        }
+        val dampedDragAnimation = remember(animationScope, tabWidth, tabsCount, isLtr) {
             DampedDragAnimation(
                 animationScope = animationScope,
                 initialValue = selectedTabIndex().toFloat(),
@@ -111,56 +125,60 @@ fun LiquidBottomTabs(
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
                 onDragStarted = { position ->
-                    // 手势层位于 padding(4.dp) 内层，position.x 已经是内容坐标。
-                    with(density) {
-                        val contentWidth = constraints.maxWidth.toFloat() - 8f.dp.toPx()
-                        val xInContent = position.x.fastCoerceIn(0f, contentWidth)
-                        val idx = if (isLtr) xInContent / tabWidth else (contentWidth - xInContent) / tabWidth
-                        dragTarget.floatValue = idx.fastCoerceIn(0f, (tabsCount - 1).toFloat())
-                    }
+                    touchState.start(position.x - contentMarginPx)
+                    dragTarget.floatValue = touchState.index.toFloat()
                     updateValue(dragTarget.floatValue)
                 },
                 onDragStopped = {
-                    // 手指所在 tab 的触发范围是 [n, n+1)：用截断而不是四舍五入，
-                    // 否则点在某个 tab 的右半边会吸附到下一个 tab。
-                    val targetIndex = dragTarget.floatValue.toInt().fastCoerceIn(0, tabsCount - 1)
+                    // Commit the hit cell, not the visual center or rounded drag offset.
+                    val targetIndex = touchState.index
                     currentIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
+                    // 用户选择在这里直接上报 Pager，**不能**靠下面 currentIndex 的快照回流：
+                    // Pager 滚动途中 currentPage 会依次经过中间页，那条回路会把中间页当成
+                    // 用户选择而反过来打断滚动 —— 现象就是「作品库 → 设置」被「发现 / 统计」拦截。
+                    // F11：当前在同一个 tab 上再次点按，不切页，改走「重选」通道
+                    // （回顶 / 已在顶部则刷新）。切页仍只走 onTabSelected 一条路。
+                    if (targetIndex != latestSelected()) {
+                        latestSelect(targetIndex)
+                    } else if (!touchState.hasDragged(touchSlop)) {
+                        latestReselect(targetIndex)
+                    }
                     animationScope.launch {
                         offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
                 },
                 onDrag = { _, dragAmount ->
-                    // 忽略 inspector 的初始零位移事件（如有），避免覆盖按下跳转。
-                    if (dragAmount != Offset.Zero) {
-                        dragTarget.floatValue = (
-                            dragTarget.floatValue + dragAmount.x / tabWidth * if (isLtr) 1f else -1f
-                            ).fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                    if (dragAmount.x != 0f) {
+                        touchState.move(dragAmount.x)
+                        dragTarget.floatValue = touchState.indicatorValue
                         updateValue(dragTarget.floatValue)
                         animationScope.launch {
                             offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
                         }
                     }
+                },
+                onDragCancelled = {
+                    dragTarget.floatValue = latestSelected().toFloat()
+                    animateToValue(dragTarget.floatValue)
+                    animationScope.launch { offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
                 }
             )
         }
-        LaunchedEffect(selectedTabIndex) {
-            snapshotFlow { selectedTabIndex() }
-                .collectLatest { index ->
-                    currentIndex = index
-                    dragTarget.floatValue = index.toFloat()
-                }
-        }
+        // 外部选中态（Pager 滑动 / tab 点击）单向流进指示器：只更新选中项与手势基准，
+        // 绝不回调 onTabSelected（回调点唯一，见 onDragStopped）。
         LaunchedEffect(dampedDragAnimation) {
-            snapshotFlow { currentIndex }
-                .drop(1)
+            snapshotFlow { latestSelected() }
                 .collectLatest { index ->
-                    dampedDragAnimation.animateToValue(index.toFloat())
-                    onTabSelected(index)
+                    if (!dampedDragAnimation.gestureActive) {
+                        currentIndex = index
+                        dragTarget.floatValue = index.toFloat()
+                        dampedDragAnimation.animateToValue(index.toFloat())
+                    }
                 }
         }
 
-        val interactiveHighlight = remember(animationScope) {
+        val interactiveHighlight = remember(animationScope, tabWidth, isLtr) {
             InteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, offset ->
@@ -197,14 +215,13 @@ fun LiquidBottomTabs(
                 .then(interactiveHighlight.modifier)
                 .height(64f.dp)
                 .fillMaxWidth()
-                .padding(4f.dp)
-                .then(interactiveHighlight.gestureModifier)
-                .then(dampedDragAnimation.modifier),
+                .padding(4f.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content
         )
 
         CompositionLocalProvider(
+            LocalLiquidBottomTabInteractive provides false,
             LocalLiquidBottomTabScale provides {
                 lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
             }
@@ -286,7 +303,17 @@ fun LiquidBottomTabs(
                     }
                 )
                 .height(56f.dp)
-                .fillMaxWidth(1f / tabsCount)
+                // Explicit width keeps the indicator step identical to the padded content step.
+                // Fractional fill was measured after padding and made the first three indicators drift right.
+                .width(with(density) { tabWidth.toDp() })
         )
+        // This fixed input plane stays above both exported tabs and the moving glass.
+        Box(
+            Modifier.matchParentSize()
+                .clearAndSetSemantics {}
+                .then(interactiveHighlight.gestureModifier)
+                .then(dampedDragAnimation.modifier)
+        )
+
     }
 }

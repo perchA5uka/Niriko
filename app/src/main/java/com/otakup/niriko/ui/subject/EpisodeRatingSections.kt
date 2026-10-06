@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import com.otakup.niriko.util.EpisodeWavePolicy
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,6 +88,7 @@ fun EpisodeRatingSection(
     onOpenEpisodeDetail: (Long) -> Unit = {},
     onOpenImage: (List<String>, Int, String) -> Unit,
     watchedEpisodes: Int?,
+    completionWaveProgress: Float = 1f,
     glassBackdrop: Backdrop? = null,
     isScrolling: Boolean = false,
     modifier: Modifier = Modifier,
@@ -218,7 +221,7 @@ fun EpisodeRatingSection(
                         },
                         leadingIcon = {
                             if (imdbLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                             } else null
                         },
                     )
@@ -237,6 +240,7 @@ fun EpisodeRatingSection(
                 mainEpisodes.forEachIndexed { index, ep ->
                     EpisodeRow(
                         index = index,
+                        waveAlpha = EpisodeWavePolicy.badgeAlpha(completionWaveProgress, index, mainEpisodes.size),
                         ep = ep,
                         tmdb = ratings[ep.id]?.get(ExternalRating.SOURCE_TMDB),
                         imdb = ratings[ep.id]?.get(ExternalRating.SOURCE_IMDB),
@@ -342,6 +346,7 @@ private fun ImdbEntryStatusRow(
 @Composable
 private fun EpisodeRow(
     index: Int,
+    waveAlpha: Float,
     ep: EpisodeInfo,
     tmdb: EpisodeRatingEntity?,
     imdb: EpisodeRatingEntity?,
@@ -354,6 +359,7 @@ private fun EpisodeRow(
     onOpenDetail: () -> Unit,
     onOpenStill: () -> Unit,
 ) {
+    val waveColor = MaterialTheme.colorScheme.primary
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -367,6 +373,10 @@ private fun EpisodeRow(
                 modifier = Modifier
                     .size(30.dp)
                     .clip(RoundedCornerShape(8.dp))
+                    .drawWithContent {
+                        drawContent()
+                        if (waveAlpha > 0f) drawRect(waveColor.copy(alpha = waveAlpha * 0.42f))
+                    }
                     .background(
                         if (isWatched) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                         else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)

@@ -1,6 +1,5 @@
 package com.otakup.niriko.ui.common
 
-import android.graphics.drawable.BitmapDrawable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -8,9 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import coil.Coil
-import coil.request.CachePolicy
-import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 图片平均亮度（0..1）：32px 缩略图 → 亮度 p80 分位。
@@ -27,16 +26,12 @@ fun rememberImageLuminance(url: String?): Float? {
     LaunchedEffect(url) {
         if (luma == null) {
             val extracted = runCatching {
-                val request = ImageRequest.Builder(context)
-                    .data(url)
-                    .size(32)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .build()
-                val result = Coil.imageLoader(context).execute(request)
-                val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return@runCatching null
-                percentileLuminance(bitmap, 0.80f)
-            }.getOrNull()
+                val bitmap = loadCoverAnalysisBitmap(context, url) ?: return@runCatching null
+                withContext(Dispatchers.Default) { percentileLuminance(bitmap, 0.80f) }
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                null
+            }
             if (extracted != null) imageLuminanceCache[url] = extracted
             luma = extracted
         }

@@ -24,6 +24,7 @@ import androidx.window.layout.FoldingFeature
 import com.otakup.niriko.ui.animation.AnimDurationNormal
 import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.animation.motionEnabled
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 
 /**
  * 详情页并排两栏的归属列（B2b）。
@@ -213,6 +214,7 @@ fun AdaptiveDetailScaffold(
     val fold = currentNirikoFoldState()
     val twoPanes = nirikoDetailUsesTwoPanes(windowLayout, fold.arrangement)
     val motion = motionEnabled()
+    val specs = NirikoMotionSpecs
 
     // 折痕真正遮挡内容时留出它的宽度（内容不跨越折痕），否则只留一条最小视觉分隔。
     val targetGutter = if (fold.occludedWidthDp > gutter.value) Dp(fold.occludedWidthDp) else gutter
@@ -224,7 +226,7 @@ fun AdaptiveDetailScaffold(
         if (!twoPanes) {
             gutterAnim.snapTo(0f)
         } else if (motion) {
-            gutterAnim.animateTo(targetGutterDp, tween(AnimDurationNormal, easing = AnimEasingDefault))
+            gutterAnim.animateTo(targetGutterDp, specs.spatialDefault())
         } else {
             gutterAnim.snapTo(targetGutterDp)
         }

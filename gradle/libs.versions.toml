@@ -38,6 +38,11 @@ adaptive = "1.2.0"
 # 其支持的 SDK 上限低于 compileSdk 37，故所有相关测试固定 @Config(sdk = [34])（= targetSdk）。
 robolectric = "4.17"
 
+# ── ui-reference-plan-round3 · P2（R5 telephoto，Apache-2.0）──
+# zoomable-image-coil 0.19.0 的 POM 依赖 io.coil-kt:coil-compose 2.7.0（与本工程一致）、
+# kotlin-stdlib 2.1.21、androidx.compose.runtime 1.8.0 —— 均低于本工程版本，不产生顶版。
+telephoto = "0.19.0"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
@@ -103,6 +108,11 @@ robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "
 # 实际改用直读 app/schemas 的方式（见 RoomMigrationTest）；本坐标仍保留，用于带入
 # androidx.test.ext:junit（@RunWith(AndroidJUnit4)）。
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+
+# ── ui-reference-plan-round3 · P2（R5 图片，Apache-2.0）──
+# 子采样缩放（BitmapRegionDecoder），长海报不 OOM
+telephoto-zoomable = { group = "me.saket.telephoto", name = "zoomable", version.ref = "telephoto" }
+telephoto-zoomable-image-coil = { group = "me.saket.telephoto", name = "zoomable-image-coil", version.ref = "telephoto" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

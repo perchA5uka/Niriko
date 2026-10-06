@@ -5,6 +5,8 @@ import com.otakup.niriko.data.model.stats.AiringSubject
 import com.otakup.niriko.data.repository.SubjectRepository
 import com.otakup.niriko.util.AiringStatus
 import com.otakup.niriko.util.TimeUtils
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -15,6 +17,13 @@ import java.time.LocalDate
 
 private const val TAG = "SeasonalFetcher"
 
+data class SeasonalRangeResult(
+    val subjects: List<AiringSubject>,
+    val failedTypes: Set<Int> = emptySet(),
+) {
+    val isComplete: Boolean get() = failedTypes.isEmpty()
+}
+
 /**
  * 季节性/月度作品数据加载器。
  *
@@ -22,7 +31,7 @@ private const val TAG = "SeasonalFetcher"
  * 1. 从远程 API 加载指定月份的作品数据（ANIME + REAL）
  * 2. 转换为 [AiringSubject] 列表
  * 3. 通过 [SubjectRepository] 缓存作品元数据
- * 4. 无网络时返回空列表（由调用方展示离线状态）
+ * 4. 主请求失败向上传递，不把失败伪装成合法空结果
  */
 class SeasonalFetcher(
     private val remoteDataSource: SubjectRemoteDataSource,
@@ -50,9 +59,11 @@ class SeasonalFetcher(
             }
             Log.d(TAG, "Seasonal data loaded for $year-$month: ${airingList.size} subjects")
             airingList
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load seasonal data for $year-$month", e)
-            emptyList()
+            throw e
         }
     }
 
@@ -66,12 +77,50 @@ class SeasonalFetcher(
      * 加载指定日期范围内开播的放送数据（跨月延续用）。
      * 开播日在 [startDate, endDate) 区间内的 ANIME + REAL 作品。
      */
-    suspend fun fetchSeasonalInRange(startDate: LocalDate, endDate: LocalDate): List<AiringSubject> {
+    suspend fun fetchSeasonalInRange(startDate: LocalDate, endDate: LocalDate): List<AiringSubject> =
+        fetchRange(startDate, endDate, allowPartial = false).subjects
+
+    /** The caller must surface failedTypes and must not record a full-success TTL. */
+    suspend fun fetchSeasonalRangeResult(startDate: LocalDate, endDate: LocalDate): SeasonalRangeResult =
+        fetchRange(startDate, endDate, allowPartial = true)
+
+    private suspend fun fetchRange(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        allowPartial: Boolean,
+    ): SeasonalRangeResult {
         return try {
             val start = startDate.toString()
             val end = endDate.toString()
-            val animeList = remoteDataSource.getSubjectsInDateRange(type = 2, startDate = start, endDate = end)
-            val realList = remoteDataSource.getSubjectsInDateRange(type = 6, startDate = start, endDate = end)
+            suspend fun load(type: Int): List<com.otakup.niriko.data.local.entity.SubjectEntity> {
+                Log.d(TAG, "range=$start..<$end type=$type request")
+                return try {
+                    remoteDataSource.getSubjectsInDateRange(type, start, end).also { list ->
+                        val valid = list.filter { TimeUtils.parseDate(it.airDate) != null }
+                        val displayable = valid.count {
+                            AiringStatus.isWeeklyAnime(it) || AiringStatus.isMovieOrOva(it) || AiringStatus.isReleaseDateType(it)
+                        }
+                        Log.d(TAG, "range=$start..<$end type=$type mapped=${list.size} validDate=${valid.size} platformEligible=$displayable")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    val http = (e as? retrofit2.HttpException)?.code()
+                    Log.w(TAG, "range=$start..<$end type=$type failed http=$http error=${e.javaClass.simpleName}")
+                    throw e
+                }
+            }
+            val animeList = load(2)
+            var failedTypes: Set<Int> = emptySet()
+            val realList = try {
+                load(6)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (!allowPartial) throw e
+                failedTypes = setOf(6)
+                emptyList()
+            }
             val subjects = (animeList + realList).distinctBy { it.subjectId }
             // 集数补齐：周播番且 totalEpisodes 缺失时拉详情补集数。
             // 改造前是**串行**逐条 getDetail（一个月几十个周播番 = 几十次串行网络请求，
@@ -80,15 +129,19 @@ class SeasonalFetcher(
             // 批量一次写入（避免逐条 upsert 造成的失效风暴）
             subjectRepository.upsertAll(subjectsWithEpisodes)
 
-            subjectsWithEpisodes.mapNotNull { subject ->
+            val airingList = subjectsWithEpisodes.mapNotNull { subject ->
                 val parsedAirDate = TimeUtils.parseDate(subject.airDate) ?: return@mapNotNull null
                 val estimatedEnd = if (subject.totalEpisodes != null && subject.totalEpisodes > 0)
                     AiringStatus.getEstimatedEndDate(parsedAirDate, subject.totalEpisodes) else null
                 AiringSubject(subject, parsedAirDate, estimatedEnd)
             }
+            Log.d(TAG, "range=$start..<$end merged=${subjects.size} validDate=${airingList.size} failedTypes=$failedTypes")
+            SeasonalRangeResult(airingList, failedTypes)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load seasonal range $startDate..$endDate", e)
-            emptyList()
+            Log.e(TAG, "Failed seasonal range=$startDate..<$endDate error=${e.javaClass.simpleName}")
+            throw e
         }
     }
 
@@ -122,6 +175,9 @@ class SeasonalFetcher(
                                     remoteDataSource.getDetail(subject.subjectId)
                                 }
                             }
+                        }.onFailure {
+                            // A per-detail timeout is optional; parent cancellation is not.
+                            if (it is CancellationException && it !is TimeoutCancellationException) throw it
                         }.map { subject.copy(totalEpisodes = it.totalEpisodes) }.getOrDefault(subject)
                     }
                 }

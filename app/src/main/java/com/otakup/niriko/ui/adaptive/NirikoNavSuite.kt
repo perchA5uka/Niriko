@@ -37,7 +37,12 @@ import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.ui.animation.AnimDurationShort
 import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.animation.motionEnabled
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.bottombar.LiquidVerticalDock
+import com.otakup.niriko.ui.bottombar.LocalLiquidBottomTabScale
+import com.otakup.niriko.ui.bottombar.LocalLiquidBottomTabInteractive
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.Role
 import com.otakup.niriko.ui.common.bottomBarHideFraction
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -59,12 +64,15 @@ fun BoxScope.NirikoNavSuite(
     backdrop: Backdrop,
     modifier: Modifier = Modifier,
     onDestinationSelected: ((Int) -> Unit)? = null,
+    /** 点按已选中的 tab（F11）：切页之外的第二条语义，两条 dock 形态共用同一入口。 */
+    onTabReselected: ((Int) -> Unit)? = null,
 ) {
     if (layout == NirikoWindowLayout.EXPANDED) {
         VerticalDockSlot(
             pagerState = pagerState,
             backdrop = backdrop,
             onDestinationSelected = onDestinationSelected,
+            onTabReselected = onTabReselected,
             modifier = modifier.align(Alignment.CenterStart),
         )
     } else {
@@ -72,6 +80,7 @@ fun BoxScope.NirikoNavSuite(
             pagerState = pagerState,
             backdrop = backdrop,
             modifier = modifier.align(Alignment.BottomCenter),
+            onTabReselected = { page -> onTabReselected?.invoke(page) },
         )
     }
 }
@@ -81,13 +90,15 @@ private fun VerticalDockSlot(
     pagerState: PagerState,
     backdrop: Backdrop,
     onDestinationSelected: ((Int) -> Unit)?,
+    onTabReselected: ((Int) -> Unit)? = null,
     modifier: Modifier,
 ) {
     val scope = rememberCoroutineScope()
     // 稳定 lambda：避免重组时新实例触发 dock 内部 remember 重置（与 NirikoBottomBar 同款）
-    val selectedTabIndex = remember { { pagerState.currentPage } }
+    val selectedTabIndex = remember(pagerState) { { pagerState.targetPage } }
     val hideFraction = bottomBarHideFraction()
     val motion = motionEnabled()
+    val specs = NirikoMotionSpecs
 
     // 收起/恢复：与手机端共用同一个 bottomBarHideFraction（滚动内容时收起）；
     // 竖排把手机的「向下 8dp」改为「向左 24dp 滑出」，alpha 曲线保持一致。
@@ -105,7 +116,7 @@ private fun VerticalDockSlot(
         if (appearance.value < 1f) {
             appearance.animateTo(
                 1f,
-                tween(durationMillis = AnimDurationShort, easing = AnimEasingDefault)
+                specs.spatialFast()
             )
         }
     }
@@ -127,17 +138,26 @@ private fun VerticalDockSlot(
                 if (handler != null) handler(page)
                 else scope.launch { pagerState.animateScrollToPage(page) }
             },
+            onTabReselected = { page -> onTabReselected?.invoke(page) },
             backdrop = backdrop,
             tabsCount = TopLevelDestination.entries.size,
             modifier = Modifier
                 .windowInsetsPadding(WindowInsets.systemBars)
                 .padding(start = 14.dp, top = 12.dp, bottom = 12.dp),
         ) {
+            val tabScale = LocalLiquidBottomTabScale.current
+            val interactive = LocalLiquidBottomTabInteractive.current
             TopLevelDestination.entries.forEach { destination ->
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .clickable(enabled = interactive, role = Role.Tab) {
+                            if (pagerState.targetPage == destination.ordinal) onTabReselected?.invoke(destination.ordinal)
+                            else if (onDestinationSelected != null) onDestinationSelected(destination.ordinal)
+                            else scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
+                        }
+                        .graphicsLayer { scaleX = tabScale(); scaleY = tabScale() },
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {

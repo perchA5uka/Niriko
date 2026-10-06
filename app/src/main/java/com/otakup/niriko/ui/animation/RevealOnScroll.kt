@@ -1,7 +1,6 @@
 package com.otakup.niriko.ui.animation
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
@@ -50,19 +49,21 @@ fun RevealOnScroll(
     val viewportHeightPx = with(LocalDensity.current) {
         LocalConfiguration.current.screenHeightDp.dp.toPx() * 0.9f
     }
+    // P0-B：透明度走 effects 规格（淡入淡出），缩放/位移走 spatial 规格（M3 位置与尺寸变化用弹簧）。
+    val motion = NirikoMotionSpecs
     val revealAlpha by animateFloatAsState(
         targetValue = if (entered) 1f else 0f,
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
+        animationSpec = motion.effectsDefault(),
         label = "revealAlpha",
     )
     val revealScale by animateFloatAsState(
         targetValue = if (entered) 1f else 0.97f,
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
+        animationSpec = motion.spatialDefault(),
         label = "revealScale",
     )
     val revealOffset by animateFloatAsState(
         targetValue = if (entered) 0f else offsetY,
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
+        animationSpec = motion.spatialDefault(),
         label = "revealOffset",
     )
     LaunchedEffect(staggerIndex, delayMillis) {

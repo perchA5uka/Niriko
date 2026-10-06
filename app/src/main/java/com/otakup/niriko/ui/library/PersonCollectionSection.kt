@@ -141,16 +141,17 @@ private fun PersonCollectionCard(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
-            if (person.career.isNotEmpty()) {
-                Text(
-                    text = person.career.firstOrNull()?.let { careerLabel(it) } ?: "",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-            }
+            // B03：这一行**无条件渲染**（没有职业时渲染空文本 + minLines = 1）。
+            // 之前用 if 包着：有职业的卡多一行 → LazyRow 高度随可见卡片变化 = 横滑抖动。
+            Text(
+                text = person.career.firstOrNull()?.let { careerLabel(it) } ?: "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
     }
     }

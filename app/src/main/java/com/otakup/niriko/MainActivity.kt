@@ -10,11 +10,12 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -26,11 +27,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.screens.TopLevelPageIndicator
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.otakup.niriko.data.settings.FirstRunPolicy
@@ -41,10 +43,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.otakup.niriko.navigation.MAIN_ROUTE
 import com.otakup.niriko.navigation.NirikoNavHost
+import com.otakup.niriko.navigation.TabReselectSignal
 import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.navigation.rememberNirikoNavState
 import com.otakup.niriko.navigation.SETTINGS_APPEARANCE_ROUTE
 import com.otakup.niriko.navigation.rememberSearchGestureLock
+import com.otakup.niriko.navigation.tabReselectActionFor
 import com.otakup.niriko.ui.adaptive.NirikoNavSuite
 import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
@@ -58,6 +62,7 @@ import com.otakup.niriko.ui.theme.LocalGlassEffect
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.ui.wallpaper.WallpaperHost
 import com.otakup.niriko.util.WallpaperPage
+import com.otakup.niriko.util.effectiveWallpaperUri
 import com.otakup.niriko.viewmodel.SettingsViewModel
 import com.otakup.niriko.viewmodel.SettingsViewModelFactory
 import com.kyant.backdrop.backdrops.layerBackdrop as kyantLayerBackdrop
@@ -235,9 +240,20 @@ class MainActivity : ComponentActivity() {
                 // 不缓存到 remember —— 旋转 / 自由缩放 / 折叠展开后自动重组切换，无需重启。
                 val windowLayout = currentNirikoWindowLayout()
                 val useVerticalDock = windowLayout == NirikoWindowLayout.EXPANDED
-                // 手机端行为不变（仍只在顶层 main 路由显示胶囊底栏）；宽屏 dock 在二级页也保留（含返回项）
-                val showNavSuite = showBottomBar || useVerticalDock
                 val navSuiteScope = rememberCoroutineScope()
+                // F11：底栏「重选当前 tab」事件流。事件式（不是电平式）—— 携带单调递增 id，
+                // 消费层 `LaunchedEffect(id)` 只在**真的又点了一次**时触发，重组不会重复消费。
+                // 页面在这儿就确定：只有当前页会收到并消费它（各页各自校验 page）。
+                val tabReselects = remember { androidx.compose.runtime.mutableStateOf(TabReselectSignal.None) }
+                val tabReselectEventId = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                val onTabReselected: (Int) -> Unit = { page ->
+                    tabReselectEventId.intValue += 1
+                    tabReselects.value = TabReselectSignal(
+                        id = tabReselectEventId.intValue,
+                        page = page,
+                        action = tabReselectActionFor(page),
+                    )
+                }
                 // 外部 .nirikotheme 打开：自动进入外观页（消费 ThemePackImportRequest）
                 androidx.compose.runtime.LaunchedEffect(Unit) {
                     if (com.otakup.niriko.data.themepack.ThemePackImportRequest.uri != null) {
@@ -267,7 +283,19 @@ class MainActivity : ComponentActivity() {
                     val cardGlassBackdrop = rememberKyantLayerBackdrop {
                         drawContent()
                     }
-                    val wallpaperLuma = rememberImageLuminance(settings.wallpaperUri) ?: 0.5f
+                    // 卡片玻璃 tint 跟随「当前页生效的壁纸」：页覆盖优先，否则全局。
+                    // （此前只按全局 URI 计算，切页覆盖或每日轮换换图后 tint 不会跟随。）
+                    val wallpaperPage = WallpaperPage.entries
+                        .getOrElse(pagerState.currentPage) { WallpaperPage.LIBRARY }
+                    val wallpaperPerPageUris = mapOf(
+                        "library" to settings.wallpaperLibraryUri,
+                        "discover" to settings.wallpaperDiscoverUri,
+                        "stats" to settings.wallpaperStatsUri,
+                        "settings" to settings.wallpaperSettingsUri,
+                    )
+                    val wallpaperLuma = rememberImageLuminance(
+                        effectiveWallpaperUri(settings.wallpaperUri, wallpaperPerPageUris[wallpaperPage.key]),
+                    ) ?: 0.5f
                     CompositionLocalProvider(
                         LocalCardGlassBackdrop provides cardGlassBackdrop,
                         LocalCardGlassLevel provides settings.cardGlassLevel,
@@ -291,16 +319,14 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 WallpaperHost(
                                     enabled = settings.wallpaperEnabled,
+                                    parallaxEnabled = settings.wallpaperParallaxEnabled,
                                     globalUri = settings.wallpaperUri,
-                                    perPageUris = mapOf(
-                                        "library" to settings.wallpaperLibraryUri,
-                                        "discover" to settings.wallpaperDiscoverUri,
-                                        "stats" to settings.wallpaperStatsUri,
-                                        "settings" to settings.wallpaperSettingsUri,
-                                    ),
-                                    currentPage = WallpaperPage.entries
-                                        .getOrElse(pagerState.currentPage) { WallpaperPage.LIBRARY },
-                                    active = showBottomBar,
+                                    perPageUris = wallpaperPerPageUris,
+                                    currentPage = wallpaperPage,
+                                    // Keep the wallpaper rendered behind secondary routes so predictive pop reveals
+                                    // the real parent page instead of a flat surface. Video playback can still
+                                    // be paused by WallpaperHost when the app leaves the foreground.
+                                    active = true,
                                     blurDp = settings.wallpaperBlurDp,
                                     atmosphere = settings.wallpaperAtmosphere,
                                 )
@@ -312,25 +338,16 @@ class MainActivity : ComponentActivity() {
                                 containerColor = Color.Transparent,
                                 contentColor = MaterialTheme.colorScheme.onBackground,
                             ) { innerPadding ->
-                                // 内容全高 + 悬浮胶囊叠加层：内容可滚动到胶囊后方，信息从半透明胶囊透出
-                                // 详情页（subject_detail）让背景墙延伸到状态栏后：顶部不避让，仅保留 bottom/left/right；
-                                // 其他页面保持原样（由 Scaffold systemBars inset 避让）。
-                                val isSubjectDetail = currentRoute?.startsWith("subject_detail") == true
-                                // B2 宽屏：左侧悬浮竖向 dock 需要起始内边距（约 96dp），并随 dock 收起
-                                // （bottomBarHideFraction）同步收缩 —— 实现见 ui/adaptive/AdaptiveInsets.kt。
-                                // 手机端（COMPACT / MEDIUM）走原样 innerPadding，逐字不变；
-                                // B2b：详情页也吃同一份 dock 内边距（补上 5a 的缺口），宽屏详情页同样不会被竖向 dock 盖住。
+                                // Keep the NavHost viewport at window y=0. Routes own safe-top spacing,
+                                // including the parent composed during predictive back. Bottom/side insets
+                                // and the adaptive vertical dock inset keep their existing ownership.
                                 val showVerticalDockInset = useVerticalDock
-                                val boxPadding = if (isSubjectDetail) {
-                                    PaddingValues(
-                                        start = innerPadding.calculateStartPadding(LayoutDirection.Ltr),
-                                        top = 0.dp,
-                                        end = innerPadding.calculateEndPadding(LayoutDirection.Ltr),
-                                        bottom = innerPadding.calculateBottomPadding(),
-                                    )
-                                } else {
-                                    innerPadding
-                                }
+                                val layoutDirection = LocalLayoutDirection.current
+                                val boxPadding = PaddingValues(
+                                    start = innerPadding.calculateStartPadding(layoutDirection),
+                                    end = innerPadding.calculateEndPadding(layoutDirection),
+                                    bottom = innerPadding.calculateBottomPadding(),
+                                )
                                 val dockInsetModifier = if (showVerticalDockInset) {
                                     Modifier.verticalDockStartInset { bottomBarHideFraction.floatValue }
                                 } else {
@@ -342,32 +359,57 @@ class MainActivity : ComponentActivity() {
                                         .padding(boxPadding)
                                         .then(dockInsetModifier)
                                 ) {
+                                    // R9：顶部页面指示（4 段胶囊，连续跟随 pagerState）；只在顶层页显示
+                                    if (showBottomBar) {
+                                        TopLevelPageIndicator(
+                                            pagerState = pagerState,
+                                            modifier = Modifier.align(Alignment.TopCenter).padding(top = innerPadding.calculateTopPadding()),
+                                        )
+                                    }
+
                                     NirikoNavHost(
                                         navController = navState.navController,
                                         pagerState = pagerState,
                                         sharedTransitionScope = sharedTransitionScope,
+                                        // 底栏现在挂在 MAIN 路由内容里（MainPager），所以只能采样
+                                        // 「壁纸层」这个旁路捕获；MainPager 再叠一层自己的页内容层，
+                                        // 拼出与原先窗口层等价的折射源（且不含底栏自身 → 无自引用环）。
+                                        backdrop = cardGlassBackdrop,
+                                        windowLayout = windowLayout,
+                                        // Safe inset for route-local controls, not the viewport.
+                                        contentTopInset = innerPadding.calculateTopPadding(),
+                                        onDestinationSelected = { page -> navSuiteScope.launch { pagerState.animateScrollToPage(page) } },
+                                        onTabReselected = onTabReselected,
+                                        tabReselectEventId = tabReselectEventId.intValue,
+                                        tabReselect = tabReselects.value,
                                         modifier = Modifier.fillMaxSize(),
                                     )
                                 }
                             }
                         }
                     }
-                    if (showNavSuite) {
+                    }
+                    // B2 宽屏：竖向 dock 留在窗口层（捕获层之外）——
+                    // 1) 采样 windowKyantBackdrop 不会构成「窗口 → dock → 窗口」的 RenderNode 自引用环；
+                    // 2) 二级路由也保留 dock（含返回项），点按先回顶层 main 再切页。
+                    // 手机 / 中等宽度的横向胶囊底栏则挂在 MAIN 路由内容里（见 MainPager），
+                    // 这样预测性返回预览父页时底栏会随父页一起被画出来。
+                    if (useVerticalDock) {
                         NirikoNavSuite(
                             layout = windowLayout,
                             pagerState = pagerState,
                             backdrop = windowKyantBackdrop,
                             onDestinationSelected = { page ->
                                 navSuiteScope.launch {
-                                    // 宽屏二级页也保留 dock：先回顶层 main 路由，再切页
                                     if (currentRoute != MAIN_ROUTE) {
                                         navState.navController.popBackStack(MAIN_ROUTE, false)
                                     }
                                     pagerState.animateScrollToPage(page)
                                 }
                             },
+                            // F11：宽屏竖向 dock 的重选与手机端共用同一条事件流
+                            onTabReselected = onTabReselected,
                         )
-                    }
                     }
                     // 开屏动画已按用户要求移除（系统 SplashScreen 主题与衔接动画一并删除）。
                     // Android 12+ 冷启动系统仍会绘制一帧启动画面，但现在是纯 Window 背景，

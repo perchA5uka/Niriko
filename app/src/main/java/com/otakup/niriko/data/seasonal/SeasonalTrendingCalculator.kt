@@ -135,6 +135,74 @@ object SeasonalTrendingCalculator {
     }
 
     /**
+     * 展示字段补全（纯函数）：按 id 把 [donors] 里**非空**的字段补进每条候选的空缺处。
+     *
+     * ## 为什么需要它（用户报告：「发现页部分动画类型卡片不展示简介」）
+     *
+     * 实测 Bangumi `GET /calendar` 返回的每个条目 `summary` 都是**空串**
+     * （2026-10 抽样 70 条，70 条全空），而日历是「正在放送」的权威来源、
+     * 且 [merge] 规定同一 id 以日历为准 —— 于是**只在日历里出现的长连载**
+     * （航海王、名侦探柯南）卡片永远没有简介：它们在 400 天开播窗口之外
+     * （开播于 1999 年），放宽窗口的检索那条路也补不到。
+     *
+     * 这里不改候选池、不改类型过滤、不改排序：只把同一 id 已有条目的空字段补上，
+     * 让卡片拿到简介 / 集数 / 评分。放送星期与 [SeasonalItem.confirmed] 仍以日历为准。
+     *
+     * @param items 候选（合并后的池子或 [select] 选出的展示条目）
+     * @param donors subjectId → 字段更全的条目（检索结果；可以缺、可以整个为空）
+     */
+    fun fillBlankFields(
+        items: List<SeasonalItem>,
+        donors: Map<Long, SubjectEntity>,
+    ): List<SeasonalItem> {
+        if (donors.isEmpty()) return items
+        return items.map { item ->
+            val donor = donors[item.subject.subjectId] ?: return@map item
+            item.copy(subject = item.subject.fillBlankFieldsFrom(donor))
+        }
+    }
+
+    /**
+     * 是否值得为「补简介」多跑一次检索：只看**可能被展示**的条目
+     * （类型过滤 + 排序 + 质量门槛 + 截断到 [targetSize] 之后）是否还有拿不到简介的。
+     *
+     * 看不见的候选不值得多一次请求；当季番普遍能由手上的兜底检索结果补上，
+     * 只有开播多年的长连载才会让这里返回 true。
+     */
+    fun needsFieldDonors(
+        items: List<SeasonalItem>,
+        types: List<Int>,
+        sort: SeasonalSort,
+        targetSize: Int,
+        donors: Map<Long, SubjectEntity>,
+    ): Boolean {
+        val shown = select(items, types, sort, targetSize).items
+        return shown.any { item ->
+            item.subject.summary.isNullOrBlank() &&
+                donors[item.subject.subjectId]?.summary.isNullOrBlank() != false
+        }
+    }
+
+    /** 把 [donor] 里非空的字段补进本体的空缺处；**已有的值绝不覆盖**。 */
+    private fun SubjectEntity.fillBlankFieldsFrom(donor: SubjectEntity): SubjectEntity = copy(
+        titleCN = titleCN.orIfBlank(donor.titleCN),
+        summary = summary.orIfBlank(donor.summary),
+        coverUrl = coverUrl.orIfBlank(donor.coverUrl),
+        totalEpisodes = totalEpisodes ?: donor.totalEpisodes,
+        platform = platform.orIfBlank(donor.platform),
+        volumes = volumes ?: donor.volumes,
+        airDate = airDate.orIfBlank(donor.airDate),
+        ratingScore = ratingScore ?: donor.ratingScore,
+        ratingTotal = ratingTotal ?: donor.ratingTotal,
+        rank = rank ?: donor.rank,
+        series = series ?: donor.series,
+        tags = tags.ifEmpty { donor.tags },
+    )
+
+    private fun String?.orIfBlank(fallback: String?): String? =
+        if (isNullOrBlank()) fallback?.takeIf { it.isNotBlank() } else this
+
+    /**
      * 类型筛选（第 6 轮 §2.4）：按 Bangumi type 整数集合过滤。
      *
      * 类型来源是**顶部类型行**（[SeasonalTypes.of]），不再是榜单自己的 chips。

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
@@ -35,10 +37,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.snapshotFlow
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.model.search.TrendingMode
+import com.otakup.niriko.navigation.TabReselectSignal
+import com.otakup.niriko.navigation.TopLevelDestination
+import com.otakup.niriko.navigation.applyTabReselectTo
 
 /**
  * 发现页「宫格版」首页（第 5 轮 D28）。
@@ -67,10 +74,34 @@ fun DiscoverGridPane(
     onPickMode: (TrendingMode) -> Unit,
     onSubjectClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    /** F11：发现页重选信号与事件号。宫格首页也支持「不在顶部先回顶」。 */
+    tabReselectEventId: Int = 0,
+    tabReselect: TabReselectSignal? = null,
+    /** 已在顶部时的刷新入口（宫格首页与卡片/海报视图共用同一条刷新路径）。 */
+    onRefreshAtTop: () -> Unit = {},
+    topInset: Dp = 0.dp,
+    onScrollPosChange: (Int, Int) -> Unit = { _, _ -> },
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, onScrollPosChange) {
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) -> onScrollPosChange(index, offset) }
+    }
+    // F11：底栏重选发现页（宫格首页）—— 不在顶部先回顶；已在顶部则刷新。
+    LaunchedEffect(tabReselectEventId) {
+        if (tabReselectEventId <= 0) return@LaunchedEffect
+        val signal = tabReselect ?: return@LaunchedEffect
+        applyTabReselectTo(
+            signal = signal,
+            page = TopLevelDestination.Discover.ordinal,
+            supportsRefreshAtTop = true,
+            listState = listState,
+        ) { onRefreshAtTop() }
+    }
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {

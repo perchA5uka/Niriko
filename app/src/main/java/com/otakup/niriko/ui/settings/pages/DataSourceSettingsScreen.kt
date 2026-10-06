@@ -322,7 +322,7 @@ fun DataSourceSettingsContent(
                 enabled = !viewModel.isBangumiSyncing.value && settings.bangumiSyncEnabled,
             ) {
                 if (viewModel.isBangumiSyncing.value) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                 } else {
                     Text("立即同步")
                 }

@@ -160,6 +160,7 @@ object StatsCalculator {
         mode: CalendarMode,
         broadcast: Map<DayOfWeek, List<AiringSubject>>,
         seasonal: Map<String, List<AiringSubject>>,
+        episodesBySubject: Map<Long, List<EpisodeInfo>> = emptyMap(),
     ): Map<LocalDate, CalendarDayEvents> {
         val firstOfMonth = LocalDate.of(year, month, 1)
         val lastOfMonth = LocalDate.of(year, month, firstOfMonth.lengthOfMonth())
@@ -195,6 +196,27 @@ object StatsCalculator {
             ?: emptyMap()
 
         if (mode == CalendarMode.BROADCAST || mode == CalendarMode.ALL) {
+            val airingSubjects = (broadcast.values.flatten() + seasonal[monthKey].orEmpty())
+                .distinctBy { it.subject.subjectId }
+            val actualSchedules = airingSubjects.filter { AiringStatus.isWeeklyAnime(it.subject) }
+                .associate { airing ->
+                    val episodes = episodesBySubject[airing.subject.subjectId].orEmpty()
+                    val main = episodes.filter { it.type == 0 && it.sort > 0 }
+                    val parsedDates = main.map { ep ->
+                        ep.airdate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                    }
+                    val dates = parsedDates.filterNotNull().distinct()
+                    // Only replace estimates when the fetched list covers the declared episode count.
+                    val complete = main.isNotEmpty() && parsedDates.all { it != null } &&
+                        airing.subject.totalEpisodes?.let { it > 0 && episodes.size >= it } == true
+                    airing.subject.subjectId to (dates to complete)
+                }
+            val subjects = airingSubjects.associateBy { it.subject.subjectId }
+            actualSchedules.forEach { (id, schedule) ->
+                schedule.first.filter { !it.isBefore(firstOfMonth) && !it.isAfter(lastOfMonth) }.forEach { date ->
+                    broadcastByDate.getOrPut(date) { mutableListOf() }.add(subjects.getValue(id).subject)
+                }
+            }
             for (day in 1..firstOfMonth.lengthOfMonth()) {
                 val date = LocalDate.of(year, month, day)
                 val dow = date.dayOfWeek
@@ -214,7 +236,8 @@ object StatsCalculator {
                                 if (date == airing.airDate)
                                     releaseByDate.getOrPut(date) { mutableListOf() }.add(airing.subject)
                             }
-                            AiringStatus.isWeeklyAnime(airing.subject) -> {
+                            AiringStatus.isWeeklyAnime(airing.subject) &&
+                                actualSchedules[airing.subject.subjectId]?.second != true -> {
                                 broadcastByDate.getOrPut(date) { mutableListOf() }.add(airing.subject)
                             }
                         }
@@ -233,7 +256,9 @@ object StatsCalculator {
                 }
             }
 
-            val weeklySeasonal = seasonalSubjects.filter { AiringStatus.isWeeklyAnime(it.subject) }
+            val weeklySeasonal = seasonalSubjects.filter {
+                AiringStatus.isWeeklyAnime(it.subject) && actualSchedules[it.subject.subjectId]?.second != true
+            }
             val movieSeasonal = seasonalSubjects.filter { AiringStatus.isMovieOrOva(it.subject) }
 
             movieSeasonal.forEach { airing ->
@@ -272,7 +297,7 @@ object StatsCalculator {
         for (date in allDates) {
             val started = personalStarted[date]?.toList() ?: emptyList()
             val completed = personalCompleted[date]?.toList() ?: emptyList()
-            val broadcastSubjects = broadcastByDate[date]?.toList() ?: emptyList()
+            val broadcastSubjects = broadcastByDate[date].orEmpty().distinctBy { it.subjectId }
             val release = releaseByDate[date]?.toList() ?: emptyList()
 
             val personalSubjects = (started + completed).mapNotNull { it.subject }.distinctBy { it.subjectId }
@@ -342,16 +367,17 @@ object StatsCalculator {
         mode: CalendarMode,
         broadcast: Map<DayOfWeek, List<AiringSubject>>,
         seasonal: Map<String, List<AiringSubject>>,
+        episodesBySubject: Map<Long, List<EpisodeInfo>> = emptyMap(),
     ): Map<LocalDate, CalendarDayEvents> {
         val months = CalendarRangeCalculator.monthsCovering(rangeStart, rangeEnd)
         if (months.isEmpty()) return emptyMap()
         val only = months.first()
         if (months.size == 1 && rangeStart == only.atDay(1) && rangeEnd == only.atEndOfMonth()) {
-            return computeCalendarEvents(items, only.year, only.monthValue, mode, broadcast, seasonal)
+            return computeCalendarEvents(items, only.year, only.monthValue, mode, broadcast, seasonal, episodesBySubject)
         }
         val merged = LinkedHashMap<LocalDate, CalendarDayEvents>()
         months.forEach { month ->
-            computeCalendarEvents(items, month.year, month.monthValue, mode, broadcast, seasonal)
+            computeCalendarEvents(items, month.year, month.monthValue, mode, broadcast, seasonal, episodesBySubject)
                 .forEach { (date, events) ->
                     if (!date.isBefore(rangeStart) && !date.isAfter(rangeEnd)) {
                         merged[date] = events

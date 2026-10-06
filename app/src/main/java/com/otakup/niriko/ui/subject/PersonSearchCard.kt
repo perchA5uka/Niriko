@@ -1,6 +1,8 @@
 package com.otakup.niriko.ui.subject
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,8 +19,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -35,11 +39,17 @@ fun PersonSearchCard(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember(person.id) { MutableInteractionSource() }
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .pressTilt(interactionSource)
             .appleGlassCard(shape = MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
     ) {
         Row(modifier = Modifier.padding(12.dp)) {
             // 头像

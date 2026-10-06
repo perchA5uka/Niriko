@@ -33,6 +33,8 @@ class SeasonalTrendingCalculatorTest {
         ratingScore: Float? = null,
         rank: Int? = null,
         airWeekday: Int? = null,
+        summary: String? = null,
+        tags: List<String> = emptyList(),
     ) = SubjectEntity(
         subjectId = id,
         title = "title-$id",
@@ -44,6 +46,8 @@ class SeasonalTrendingCalculatorTest {
         ratingScore = ratingScore,
         rank = rank,
         airWeekday = airWeekday,
+        summary = summary,
+        tags = tags,
     )
 
     // ==================== 在播判定（核心回归） ====================
@@ -293,6 +297,85 @@ class SeasonalTrendingCalculatorTest {
         assertEquals(LocalDate.of(2026, 4, 1), SeasonalTrendingCalculator.quarterStart(LocalDate.of(2026, 4, 1)))
         assertEquals(LocalDate.of(2026, 7, 1), SeasonalTrendingCalculator.quarterStart(LocalDate.of(2026, 9, 19)))
         assertEquals(LocalDate.of(2026, 10, 1), SeasonalTrendingCalculator.quarterStart(LocalDate.of(2026, 12, 31)))
+    }
+
+    // ============ 展示字段补全（B06：发现页动画卡片不展示简介） ============
+
+    @Test
+    fun `calendar item with an empty summary is filled from a search donor`() {
+        // 实测 GET /calendar 的每个条目 summary 都是**空串**（不是 null）。
+        // 长连载（航海王 / 名侦探柯南）只在日历里出现，于是卡片没有简介。
+        val calendarItem = SeasonalItem(
+            subject = subject(1L, summary = ""),
+            weekday = DayOfWeek.MONDAY,
+            confirmed = true,
+        )
+        val donor = subject(1L, summary = "某个小镇的故事", platform = "TV", totalEpisodes = 24)
+
+        val filled = SeasonalTrendingCalculator.fillBlankFields(listOf(calendarItem), mapOf(1L to donor))
+
+        assertEquals("某个小镇的故事", filled[0].subject.summary)
+        assertEquals("TV", filled[0].subject.platform)
+        assertEquals(24, filled[0].subject.totalEpisodes)
+        // 日历独有的信息（放送星期 / 权威标记）不能被检索结果改掉
+        assertEquals(DayOfWeek.MONDAY, filled[0].weekday)
+        assertTrue(filled[0].confirmed)
+    }
+
+    @Test
+    fun `an existing field is never overwritten by the donor`() {
+        val item = SeasonalItem(subject(2L, summary = "日历自己的简介", platform = "TV", tags = listOf("日常")))
+        val donor = subject(2L, summary = "检索的简介", platform = "WEB", tags = listOf("别的"))
+
+        val filled = SeasonalTrendingCalculator.fillBlankFields(listOf(item), mapOf(2L to donor))
+
+        assertEquals("日历自己的简介", filled[0].subject.summary)
+        assertEquals("TV", filled[0].subject.platform)
+        assertEquals(listOf("日常"), filled[0].subject.tags)
+    }
+
+    @Test
+    fun `a blank donor never clears a value and items without a donor stay untouched`() {
+        val blankDonor = SeasonalItem(subject(3L, summary = null))
+        val orphan = SeasonalItem(subject(4L, summary = "只有自己有简介"))
+        val filled = SeasonalTrendingCalculator.fillBlankFields(
+            listOf(blankDonor, orphan),
+            mapOf(3L to subject(3L, summary = "   ")),
+        )
+
+        assertNull("捐赠者自己也是空的时候，不能把空值写进去", filled[0].subject.summary)
+        assertEquals("只有自己有简介", filled[1].subject.summary)
+        // 没有捐赠者时原样返回（同一个实例，不做无意义的 copy）
+        assertEquals(
+            listOf(blankDonor, orphan),
+            SeasonalTrendingCalculator.fillBlankFields(listOf(blankDonor, orphan), emptyMap()),
+        )
+    }
+
+    @Test
+    fun `donors are only fetched when a shown card still lacks a summary`() {
+        val covered = SeasonalItem(subject(10L, ratingTotal = 9_000, summary = ""))
+        val donor = mapOf(10L to subject(10L, summary = "有简介"))
+
+        assertFalse(
+            "可能被展示的条目都能补上，就不该多跑一次请求",
+            SeasonalTrendingCalculator.needsFieldDonors(
+                listOf(covered), SeasonalTypes.ALL, SeasonalSort.HEAT, DiscoveryFeed.TARGET_SIZE, donor,
+            ),
+        )
+        assertTrue(
+            "长连载没有捐赠者 → 需要补一次热门检索",
+            SeasonalTrendingCalculator.needsFieldDonors(
+                listOf(covered), SeasonalTypes.ALL, SeasonalSort.HEAT, DiscoveryFeed.TARGET_SIZE, emptyMap(),
+            ),
+        )
+        // 被质量门槛挡掉的候选（rating_total < 100）看不见，也不该触发请求
+        val rejected = SeasonalItem(subject(11L, ratingTotal = 1, summary = ""))
+        assertFalse(
+            SeasonalTrendingCalculator.needsFieldDonors(
+                listOf(covered, rejected), SeasonalTypes.ALL, SeasonalSort.HEAT, DiscoveryFeed.TARGET_SIZE, donor,
+            ),
+        )
     }
 
 }

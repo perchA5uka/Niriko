@@ -194,4 +194,46 @@ class SteamTitleMatcherTest {
         assertNull(SteamTitleMatcher.bestMatch("随机作品名", emptyList()))
         assertNull(SteamTitleMatcher.bestMatch("随机作品名", listOf(candidate(1, "完全无关的名字"))))
     }
+
+    // ============ CJK 空格差异（B08：《女神异闻录》系列绑不上 Steam） ============
+
+    @Test
+    fun confidence_cjkTitleDifferingOnlyByASpace_isSameWork() {
+        // 真实数据：
+        // Bangumi subject 278949 name_cn =「女神异闻录5 皇家版」（带空格）
+        // Steam app 1687950（l=schinese&cc=CN）name =「女神异闻录5皇家版」（不带空格）
+        assertEquals(
+            1f,
+            SteamTitleMatcher.confidence("女神异闻录5 皇家版", "女神异闻录5皇家版"),
+            0.001f,
+        )
+    }
+
+    @Test
+    fun bestMatchMulti_personaBindsThroughChineseTitle() {
+        // Bangumi name「ペルソナ5 ザ・ロイヤル」在 Steam 商店搜不到（实测 total=0），
+        // 能搜到的是中文名 —— 必须靠 name_cn 这条路绑上，且只差一个空格也要算命中。
+        val result = SteamTitleMatcher.bestMatchMulti(
+            listOf("ペルソナ5 ザ・ロイヤル", "女神异闻录5 皇家版"),
+            listOf(candidate(1687950, "女神异闻录5皇家版")),
+        )
+        assertNotNull("中文名只差一个空格也必须绑上", result)
+        assertEquals(1687950, result!!.appId)
+        assertEquals(1f, result.confidence, 0.001f)
+    }
+
+    @Test
+    fun confidence_cjkSequelsWithoutSpaces_stayBelowThreshold() {
+        // 去空格捷径只处理「排版差异」，绝不能把同系列不同续作放进来（数字才是区分依据）
+        assertTrue(
+            "女神异闻录3 携带版 vs 女神异闻录4 携带版 必须低于阈值",
+            SteamTitleMatcher.confidence("女神异闻录3 携带版", "女神异闻录4 携带版") <
+                SteamTitleMatcher.MIN_CONFIDENCE,
+        )
+        assertTrue(
+            "女神异闻录5 vs 女神异闻录4 必须低于阈值",
+            SteamTitleMatcher.confidence("女神异闻录5", "女神异闻录4") <
+                SteamTitleMatcher.MIN_CONFIDENCE,
+        )
+    }
 }

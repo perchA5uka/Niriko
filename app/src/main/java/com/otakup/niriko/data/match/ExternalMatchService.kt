@@ -2,6 +2,7 @@ package com.otakup.niriko.data.match
 
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.remote.InfoBoxEntry
+import kotlinx.coroutines.CancellationException
 
 /**
  * 跨数据源统一匹配服务（第 4 轮 D）。
@@ -87,6 +88,13 @@ interface ProviderMatcher {
      * 那部分由 [MatchScorer] 统一做，保证各源口径一致。
      */
     suspend fun query(text: String, subject: SubjectEntity): List<RawCandidate>
+
+    /** Providers may use the full title set to decide whether recall needs a fallback. */
+    suspend fun query(text: String, subject: SubjectEntity, scoringTitles: List<String>): List<RawCandidate> =
+        query(text, subject)
+
+    val stopConfidence: Float get() = MatchScorer.HIGH_CONFIDENCE
+    val maxQueryCount: Int get() = Int.MAX_VALUE
 
     /**
      * 按 provider 侧 ID 直接取候选（粘贴 ID / infobox ID 用）。
@@ -458,7 +466,7 @@ class ExternalMatchService(
         }
 
         // —— L2 + L3：多查询串 + 多字段打分 ——
-        val queries = MatchQueryBuilder.build(subject, infobox).take(maxQueries)
+        val queries = MatchQueryBuilder.build(subject, infobox).take(maxQueries.coerceIn(0, target.maxQueryCount))
         if (queries.isEmpty()) return emptyList()
 
         val merged = LinkedHashMap<String, MatchCandidate>()
@@ -471,7 +479,8 @@ class ExternalMatchService(
         val bangumiTitles = scoringTitles(subject, infobox)
 
         for (q in queries) {
-            val raws = runCatching { target.query(q, subject) }.getOrDefault(emptyList())
+            val raws = runCatching { target.query(q, subject, bangumiTitles) }
+                .onFailure { if (it is CancellationException) throw it }.getOrDefault(emptyList())
             for (raw in raws) {
                 if (raw.externalId.isBlank()) continue
                 // 同一候选可能被多个查询串命中：保留**置信度最高**的那次，并记下命中它的查询串
@@ -494,7 +503,7 @@ class ExternalMatchService(
                 }
             }
             // 已经有一个高置信度命中时提前停止，省掉后续查询的额度
-            if (merged.values.any { it.confidence >= MatchScorer.HIGH_CONFIDENCE }) break
+            if (merged.values.any { it.confidence >= target.stopConfidence }) break
         }
 
         return merged.values.sortedByDescending { it.confidence }.take(limit)
@@ -521,7 +530,8 @@ class ExternalMatchService(
         val year = subject.airDate?.take(4)?.toIntOrNull()
         val bangumiTitles = scoringTitles(subject, infobox)
 
-        return runCatching { target.query(text, subject) }.getOrDefault(emptyList())
+        return runCatching { target.query(text, subject, bangumiTitles) }
+            .onFailure { if (it is CancellationException) throw it }.getOrDefault(emptyList())
             .filter { it.externalId.isNotBlank() }
             .map { raw ->
                 val scored = MatchScorer.score(

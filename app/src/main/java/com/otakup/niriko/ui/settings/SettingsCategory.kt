@@ -3,6 +3,7 @@ package com.otakup.niriko.ui.settings
 import com.otakup.niriko.navigation.SETTINGS_ABOUT_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_APPEARANCE_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_DATASOURCE_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_DONATE_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_LIBRARY_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_REFRESH_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_SEARCH_ROUTE
@@ -73,6 +74,12 @@ enum class SettingsCategory(
         route = SETTINGS_ABOUT_ROUTE,
         title = "关于",
         subtitle = "版本与开源许可",
+        group = SettingsCategoryGroup.OTHER,
+    ),
+    DONATE(
+        route = SETTINGS_DONATE_ROUTE,
+        title = "向开发者捐赠",
+        subtitle = "帮助我继续更新",
         group = SettingsCategoryGroup.OTHER,
     );
 

@@ -34,7 +34,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.navigation.TabReselectSignal
+import com.otakup.niriko.navigation.TopLevelDestination
+import com.otakup.niriko.navigation.applyTabReselectTo
 import com.otakup.niriko.ui.animation.RevealOnScroll
 import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
@@ -45,12 +49,18 @@ import com.otakup.niriko.ui.subject.SubjectResultCard
 import com.otakup.niriko.util.toCardDisplayModel
 
 /**
- * 趋势区的「上次更新」一行 + 强制刷新入口。
+ * 趋势区的「上次更新」一行。
  *
- * 下拉刷新是没有提示的隐藏手势；把陈旧度写出来，同时让这一行可点 = 一个可发现的强制刷新入口。
+ * 下拉刷新是没有提示的隐藏手势，把陈旧度写出来用户才知道屏幕上是新数据还是缓存。
+ *
+ * 第 8 批（清单 F10）：**去掉「· 点此强制刷新」这段文案** —— 用户要求移除这个显式文字入口。
+ * 刷新入口保留两条，且都不带这段文字：
+ * - 下拉刷新（原有手势）；
+ * - 重选底部「发现」tab（F11：已在顶部时刷新）—— 这是取代文字入口的**可发现**路径。
+ * 这一行仍然可点（保留原行为，避免连点击刷新一起删掉），但不再用文字宣传它。
  */
 @Composable
-private fun TrendingFreshnessRow(
+internal fun TrendingFreshnessRow(
     lastUpdatedAt: Long,
     onForceRefresh: (() -> Unit)?,
 ) {
@@ -86,13 +96,8 @@ private fun TrendingFreshnessRow(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        if (onForceRefresh != null) {
-            Text(
-                text = " · 点此强制刷新",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
+        // F10：这里原来还有一段 " · 点此强制刷新" 文字入口，已按用户要求移除。
+        // 整行仍可点 + 下拉刷新 + 底栏重选（F11）三条路径仍在。
     }
 }
 
@@ -119,6 +124,11 @@ fun TrendingSection(
     onForceRefresh: (() -> Unit)? = null,
     /** 当季热门空态时的出口：切到历史排名。null = 不显示该入口。 */
     onOpenAllTime: (() -> Unit)? = null,
+    /** F11：发现页重选信号与事件号（只认事件号，事件式消费）。 */
+    tabReselectEventId: Int = 0,
+    tabReselect: TabReselectSignal? = null,
+    topInset: Dp = 0.dp,
+    headerContent: (@Composable () -> Unit)? = null,
 ) {
     // 第 6 轮 R6：删掉 !trendingMode.isTrend 早退。
     // 改造前 FIND / MONTHLY 是「功能入口」需要在这里提前返回；这两个模式已随模块删除，
@@ -128,7 +138,7 @@ fun TrendingSection(
     } else if (state.trendingResults.isNotEmpty()) {
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
             // 陈旧度 + 强制刷新入口：改造前用户无从判断屏幕上是新数据还是缓存
-            TrendingFreshnessRow(lastUpdatedAt = lastUpdatedAt, onForceRefresh = onForceRefresh)
+
             // 第 6 轮返工（用户复核）：当季热门回到**纯卡片列表** ——
             // 头部计数行 / 排序 chips / 「第 N 话」副标题 / 尾部出口全部移除，
             // 数据仍是「类内人气序 + 质量门槛 + 多样性重排 → 前 30」。
@@ -139,7 +149,7 @@ fun TrendingSection(
             LaunchedEffect(state.trendingVersion) {
                 val (idx, offset) = latestInitialScrollPos.value
                 if (state.trendingMode == TrendingMode.ALL_TIME && state.trendingResults.isNotEmpty()) {
-                    listState.scrollToItem(idx.coerceIn(0, state.trendingResults.lastIndex), offset)
+                    listState.scrollToItem(idx.coerceIn(0, state.trendingResults.size), offset)
                 }
             }
             // 滚动时上报当前位置（index+offset 像素级，切类型时保存）
@@ -149,6 +159,18 @@ fun TrendingSection(
                 }.collect { (index, offset) ->
                     onScrollPosChange(index, offset)
                 }
+            }
+            // F11：底栏重选发现页 —— 不在顶部先回顶；已在顶部才刷新（与下拉刷新同一入口）。
+            // key 是**事件号**（不是滚动状态）：重组 / 列表变化都不会重复触发。
+            LaunchedEffect(tabReselectEventId) {
+                if (tabReselectEventId <= 0) return@LaunchedEffect
+                val signal = tabReselect ?: return@LaunchedEffect
+                applyTabReselectTo(
+                    signal = signal,
+                    page = TopLevelDestination.Discover.ordinal,
+                    supportsRefreshAtTop = true,
+                    listState = listState,
+                ) { onForceRefresh?.invoke() }
             }
             // 滚动接近底部 → 触发加载下一页（像素距离触发 + 最新 state，单一 effect）
             val latestState = rememberUpdatedState(state)
@@ -173,11 +195,15 @@ fun TrendingSection(
                     }
                 }
             }
-            LazyColumn(state = listState, modifier = Modifier.reportBottomBarScroll(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
+            LazyColumn(state = listState, modifier = Modifier.reportBottomBarScroll(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = topInset, bottom = 120.dp)) {
+                item(key = "feed_header") {
+                    Column { headerContent?.invoke(); TrendingFreshnessRow(lastUpdatedAt, onForceRefresh) }
+                }
                 itemsIndexed(state.trendingResults, key = { _, subject -> subject.subjectId }) { index, subject ->
                     // 入场：进入视口淡入上移，同屏错峰 50ms（Apple：空间感知）
                     RevealOnScroll(staggerIndex = index % 5) {
                         SubjectResultCard(
+                            pressTiltEnabled = true,
                             model = subject.toCardDisplayModel(state.steamGames[subject.subjectId]),
                             isInCollection = subject.subjectId in state.collectedSubjectIds,
                             onClick = { onSubjectClick(subject.subjectId) },
@@ -254,7 +280,7 @@ fun TrendingSection(
  * 这里只负责「请求成功但结果为空」的说明 + 重试入口（当季热门额外给历史排名的出口）。
  */
 @Composable
-private fun TrendingEmptyState(
+internal fun TrendingEmptyState(
     message: String,
     onRetry: () -> Unit,
     onOpenAllTime: (() -> Unit)? = null,

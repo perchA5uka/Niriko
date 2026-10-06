@@ -21,5 +21,6 @@ data class DataSourceCapabilities(
     // ===== 日历与月度（大部分源不支持） =====
     val supportsCalendar: Boolean = false,
     val supportsSubjectsByMonth: Boolean = false,
+    val supportsSubjectsInDateRange: Boolean = supportsSubjectsByMonth,
     val supportsRatingDistribution: Boolean = false,
 )

@@ -32,12 +32,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.otakup.niriko.data.model.SubjectCardDisplayModel
+import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.util.ProgressBumpPolicy
 import com.otakup.niriko.ui.components.CoverThumbnail
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.components.rememberCoverTint
 import com.otakup.niriko.ui.components.touchGlow
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.animation.pressSpring
+import com.otakup.niriko.ui.animation.pressTilt
 
 /**
  * 通用作品卡片。发现页、搜索页、收藏页统一使用。
@@ -60,6 +63,12 @@ fun UniversalSubjectCard(
     status: WatchStatus? = null,
     watchedEpisodes: Int? = null,
     totalEpisodes: Int? = null,
+    /** 书籍 / 漫画的已读卷数（记卷进度时进度条按卷算，见 ProgressBumpPolicy.barFraction）。 */
+    watchedVolumes: Int? = null,
+    /** Bangumi 的总卷数（书籍 / 漫画）。 */
+    totalVolumes: Int? = null,
+    /** 作品类型：进度条单位由它决定（动画看集、漫画看卷）。 */
+    subjectType: SubjectType? = null,
     completionTime: Int? = null,
     myRating: Float? = null,
     personalTags: List<String> = emptyList(),
@@ -74,8 +83,10 @@ fun UniversalSubjectCard(
     /** 是否为收藏列表卡（用于“仅已收藏”档位下启用真玻璃）。 */
     isCollectionCard: Boolean = false,
     modifier: Modifier = Modifier,
+    pressTiltEnabled: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val lighting = remember { com.otakup.niriko.ui.animation.PressTiltLighting() }
     // Ambient Tint：封面弱主色 → 玻璃环境反射（仅背景层，不影响内容）
     val ambientTint = rememberCoverTint(model.cover)
 
@@ -84,13 +95,18 @@ fun UniversalSubjectCard(
     // GPU 过载（发热/卡顿）；静态玻璃与全站 15 处列表卡一致，开销可忽略。
     // tintColor 仅作用于玻璃背景层（Ambient Tint 环境反射），绝不上色内容。
     Box(
-        modifier = Modifier
-            .touchGlow()
+        modifier = modifier
+            .then(
+                if (pressTiltEnabled) Modifier.pressTilt(interactionSource, lighting = lighting)
+                else Modifier.touchGlow(),
+            )
             .appleGlassCard(
                 shape = RoundedCornerShape(20.dp),
                 tintColor = ambientTint,
                 isCollectionCard = isCollectionCard,
                 interactionSource = interactionSource,
+                material = com.otakup.niriko.data.model.cardMaterialFromRating(myRating),
+                lighting = lighting,
             )
             .combinedClickable(
                 onClick = onClick,
@@ -193,18 +209,48 @@ fun UniversalSubjectCard(
                     // ===== 收藏扩展信息 =====
 
                     // 第 7 行：进度条（删文字，仅保留进度条）
-                    if (watchedEpisodes != null) {
+                    //
+                    // 修复 B11：改造前这里恒定 `watchedEpisodes / totalEpisodes`，
+                    // 漫画按卷记录进度时就成了「卷数 ÷ 话数」（灌篮高手 31/276 ≈ 11%）。
+                    // 现在单位与分母都交给 ProgressBumpPolicy 裁决，和长按浮层 / 编辑面板同口径。
+                    // remember 必须无条件调用（条件调用会破坏 slot 表），判空放进 lambda 里
+                    val progressFraction = remember(
+                        subjectType, watchedEpisodes, watchedVolumes, totalEpisodes, totalVolumes,
+                    ) {
+                        if (subjectType == null) {
+                            null
+                        } else {
+                            ProgressBumpPolicy.barFraction(
+                                type = subjectType,
+                                watchedEpisodes = watchedEpisodes,
+                                watchedVolumes = watchedVolumes,
+                                totalEpisodes = totalEpisodes,
+                                totalVolumes = totalVolumes,
+                            )
+                        }
+                    }
+                    val isVolumeUnit = subjectType != null && watchedVolumes != null &&
+                        (subjectType == SubjectType.BOOK || subjectType == SubjectType.MANGA)
+                    if (watchedEpisodes != null || watchedVolumes != null) {
                         Spacer(Modifier.height(4.dp))
-                        if (totalEpisodes != null && totalEpisodes > 0) {
-                            val progress = watchedEpisodes.toFloat().coerceIn(0f, totalEpisodes.toFloat()) / totalEpisodes
-                            LinearProgressIndicator(
-                                progress = { progress },
+                        when {
+                            progressFraction != null -> LinearProgressIndicator(
+                                progress = { progressFraction },
                                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(MaterialTheme.shapes.small),
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                                 strokeCap = StrokeCap.Round,
                             )
-                        } else if (completionTime != null && completionTime > 0) {
-                            Text("游戏时长：${completionTime}分钟", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // 分母未知（总卷数没记录）：写出已读卷数，而不是画一条错的进度条
+                            isVolumeUnit -> Text(
+                                "已读 ${watchedVolumes ?: 0} 卷",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            completionTime != null && completionTime > 0 -> Text(
+                                "游戏时长：${completionTime}分钟",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
 

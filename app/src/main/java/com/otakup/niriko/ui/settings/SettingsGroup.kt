@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.animation.motionEnabled
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.components.appleGlassCard
 
 // ==================== 分组／行度量（对齐 Kazumi SplitListGroup） ====================
@@ -63,10 +64,8 @@ private val RowInnerRadius = 4.dp
 private val RowGap = 4.dp
 
 /** 按压圆角 morph 时长（与 Kazumi splitListMotionDuration 一致）。 */
-private const val RowMorphMillis = 250
 
 /** 按压圆角 morph 曲线：easeInOutCubic（与 Kazumi splitListMotionCurve 一致）。 */
-private val RowMorphEasing: Easing = CubicBezierEasing(0.645f, 0.045f, 0.355f, 1f)
 
 /** 行底：在玻璃分组容器上叠一层低透明度 tonal 面，按压 morph 才可见。 */
 private val RowContainerAlpha = 0.55f
@@ -114,7 +113,8 @@ fun SettingsSplitGroup(
                     val pressed by interactionSource.collectIsPressedAsState()
                     // 减少动态效果／系统关闭动画：不播 morph
                     val morph: AnimationSpec<Dp> = if (motionEnabled()) {
-                        tween(durationMillis = RowMorphMillis, easing = RowMorphEasing)
+                        // P0-B：分组圆角 morph 属形状/尺寸变化 → M3 spatial 规格（弹簧）。
+                        NirikoMotionSpecs.spatialDefault()
                     } else {
                         snap()
                     }

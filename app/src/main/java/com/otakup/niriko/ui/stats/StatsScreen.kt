@@ -29,7 +29,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,6 +62,7 @@ import com.otakup.niriko.ui.theme.chartBarAccentColor
 import com.otakup.niriko.ui.theme.chartBarDefaultColor
 import com.otakup.niriko.ui.theme.chartStatusColor
 import com.otakup.niriko.ui.theme.chartTypeColor
+import com.otakup.niriko.ui.theme.themeChartPalette
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
 import com.otakup.niriko.data.model.stats.CalendarMode
 import com.otakup.niriko.data.model.stats.MonthlyStats
@@ -74,6 +77,9 @@ import com.otakup.niriko.data.model.stats.TimelineEvent
 import com.otakup.niriko.data.model.stats.TypeDistItem
 import com.otakup.niriko.data.model.stats.YearlyStats
 import com.otakup.niriko.navigation.LocalSearchGestureLock
+import com.otakup.niriko.navigation.TabReselectSignal
+import com.otakup.niriko.navigation.TopLevelDestination
+import com.otakup.niriko.util.beginScrollToTop
 import java.time.LocalDate
 
 // ==================== 图表颜色方案（主题派生，P0a） ====================
@@ -93,47 +99,53 @@ fun StatsScreen(
     onNavigateToDiscover: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    /** F11：底栏重选统计页事件（不在顶部则回顶；顶部重选无操作）。 */
+    tabReselectEventId: Int = 0,
+    tabReselect: TabReselectSignal = TabReselectSignal.None,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
-    // 放送日历陈旧度（0 = 从未刷新），显示在日历卡片底部
-    val broadcastLastUpdatedAt by viewModel.broadcastLastUpdatedAt.collectAsState()
+    // The selected month owns its freshness; /calendar success does not refresh history.
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
     // 日历横滑会与顶级页 Pager 抢手势：手指落在日历上时锁住 Pager（与搜索页共用同一把锁）。
     // 只在 StatsScreen 读取（StatsContent 的 @Preview 直接调用它，读 CompositionLocal 会崩）。
     val searchGestureLock = LocalSearchGestureLock.current
 
-    StatsContent(
-        state = state,
-        onSwitchMonth = viewModel::switchMonth,
-        onSwitchMode = viewModel::switchCalendarMode,
-        onDayClick = { selectedDay = it },
-        onRefreshBroadcast = viewModel::refreshBroadcastSchedule,
-        broadcastLastUpdatedAt = broadcastLastUpdatedAt,
-        onSwitchView = viewModel::switchCalendarView,
-        onAnchorDateChange = viewModel::setCalendarAnchor,
-        gestureLock = searchGestureLock,
-        onSubjectClick = onSubjectClick,
-        onNavigateToDiscover = onNavigateToDiscover,
-        sharedTransitionScope = sharedTransitionScope,
-        animatedVisibilityScope = animatedVisibilityScope,
-        modifier = modifier,
-    )
+    // 根级 Box：日详情面板是**非模态**浮层（无独立窗口），必须与内容同层叠放（R6）
+    Box(modifier = modifier.fillMaxSize()) {
+        StatsContent(
+            state = state,
+            onSwitchMonth = viewModel::switchMonth,
+            onSwitchMode = viewModel::switchCalendarMode,
+            onDayClick = { selectedDay = it },
+            onRefreshBroadcast = viewModel::refreshBroadcastSchedule,
+            onSwitchView = viewModel::switchCalendarView,
+            onAnchorDateChange = viewModel::setCalendarAnchor,
+            gestureLock = searchGestureLock,
+            onSubjectClick = onSubjectClick,
+            onNavigateToDiscover = onNavigateToDiscover,
+            sharedTransitionScope = sharedTransitionScope,
+            animatedVisibilityScope = animatedVisibilityScope,
+            tabReselectEventId = tabReselectEventId,
+            tabReselect = tabReselect,
+            modifier = Modifier.fillMaxSize(),
+        )
 
-    // 日历日详情底部弹窗
-    selectedDay?.let { date ->
-        val events = state.calendarDayEvents[date]
-        if (events != null && events.hasEvents) {
-            CalendarDaySheet(
-                date = date,
-                events = events,
-                episodesBySubject = state.episodesBySubject,
-                onDismiss = { selectedDay = null },
-                onSubjectClick = onSubjectClick,
-            )
-        } else {
-            // 没有事件的日期也弹空窗？不弹，直接清除选中
-            selectedDay = null
+        // 日历日详情面板（非模态：面板之外仍可滚动日历）
+        selectedDay?.let { date ->
+            val events = state.calendarDayEvents[date]
+            if (events != null && events.hasEvents) {
+                CalendarDaySheet(
+                    date = date,
+                    events = events,
+                    episodesBySubject = state.episodesBySubject,
+                    onDismiss = { selectedDay = null },
+                    onSubjectClick = onSubjectClick,
+                )
+            } else {
+                // 没有事件的日期也弹空窗？不弹，直接清除选中
+                selectedDay = null
+            }
         }
     }
 }
@@ -146,8 +158,6 @@ private fun StatsContent(
     onSwitchMode: (CalendarMode) -> Unit = {},
     onDayClick: (LocalDate) -> Unit = {},
     onRefreshBroadcast: () -> Unit = {},
-    /** 放送日历上次成功刷新时间（0 = 从未）。 */
-    broadcastLastUpdatedAt: Long = 0L,
     /** 日历视图粒度：true = 月视图，false = 周视图。 */
     onSwitchView: (Boolean) -> Unit = {},
     /** 日历锚点变化（手势翻页回写）。 */
@@ -158,10 +168,21 @@ private fun StatsContent(
     onNavigateToDiscover: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    tabReselectEventId: Int = 0,
+    tabReselect: TabReselectSignal = TabReselectSignal.None,
     modifier: Modifier = Modifier,
 ) {
+    val listState = rememberLazyListState()
+    // F11：底栏重选统计页 —— 不在顶部则回顶。统计页没有「重选即刷新」语义（顶部重选无操作），
+    // 它的刷新入口是日历卡片自己的刷新按钮与下拉。
+    LaunchedEffect(tabReselectEventId) {
+        if (tabReselectEventId <= 0 || tabReselect.id <= 0) return@LaunchedEffect
+        if (tabReselect.page != TopLevelDestination.Stats.ordinal) return@LaunchedEffect
+        listState.beginScrollToTop()
+    }
     // LazyColumn：区块懒组合，预组合成本大降（修复 Pager 滑动掉帧）
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize().reportBottomBarScroll(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -198,7 +219,8 @@ private fun StatsContent(
                         onSwitchView = onSwitchView,
                         onAnchorDateChange = onAnchorDateChange,
                         onRefreshBroadcast = onRefreshBroadcast,
-                        broadcastLastUpdatedAt = broadcastLastUpdatedAt,
+                        broadcastLastUpdatedAt = state.selectedBroadcastMonth.lastSuccessAt,
+                        broadcastMonthState = state.selectedBroadcastMonth,
                         gestureLock = gestureLock,
                     )
                 }
@@ -226,6 +248,12 @@ private fun StatsContent(
                 // 4. 作品类型分布（降级横向条形，见 TypeDistributionSection）
                 item(key = "type") { TypeDistributionSection(state = state) }
                 item(key = "div5") { HorizontalDivider() }
+
+                // 4c. 口味雷达（R4：题材标签自绘雷达，见 ui/stats/NirikoRadarChart.kt）
+                if (tasteRadarTags(state).size >= MIN_RADAR_AXES) {
+                    item(key = "tasteRadar") { TasteRadarSection(state = state) }
+                    item(key = "divTasteRadar") { HorizontalDivider() }
+                }
 
                 // 4b. 收藏月度趋势（本轮接入：此前已实现但从未被渲染）
                 item(key = "monthly") { MonthlyTrendSection(state = state) }
@@ -391,7 +419,86 @@ private fun TypeBarRow(
     }
 }
 
+// ==================== 4b. 口味雷达（R4 参考项） ====================
+
+/**
+ * 口味雷达取图规则：只要「有值」的标签，最多 [MAX_RADAR_AXES] 个
+ * （[StatsUiState.tagStats] 本身已按出现次数降序）。
+ */
+private fun tasteRadarTags(state: StatsUiState): List<TagStat> =
+    state.tagStats.filter { it.count > 0 }.take(MAX_RADAR_AXES)
+
+/**
+ * 口味雷达：题材标签分布换个形状看——词云看「最热的几个」，雷达看「口味形状」。
+ * 图型与入场动画借用 ehsannarmani/ComposeCharts 的设计，但绘制是本工程自绘
+ * （见 [NirikoRadarChart] 的注释：compose-charts 已发布版本里并没有雷达图）。
+ */
+@Composable
+private fun TasteRadarSection(state: StatsUiState) {
+    val tags = tasteRadarTags(state)
+    if (tags.size < MIN_RADAR_AXES) return
+    val palette = themeChartPalette()
+    val colors = tags.indices.map { palette[it % palette.size] }
+    val rows = tags.chunked(2)
+
+    StatsSectionCard {
+        SectionTitle("口味雷达")
+        Text(
+            "出现次数最多的 ${tags.size} 个题材标签；越靠外代表这个题材在你的收藏里出现得越多。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        NirikoRadarChart(
+            axes = tags.mapIndexed { index, tag ->
+                RadarAxis(label = tag.name, value = tag.count.toFloat(), color = colors[index])
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(240.dp),
+        )
+        Spacer(Modifier.height(12.dp))
+        rows.forEachIndexed { rowIndex, row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                row.forEachIndexed { columnIndex, tag ->
+                    val color = colors[rowIndex * 2 + columnIndex]
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(color),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            tag.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${tag.count}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+            if (rowIndex < rows.lastIndex) Spacer(Modifier.height(6.dp))
+        }
+    }
+}
+
 // ==================== 4. 月度趋势 ====================
+
 
 @Composable
 private fun MonthlyTrendSection(state: StatsUiState) {

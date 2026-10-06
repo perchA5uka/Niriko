@@ -18,8 +18,10 @@ import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +46,9 @@ fun SharePreviewSheet(
     onDismiss: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    // R6（FlexibleBottomSheet 借鉴）：保留中间档位 —— 半展开 = 「预览」档，上滑 = 「自定义」档。
+    // 必须显式传 sheetState，默认参数不会开中间档；skipPartiallyExpanded = false 才能停靠。
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     var rounded by remember { mutableStateOf(true) }
     var showRating by remember { mutableStateOf(true) }
     var showProgress by remember { mutableStateOf(true) }
@@ -68,7 +73,7 @@ fun SharePreviewSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -82,6 +87,15 @@ fun SharePreviewSheet(
                 SharePosterCard(
                     data = data, showRating = showRating, showProgress = showProgress, showTags = showTags, rounded = rounded,
                     modifier = Modifier.fillMaxWidth().height(320.dp),
+                )
+            }
+            // 半展开档位的上滑提示：只在停靠档显示，展开后自动消失
+            if (sheetState.currentValue == SheetValue.PartiallyExpanded) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "上滑展开自定义选项",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.height(16.dp))

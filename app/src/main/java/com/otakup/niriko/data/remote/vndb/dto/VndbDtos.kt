@@ -59,8 +59,8 @@ data class VndbVisualNovelDto(
     val tags: List<VndbTagDto> = emptyList(),
     /** 发售日期 "YYYY-MM-DD" / "YYYY-MM" / "YYYY" / "TBA"。 */
     val released: String? = null,
-    /** 评分 0-100（整数）。 */
-    val rating: Int? = null,
+    /** 评分 0-100（VNDB 实际返回可带小数，如 80.7）。 */
+    val rating: Double? = null,
     /** 评分人数。 */
     val votecount: Int? = null,
     /** 封面图。 */

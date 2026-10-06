@@ -5,6 +5,20 @@ import com.otakup.niriko.data.local.entity.SteamGameEntity
 import com.otakup.niriko.data.model.CollectionStats
 
 /**
+ * 导航条上的一个分区（F09）。
+ *
+ * @param memberCount 分区内作品数（**只数关系行**，不看这些作品是否还在收藏里 ——
+ *   关系行才是这个分区的真实内容，收藏被删时由调用方负责清理成员）。
+ */
+data class LibraryFolderSummary(
+    val id: Long,
+    val name: String,
+    val sortOrder: Int,
+    val isCollapsed: Boolean,
+    val memberCount: Int,
+)
+
+/**
  * 作品收藏列表 UI 快照。
  */
 data class CollectionListUiState(

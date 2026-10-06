@@ -5,6 +5,8 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -55,8 +58,10 @@ import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.remote.PersonDetailInfo
 import com.otakup.niriko.data.remote.PersonSubjectInfo
+import com.otakup.niriko.ui.common.CreditSubjectCard
 import com.otakup.niriko.ui.components.ErrorContent
 import com.otakup.niriko.ui.components.LoadingContent
+import com.otakup.niriko.ui.components.RichText
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.viewmodel.PersonDetailViewModel
 
@@ -138,6 +143,7 @@ private fun PersonDetailBody(
                     Modifier.sharedElement(
                         sharedContentState = rememberSharedContentState("person_avatar_${detail.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
                     )
                 }
             } else {
@@ -239,12 +245,12 @@ private fun PersonDetailBody(
             var summaryExpanded by remember { mutableStateOf(false) }
             Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(
-                detail.summary,
+            RichText(
+                text = detail.summary,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = if (summaryExpanded) Int.MAX_VALUE else 3,
-                overflow = TextOverflow.Ellipsis,
+                onSubjectLink = onSubjectClick,
             )
             // 简介较长时显示展开/收起
             if (detail.summary.length > 60) {
@@ -281,7 +287,8 @@ private fun PersonDetailBody(
                     contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
                 ) {
                     items(items, key = { it.subjectId }) { subject ->
-                        PersonSubjectCard(
+                        // F01：与角色页共用同一张参与作品卡（同一组几何常量）
+                        CreditSubjectCard(
                             subject = subject,
                             onClick = { onSubjectClick(subject.subjectId) },
                             sharedTransitionScope = sharedTransitionScope,
@@ -296,7 +303,7 @@ private fun PersonDetailBody(
                 Text(typeLabel(type), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
                     items(distinctItems, key = { it.subjectId }) { subject ->
-                        PersonSubjectCard(
+                        CreditSubjectCard(
                             subject = subject,
                             onClick = { onSubjectClick(subject.subjectId) },
                             sharedTransitionScope = sharedTransitionScope,
@@ -331,11 +338,17 @@ private fun CharacterCard(
     onClick: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember(character.id) { MutableInteractionSource() }
     Box(
         modifier = modifier
             .width(100.dp)
+            .pressTilt(interactionSource)
             .appleGlassCard(shape = RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -358,7 +371,15 @@ private fun CharacterCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            character.roleName?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            // B03：角色名**无条件占一行**（空值渲染空文本 + minLines = 1）——否则有角色名的卡更高，横滑抖动
+            Text(
+                text = character.roleName.orEmpty(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

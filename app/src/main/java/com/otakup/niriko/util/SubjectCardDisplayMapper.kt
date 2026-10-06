@@ -4,6 +4,7 @@ import com.otakup.niriko.data.local.entity.SteamGameEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectCardDisplayModel
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.util.RichTextParser
 
 /**
  * SubjectEntity → SubjectCardDisplayModel 的 Mapper。
@@ -51,8 +52,8 @@ fun SubjectEntity.toCardDisplayModel(steam: SteamGameEntity? = null): SubjectCar
     }
 
     // 简介：Bangumi summary 优先；Steam 独占/已绑游戏用 Steam 商店简介兜底（与 Bangumi 卡片同级展示）
-    val description = summary?.takeIf { it.isNotBlank() }?.take(120)
-        ?: steam?.shortDescription?.takeIf { it.isNotBlank() }?.take(120)
+    val description = RichTextParser.toPlainText(summary).takeIf { it.isNotBlank() }?.take(120)
+        ?: RichTextParser.toPlainText(steam?.shortDescription).takeIf { it.isNotBlank() }?.take(120)
 
     // Steam 补充信息（已绑定游戏卡）：价格 + 当前在线
     val steamInfoText = steam?.takeIf { type == SubjectType.GAME }?.let { s ->

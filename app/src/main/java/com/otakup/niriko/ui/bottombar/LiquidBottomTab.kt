@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
+internal val LocalLiquidBottomTabInteractive = staticCompositionLocalOf { true }
+
 internal val LocalLiquidBottomTabScale =
     staticCompositionLocalOf { { 1f } }
 
@@ -26,12 +28,14 @@ fun RowScope.LiquidBottomTab(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val scale = LocalLiquidBottomTabScale.current
+    val interactive = LocalLiquidBottomTabInteractive.current
     Column(
         modifier
             .clip(RoundedCornerShape(50.dp))
             .clickable(
                 interactionSource = null,
                 indication = null,
+                enabled = interactive,
                 role = Role.Tab,
                 onClick = onClick
             )

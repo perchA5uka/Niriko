@@ -350,7 +350,7 @@ private fun UnboundEntry(
     if (manualLoading) {
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
             Spacer(Modifier.width(8.dp))
             Text("查询中…", style = MaterialTheme.typography.labelSmall)
         }

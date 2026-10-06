@@ -329,8 +329,10 @@ class DataSourceChain(
     override suspend fun getEpisodes(subjectId: Long): List<EpisodeInfo> {
         val sourceId = subjectDao.getById(subjectId)?.sourceId
         val target = sourceId?.let { id -> plugins.find { it.id == id } } ?: plugins.firstOrNull()
-        if (target == null) return emptyList()
-        return try { target.dataSource.getEpisodes(subjectId) } catch (_: Exception) { emptyList() }
+        if (target == null || !target.capabilities.supportsEpisodes) {
+            throw UnsupportedOperationException("No episode source for subject $subjectId")
+        }
+        return target.dataSource.getEpisodes(subjectId)
     }
 
     override suspend fun getRatingDistribution(subjectId: Long): Map<Int, Int> {
@@ -350,34 +352,41 @@ class DataSourceChain(
         return emptyList()
     }
 
-    override suspend fun getSubjectsByMonth(type: Int, year: Int, month: Int): List<SubjectEntity> {
-        for (plugin in plugins) {
-            if (!plugin.capabilities.supportsSubjectsByMonth) continue
-            try {
-                val result = plugin.dataSource.getSubjectsByMonth(type, year, month)
-                if (result.isNotEmpty()) {
-                    val marked = result.map { it.copy(sourceId = plugin.id) }
-                    val now = System.currentTimeMillis()
-                    persistAll(marked.map { withSearchKey(it.copy(lastSyncTime = now)) })
-                    return marked
-                }
-            } catch (_: Exception) {}
+    override suspend fun getSubjectsByMonth(type: Int, year: Int, month: Int): List<SubjectEntity> =
+        queryHistoricalSubjects({ it.capabilities.supportsSubjectsByMonth }) {
+            it.dataSource.getSubjectsByMonth(type, year, month)
         }
-        return emptyList()
-    }
 
-    override suspend fun getSubjectsInDateRange(type: Int, startDate: String, endDate: String): List<SubjectEntity> {
-        for (plugin in plugins) {
+    override suspend fun getSubjectsInDateRange(type: Int, startDate: String, endDate: String): List<SubjectEntity> =
+        queryHistoricalSubjects({ it.capabilities.supportsSubjectsInDateRange }) {
+            it.dataSource.getSubjectsInDateRange(type, startDate, endDate)
+        }
+
+    private suspend fun queryHistoricalSubjects(
+        supports: (DataSourcePlugin) -> Boolean,
+        query: suspend (DataSourcePlugin) -> List<SubjectEntity>,
+    ): List<SubjectEntity> {
+        var completed = false
+        var lastFailure: Exception? = null
+        for (plugin in plugins.filter(supports)) {
             try {
-                val result = plugin.dataSource.getSubjectsInDateRange(type, startDate, endDate)
+                val result = query(plugin)
                 if (result.isNotEmpty()) {
                     val marked = result.map { it.copy(sourceId = plugin.id) }
                     val now = System.currentTimeMillis()
                     persistAll(marked.map { withSearchKey(it.copy(lastSyncTime = now)) })
                     return marked
                 }
-            } catch (_: Exception) {}
+                completed = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                lastFailure = error
+                Log.w(TAG, "${plugin.id}.historicalSubjects failed", error)
+            }
         }
+        // Unsupported plugins cannot turn a failed historical query into a successful empty month.
+        if (!completed) throw lastFailure ?: UnsupportedOperationException("No historical subject source enabled")
         return emptyList()
     }
 

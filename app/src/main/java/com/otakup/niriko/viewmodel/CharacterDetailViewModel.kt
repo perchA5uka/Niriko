@@ -35,7 +35,8 @@ class CharacterDetailViewModel(
     private val characterId: Long,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(CharacterDetailUiState())
+    private val avatarSeed = com.otakup.niriko.navigation.AvatarNavigationSeed.character(characterId)
+    private val _uiState = MutableStateFlow(CharacterDetailUiState(detail = avatarSeed, isLoading = avatarSeed == null))
     val uiState: StateFlow<CharacterDetailUiState> = _uiState.asStateFlow()
 
     init { load() }
@@ -44,7 +45,7 @@ class CharacterDetailViewModel(
 
     private fun load() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = it.detail == null, error = null) }
             try {
                 val (detail, subjects) = withContext(Dispatchers.IO) {
                     coroutineScope {
@@ -65,7 +66,7 @@ class CharacterDetailViewModel(
                     }
                 }
                 _uiState.update {
-                    it.copy(detail = detail, subjects = subjects, isLoading = false)
+                    it.copy(detail = detail ?: it.detail, subjects = subjects, isLoading = false)
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, error = "加载失败，请重试") }

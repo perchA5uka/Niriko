@@ -317,19 +317,25 @@ class RoomMigrationTest {
         }
 
         assertTrue("逐边界迁移校验失败：" + failures.joinToString("\n"), failures.isEmpty())
-        // 27 条生产迁移里，24→25 与 25→26 已合并为上面一次 24→25→26 实证，其余 25 条各跑一次。
-        assertTrue("逐边界校验数量异常：$checked（期望 26 = 25 条逐边界 + 1 次 24→25→26 合并校验）", checked == 26)
+        // 不写死版本号：N 条生产迁移里，涉及 25.json 的两条合并成一次 24→25→26 实证，
+        // 因此期望恰好校验 N-1 次。以后每加一个版本都不必回来改这里的数字。
+        assertTrue(
+            "逐边界校验数量异常：" + checked + "（期望 " + (migrations.size - 1) + " = " +
+                migrations.size + " 条迁移减去合并的那 1 次）",
+            checked == migrations.size - 1,
+        )
     }
 
-    /** 从每一个已导出的起始版本出发，用**生产** NirikoDatabase 打开，必须一路迁到 v29 且结构正确。 */
+    /** 从每一个已导出的起始版本出发，用**生产** NirikoDatabase 打开，必须一路迁到**最新导出版本**且结构正确。 */
     @Test
-    fun fullChainFromEveryExportedSchemaReachesVersion29() {
+    fun fullChainFromEveryExportedSchemaReachesLatestVersion() {
         val context: Context = RuntimeEnvironment.getApplication()
         val target = exportedVersions().max()
+        val starts = exportedVersions().filter { it >= EARLIEST_SUPPORTED_VERSION }
         val failures = mutableListOf<String>()
         var checked = 0
 
-        for (start in exportedVersions().filter { it >= EARLIEST_SUPPORTED_VERSION }) {
+        for (start in starts) {
             try {
                 resetSingleton()
                 context.deleteDatabase(DB_NAME)
@@ -360,12 +366,13 @@ class RoomMigrationTest {
         resetSingleton()
 
         assertTrue("整链迁移校验失败：" + failures.joinToString("\n"), failures.isEmpty())
-        assertTrue("整链校验数量异常：$checked", checked >= 27)
+        // 同样不写死：每个已导出且受支持的起始版本都必须成功迁到最新版本，一个都不能少。
+        assertTrue("整链校验数量异常：" + checked + "（期望 " + starts.size + "）", checked == starts.size)
     }
 
     /** §十三·3：25.json 在本仓库不可能生成，链路由 24 → 25 → 26 实测覆盖，不得伪造。 */
     @Test
-    fun missingVersion25IsAbsentAndChainStillReaches29() {
+    fun missingVersion25IsAbsentAndChainStillReachesLatestVersion() {
         val present = exportedVersions()
         assertTrue("25.json 出现了，说明缺口已补齐：应当把 25 纳入 ${RoomMigrationTest::class.simpleName} 的边界校验", 25 !in present)
         assertTrue("v24 schema 缺失，无法覆盖 24→25→26", 24 in present)
@@ -379,9 +386,10 @@ class RoomMigrationTest {
         base.close()
         val room = NirikoDatabase.getInstance(context)
         val db = room.openHelper.writableDatabase
-        assertTrue("24→29 迁移后版本应为 29，实际 ${db.version}", db.version == 29)
-        val expectedHash = schemaJson(29).getJSONObject("database").getString("identityHash")
-        assertTrue("24→29 迁移后 identityHash 不符：${identityHash(db)}", identityHash(db) == expectedHash)
+        val target = exportedVersions().max()
+        assertTrue("24→" + target + " 迁移后版本应为 " + target + "，实际 " + db.version, db.version == target)
+        val expectedHash = schemaJson(target).getJSONObject("database").getString("identityHash")
+        assertTrue("24→" + target + " 迁移后 identityHash 不符：" + identityHash(db), identityHash(db) == expectedHash)
         room.close()
         resetSingleton()
     }

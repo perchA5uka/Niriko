@@ -325,7 +325,7 @@ fun SettingsActionRow(
         )
         if (isLoading) {
             Spacer(Modifier.width(12.dp))
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, gapSize = 0.dp)
         } else if (value != null) {
             SettingsRowValue(value)
         }

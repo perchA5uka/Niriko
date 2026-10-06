@@ -9,12 +9,11 @@ import android.graphics.RenderNode
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
-import coil.Coil
-import coil.request.ImageRequest
-import coil.request.SuccessResult
+import kotlinx.coroutines.CancellationException
+import com.otakup.niriko.ui.common.loadCoverAnalysisBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
+import android.util.LruCache
 
 /**
  * 进程级"模糊封面 Bitmap"缓存（横向小卡共享毛玻璃背景用）。
@@ -29,16 +28,14 @@ import java.util.concurrent.ConcurrentHashMap
  * - API 26-30：退化为"缩小-放大"近似模糊（scale 0.2 → 双线性放大，视觉足够）。
  */
 private object BlurredCoverCache {
-    private val cache = ConcurrentHashMap<String, Bitmap>()
-    private const val MAX_ENTRIES = 8
+    private val cache = LruCache<String, Bitmap>(8)
 
     /** 取缓存；未命中返回 null。 */
-    fun get(url: String): Bitmap? = cache[url]
+    fun get(url: String): Bitmap? = cache.get(url)
 
     /** 放入缓存（超限清空最旧，防膨胀）。 */
     fun put(url: String, bitmap: Bitmap) {
-        if (cache.size >= MAX_ENTRIES) cache.clear()
-        cache[url] = bitmap
+        cache.put(url, bitmap)
     }
 }
 
@@ -55,21 +52,15 @@ suspend fun loadBlurredCover(context: Context, url: String?): Bitmap? {
 
     return withContext(Dispatchers.IO) {
         runCatching {
-            val req = ImageRequest.Builder(context)
-                .data(url)
-                .size(BLURRED_TARGET_WIDTH)
-                .allowHardware(false) // 软件模糊需要软位图
-                .build()
-            val result = Coil.imageLoader(context).execute(req)
-            val source = (result as? SuccessResult)?.drawable
-                ?: return@runCatching null
-            val src = (source as? android.graphics.drawable.BitmapDrawable)?.bitmap
-                ?: return@runCatching null
+            val src = loadCoverAnalysisBitmap(context, url) ?: return@runCatching null
 
             val blurred = blurBitmap(src)
             BlurredCoverCache.put(url, blurred)
             blurred
-        }.getOrNull()
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            null
+        }
     }
 }
 

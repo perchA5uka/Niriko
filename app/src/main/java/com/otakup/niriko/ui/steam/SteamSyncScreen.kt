@@ -206,7 +206,7 @@ private fun SteamPreviewList(
             }
             Spacer(Modifier.width(8.dp))
             Button(onClick = onImport, enabled = previews.any { it.selected } && !isImporting) {
-                if (isImporting) CircularProgressIndicator(Modifier.width(16.dp).height(16.dp), strokeWidth = 2.dp)
+                if (isImporting) CircularProgressIndicator(Modifier.width(16.dp).height(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                 else Text("导入")
             }
         }

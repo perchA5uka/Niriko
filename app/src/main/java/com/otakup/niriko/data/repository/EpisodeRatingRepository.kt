@@ -101,9 +101,10 @@ class EpisodeRatingRepository(
                 }
             }
 
-            val bangumiEps = runCatching { episodeDao.getMainEpisodes(subject.subjectId) }
+            // 本地已有章节：既用于对齐，也用于判断「哪些集还没有标题」（B13 只补空缺，不覆盖已有）
+            val mainEps = runCatching { episodeDao.getMainEpisodes(subject.subjectId) }
                 .getOrDefault(emptyList())
-                .map { EpisodeAlignment.BangumiEp(it.epId, it.sort) }
+            val bangumiEps = mainEps.map { EpisodeAlignment.BangumiEp(it.epId, it.sort) }
 
             val tmdbEps = season.episodes.map { it.toAlignmentEp() }
             val alignment = EpisodeAlignment.align(bangumiEps, tmdbEps)
@@ -127,9 +128,20 @@ class EpisodeRatingRepository(
                 externalRatingDao.upsertEpisodeRatings(ratingRows)
             }
 
+            // 剧照：TMDb 没给这一集的 still 时**什么都不要写**。
+            // 改造前这里无条件写入 null，正好把已回填的剧照擦成空（用户看到的「单集没有图片」）。
             alignment.matched.forEach { aligned ->
-                runCatching { episodeDao.updateStillUrl(aligned.epId, aligned.tmdb.stillUrl) }
+                aligned.tmdb.stillUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                    runCatching { episodeDao.updateStillUrl(aligned.epId, url) }
+                }
             }
+
+            // B13：Bangumi 缺标题的集用 TMDb 名称补上；已有标题不动（SQL 里也再挡一层）。
+            com.otakup.niriko.data.calculator.EpisodeTitleBackfill
+                .plan(alignment.matched, mainEps.associate { it.epId to it.name })
+                .forEach { fill ->
+                    runCatching { episodeDao.updateNameIfBlank(fill.epId, fill.title) }
+                }
 
             TmdbEpisodeLoad(
                 state = TmdbEpisodeLoad.State.OK,
@@ -372,6 +384,8 @@ class EpisodeRatingRepository(
             stillPath,
             com.otakup.niriko.data.remote.tmdb.TmdbImageUrl.STILL_MEDIUM,
         ),
+        // B13：名称带下来，供 EpisodeTitleBackfill 补空缺
+        name = name?.takeIf { it.isNotBlank() },
     )
 
     private suspend fun settingsOrNull(): AppSettings? = runCatching { settingsProvider() }.getOrNull()

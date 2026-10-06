@@ -11,6 +11,8 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.stats.AiringSubject
 import com.otakup.niriko.data.model.stats.CalendarMode
+import com.otakup.niriko.data.model.stats.BroadcastMonthState
+import com.otakup.niriko.data.model.stats.BroadcastMonthStatus
 import com.otakup.niriko.data.model.stats.StatsUiState
 import com.otakup.niriko.data.remote.BroadcastFetcher
 import com.otakup.niriko.data.remote.SeasonalFetcher
@@ -22,6 +24,8 @@ import com.otakup.niriko.data.refresh.RefreshResource
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.EpisodeRepository
 import com.otakup.niriko.util.AiringStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,6 +60,11 @@ class StatsViewModel(
     private val episodeRepository: EpisodeRepository? = null,
     /** 刷新编排器（放送日历的新鲜度与失败退避）。null = 不参与编排。 */
     private val refreshCoordinator: RefreshCoordinator? = null,
+    private val seasonalDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val today: () -> LocalDate = { LocalDate.now() },
+    private val nowMillis: () -> Long = { System.currentTimeMillis() },
+    private val broadcastDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val statsDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     /** 放送日历刷新的单飞槽位：init / 切月 / 手动刷新三路此前都能并发触发。 */
@@ -72,7 +81,7 @@ class StatsViewModel(
      *
      * 周 / 月切换不修改锚点，因此切换前后停留在同一周 / 同一月，不跳变。
      */
-    private val _calendarAnchor = MutableStateFlow(LocalDate.now())
+    private val _calendarAnchor = MutableStateFlow(today())
 
     /** 日历视图粒度：true = 月视图（展开，默认，与双模改造前一致），false = 周视图（收起）。 */
     private val _calendarExpanded = MutableStateFlow(true)
@@ -83,6 +92,8 @@ class StatsViewModel(
     private val _calendarMode = MutableStateFlow(CalendarMode.PERSONAL)
     private val _broadcastSchedule = MutableStateFlow<Map<DayOfWeek, List<AiringSubject>>>(emptyMap())
     private val _broadcastError = MutableStateFlow<String?>(null)
+    private val _broadcastMonths = MutableStateFlow<Map<String, BroadcastMonthState>>(emptyMap())
+    val broadcastMonths: StateFlow<Map<String, BroadcastMonthState>> = _broadcastMonths.asStateFlow()
     /** 按月缓存的季节性放送数据，key="yyyy-MM"。非当季月份使用。 */
     private val _seasonalAiringMap = MutableStateFlow<Map<String, List<AiringSubject>>>(emptyMap())
     /** 每集数据（已播状态/热力图）。 */
@@ -109,6 +120,7 @@ class StatsViewModel(
             _seasonalAiringMap,
             _broadcastError,
             _episodesBySubject,
+            _broadcastMonths,
         )
     ) { arrays ->
         @Suppress("UNCHECKED_CAST")
@@ -118,12 +130,16 @@ class StatsViewModel(
         val mode = (arrays[3] as? CalendarMode) ?: CalendarMode.PERSONAL
         val broadcast = (arrays[4] as? Map<DayOfWeek, List<AiringSubject>>) ?: emptyMap()
         val seasonal = (arrays[5] as? Map<String, List<AiringSubject>>) ?: emptyMap()
-        val broadcastError = (arrays[6] as? String)
+        val months = (arrays[8] as? Map<String, BroadcastMonthState>) ?: emptyMap()
+        val key = YearMonth.from(anchor).toString()
+        val monthState = months[key] ?: BroadcastMonthState(key = key)
+        // A weekly calendar failure is not evidence that the selected historical month failed.
+        val broadcastError = monthState.error ?: if (!expanded) (arrays[6] as? String) else null
         val episodesBySubject = (arrays[7] as? Map<Long, List<EpisodeInfo>>) ?: emptyMap()
-        computeStats(items, anchor, expanded, mode, broadcast, seasonal, broadcastError, episodesBySubject)
+        computeStats(items, anchor, expanded, mode, broadcast, seasonal, broadcastError, episodesBySubject, monthState)
     }
         // 全量统计计算移出主线程（combine 收集器在主线程，computeStats 含双重嵌套循环）
-        .flowOn(Dispatchers.Default)
+        .flowOn(statsDispatcher)
         .catch { e ->
         // combine 上游 Flow 抛出异常时，忽略并保持 Flow 活跃
         Log.e(TAG, "Stats combine caught exception", e)
@@ -132,6 +148,12 @@ class StatsViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = StatsUiState(isLoading = true),
     )
+
+    /** 正在加载中的月份 key 集合：快速翻月时同月只发一次请求（防并发重复大请求）。 */
+    private val inflightSeasonal = mutableSetOf<String>()
+
+    /** 每个月度缓存的实际加载时间（用于 TTL 判定；改造前缓存永不失效）。 */
+    private val seasonalLoadedAt = mutableMapOf<String, Long>()
 
     init {
         fetchBroadcastSchedule()
@@ -185,7 +207,7 @@ class StatsViewModel(
         ensureSeasonalForAnchor(newAnchor)
         // 切到当前月或未来月份时刷新放送数据，保证 broadcast 不滞后
         val monthStart = LocalDate.of(newAnchor.year, newAnchor.monthValue, 1)
-        if (!monthStart.isBefore(LocalDate.now().withDayOfMonth(1))) {
+        if (!monthStart.isBefore(today().withDayOfMonth(1))) {
             fetchBroadcastSchedule()
         }
     }
@@ -198,15 +220,9 @@ class StatsViewModel(
         }
     }
 
-    /** 正在加载中的月份 key 集合：快速翻月时同月只发一次请求（防并发重复大请求）。 */
-    private val inflightSeasonal = mutableSetOf<String>()
-
-    /** 每个月度缓存的实际加载时间（用于 TTL 判定；改造前缓存永不失效）。 */
-    private val seasonalLoadedAt = mutableMapOf<String, Long>()
-
     /** 确保指定月份的放送数据已加载（含前 6 个月开播的跨月延续番）。 */
     private fun ensureSeasonalDataForMonth(year: Int, month: Int) {
-        val now = LocalDate.now()
+        val now = today()
         val range = AiringStatus.getCurrentSeasonRange(now)
         val monthStart = LocalDate.of(year, month, 1)
 
@@ -216,37 +232,71 @@ class StatsViewModel(
         val loadedAt = seasonalLoadedAt[key]
         val stillFresh = _seasonalAiringMap.value.containsKey(key) &&
             loadedAt != null &&
-            System.currentTimeMillis() - loadedAt < RefreshResource.SEASONAL.softTtlMs
+            _broadcastMonths.value[key]?.status.let { it == BroadcastMonthStatus.SUCCESS || it == BroadcastMonthStatus.EMPTY } &&
+            nowMillis() - loadedAt < RefreshResource.SEASONAL.softTtlMs
         if (stillFresh) return
         if (!inflightSeasonal.add(key)) return // 已在加载中
 
         // 对非当季月份，检查是否在有效范围内（防止翻到太远的过去/未来）
         if (monthStart.isBefore(range.start) || !monthStart.isBefore(range.end)) {
-            if (year < now.year - 2 || year > now.year + 1) return
+            if (year < now.year - 5 || year > now.year + 1) {
+                // B10：超出有效范围时**必须清掉在途标记**。
+                // 改造前这里直接 return，而 key 已经 add 进 inflightSeasonal ——
+                // 该月份从此永远处于「正在加载」状态，即使后来（例如换了年份）
+                // 重新请求也只会被 if (!inflightSeasonal.add(key)) return 挡住，永远不会再拉。
+                inflightSeasonal.remove(key)
+                updateMonth(BroadcastMonthState(key, BroadcastMonthStatus.ERROR, error = "该月份超出可加载范围"))
+                return
+            }
         }
 
+        val previous = _broadcastMonths.value[key] ?: BroadcastMonthState(key = key)
+        updateMonth(previous.copy(status = BroadcastMonthStatus.LOADING, error = null))
         viewModelScope.launch {
             try {
                 // 加载 [目标月初 − 6 个月, 目标月末] 开播的番，跨月延续靠 StatsCalculator inRange 过滤
                 val rangeStart = monthStart.minusMonths(6)
                 val rangeEnd = monthStart.plusMonths(1)
-                val airingList = withContext(Dispatchers.IO) {
-                    seasonalFetcher.fetchSeasonalInRange(rangeStart, rangeEnd)
+                Log.d(TAG, "month=$key request range=$rangeStart..<$rangeEnd types=2,6")
+                val result = withContext(seasonalDispatcher) {
+                    seasonalFetcher.fetchSeasonalRangeResult(rangeStart, rangeEnd)
                 }
+                val airingList = if (result.isComplete) result.subjects else
+                    (result.subjects + _seasonalAiringMap.value[key].orEmpty()).distinctBy { it.subject.subjectId }
                 val updated = _seasonalAiringMap.value + (key to airingList)
                 // 只保留最近 6 个月，避免长时间浏览后内存里堆满历史月份
                 _seasonalAiringMap.value = updated.entries.toList().takeLast(MAX_SEASONAL_MONTHS)
                     .associate { it.key to it.value }
-                seasonalLoadedAt[key] = System.currentTimeMillis()
-                Log.d(TAG, "Seasonal range data loaded for $key: ${airingList.size} subjects")
+                seasonalLoadedAt.keys.retainAll(_seasonalAiringMap.value.keys)
+                if (result.isComplete) seasonalLoadedAt[key] = nowMillis() else seasonalLoadedAt.remove(key)
+                val eventCount = StatsCalculator.computeCalendarEvents(
+                    emptyList(), year, month, CalendarMode.BROADCAST, emptyMap(), mapOf(key to airingList),
+                ).values.sumOf { it.broadcastSubjects.size + it.releaseDateSubjects.size }
+                updateMonth(previous.copy(
+                    status = if (!result.isComplete) BroadcastMonthStatus.ERROR
+                        else if (eventCount == 0) BroadcastMonthStatus.EMPTY else BroadcastMonthStatus.SUCCESS,
+                    lastSuccessAt = if (result.isComplete) seasonalLoadedAt.getValue(key) else previous.lastSuccessAt,
+                    error = if (result.isComplete) null else "$key 部分加载失败（三次元），已保留可用内容，请重试",
+                    isPartial = !result.isComplete, eventCount = eventCount,
+                ))
+                val coverless = airingList.count { it.subject.coverUrl.isNullOrBlank() }
+                Log.d(TAG, "month=$key validDate=${result.subjects.size} eventCount=$eventCount coverlessSubjects=$coverless complete=${result.isComplete}")
                 // 对当季/翻月所有放送作品预取每集数据（限流 + 去重）。
                 prefetchEpisodes(airingList.map { it.subject })
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to load seasonal range data for $key", e)
+                updateMonth(previous.copy(status = BroadcastMonthStatus.ERROR, error = "无法加载 $key 放送信息，请重试"))
+                Log.e(TAG, "month=$key failed error=${e.javaClass.simpleName}")
             } finally {
                 inflightSeasonal.remove(key)
             }
         }
+    }
+
+    private fun updateMonth(state: BroadcastMonthState) {
+        _broadcastMonths.value = (_broadcastMonths.value + (state.key to state))
+            .entries.toList().takeLast(MAX_SEASONAL_MONTHS).associate { it.key to it.value }
     }
 
     fun switchCalendarMode(mode: CalendarMode) {
@@ -274,7 +324,7 @@ class StatsViewModel(
                 }
             }
             _broadcastError.value = null
-            val result = withContext(Dispatchers.IO) {
+            val result = withContext(broadcastDispatcher) {
                 broadcastFetcher.fetch()
             }
             _broadcastSchedule.value = result.schedule
@@ -288,7 +338,7 @@ class StatsViewModel(
                 else it.recordFailure(RefreshKeys.BROADCAST_CALENDAR, result.error ?: "暂无连载中的作品")
             }
             // 加载当月季节性数据用于封面补充（v0 API 有完整封面）
-            val now = LocalDate.now()
+            val now = today()
             ensureSeasonalDataForMonth(now.year, now.monthValue)
             // 预取本周放送作品的每集数据（限流 + 失败静默）
             prefetchEpisodes(result.schedule.values.flatten().map { it.subject })
@@ -305,8 +355,8 @@ class StatsViewModel(
     fun refreshBroadcastSchedule() {
         prefetchedSubjectIds.clear()
         seasonalLoadedAt.clear()
-        _seasonalAiringMap.value = emptyMap()
-        inflightSeasonal.clear()
+        // Keep stale successes visible until replacement succeeds; do not unlock active requests.
+        ensureSeasonalForAnchor(_calendarAnchor.value)
         fetchBroadcastSchedule(force = true)
     }
 
@@ -317,9 +367,10 @@ class StatsViewModel(
     private fun prefetchEpisodes(subjects: List<SubjectEntity>) {
         val episodeRepo = episodeRepository ?: return
         val ids = subjects.map { it.subjectId }.distinct()
-            .filter { prefetchedSubjectIds.add(it) }
+            .filter { it !in prefetchedSubjectIds }
             .take(60)
         if (ids.isEmpty()) return
+        prefetchedSubjectIds.addAll(ids)
         viewModelScope.launch {
             val semaphore = Semaphore(2)
             val results = ids.map { id ->
@@ -350,20 +401,31 @@ class StatsViewModel(
         seasonal: Map<String, List<AiringSubject>>,
         broadcastError: String?,
         episodesBySubject: Map<Long, List<EpisodeInfo>>,
+        monthState: BroadcastMonthState,
     ): StatsUiState {
         return try {
             val base = computeBaseStats(items)
             val (rangeStart, rangeEnd) = CalendarRangeCalculator.visibleRange(anchorDate, expanded)
             val calendarDayEvents = StatsCalculator.computeCalendarEventsForRange(
-                items, rangeStart, rangeEnd, mode, broadcast, seasonal,
+                items, rangeStart, rangeEnd, mode, broadcast, seasonal, episodesBySubject,
             )
             val anchorMonth = YearMonth.from(anchorDate)
+            val broadcastEvents = if (mode == CalendarMode.BROADCAST && expanded) calendarDayEvents else
+                StatsCalculator.computeCalendarEvents(items, anchorMonth.year, anchorMonth.monthValue, CalendarMode.BROADCAST, broadcast, seasonal, episodesBySubject)
+            val eventCount = broadcastEvents.values.sumOf { it.broadcastSubjects.size + it.releaseDateSubjects.size }
+            val selectedMonth = monthState.copy(
+                eventCount = eventCount,
+                status = if (monthState.status == BroadcastMonthStatus.SUCCESS || monthState.status == BroadcastMonthStatus.EMPTY)
+                    if (eventCount == 0) BroadcastMonthStatus.EMPTY else BroadcastMonthStatus.SUCCESS
+                else monthState.status,
+            )
             base.copy(
                 calendarYear = anchorMonth.year, calendarMonth = anchorMonth.monthValue,
                 calendarAnchorDate = anchorDate, calendarExpanded = expanded,
                 calendarDayEvents = calendarDayEvents,
                 calendarMode = mode, broadcastSchedule = broadcast,
                 broadcastError = broadcastError,
+                selectedBroadcastMonth = selectedMonth,
                 episodesBySubject = episodesBySubject,
             )
         } catch (e: Exception) {
@@ -373,8 +435,14 @@ class StatsViewModel(
     }
 
     private companion object {
-        /** 月度放送缓存在内存里最多保留几个月。 */
-        const val MAX_SEASONAL_MONTHS = 6
+        /**
+         * 月度放送缓存在内存里最多保留几个月。
+         *
+         * 从 6 提到 24 是为了让「年份切换」不再把刚看过的月份立刻丢掉：
+         * 修复 B10 后每个月度缓存本身就是一次分页全量拉取（代价不低），
+         * 6 个月的窗口在连续翻月时会反复驱逐刚加载好的月份。
+         */
+        const val MAX_SEASONAL_MONTHS = 24
     }
 
     /** 基础统计：按 items 内容签名缓存，收藏未变化时直接复用上次结果。 */

@@ -190,7 +190,7 @@ fun ProviderBindingSection(
             if (loading) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                     Spacer(Modifier.width(8.dp))
                     Text("查询中…", style = MaterialTheme.typography.labelSmall)
                 }
@@ -310,10 +310,12 @@ private fun CandidateRow(
                 )
             }
             Text(
-                if (highlight) {
-                    "已指定 #${candidate.externalId}"
-                } else {
-                    "匹配度 %.0f%%".format(candidate.confidence * 100f)
+                when {
+                    highlight -> "已指定 #${candidate.externalId}"
+                    // confidence 为 0 表示「没算出来」而不是「算出来是 0」。
+                    // AniList 候选曾在界面侧手搓时漏传置信度，于是恒显示「匹配度 0%」。
+                    candidate.confidence > 0f -> "匹配度 %.0f%%".format(candidate.confidence * 100f)
+                    else -> "匹配度未计算"
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,

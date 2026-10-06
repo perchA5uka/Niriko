@@ -46,7 +46,8 @@ class PersonDetailViewModel(
     private val personId: Long,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(PersonDetailUiState())
+    private val avatarSeed = com.otakup.niriko.navigation.AvatarNavigationSeed.person(personId)
+    private val _uiState = MutableStateFlow(PersonDetailUiState(detail = avatarSeed, isLoading = avatarSeed == null))
     val uiState: StateFlow<PersonDetailUiState> = _uiState.asStateFlow()
 
     init {
@@ -94,7 +95,7 @@ class PersonDetailViewModel(
 
     private fun load() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = it.detail == null, error = null) }
             try {
                 val (detail, subjects, characters) = withContext(Dispatchers.IO) {
                     coroutineScope {
@@ -114,7 +115,7 @@ class PersonDetailViewModel(
                     .analyze(subjects.map { it.staff })
                 _uiState.update {
                     it.copy(
-                        detail = detail,
+                        detail = detail ?: it.detail,
                         subjects = subjects,
                         characters = characters,
                         jobStats = jobs,

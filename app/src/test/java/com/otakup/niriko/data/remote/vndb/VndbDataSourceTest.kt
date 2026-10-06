@@ -32,7 +32,7 @@ class VndbDataSourceTest {
               "developers": [{"id": "p22", "name": "Four Leaf Studios", "original": "Four Leaf Studios"}],
               "tags": [{"id": "g112", "name": "Romance", "category": "content", "rating": 2.5}],
               "released": "2012-01-04",
-              "rating": 90,
+              "rating": 90.0,
               "votecount": 1234,
               "image": {"id": "i1", "url": "https://t.vndb.org/1.jpg", "dims": [600, 800]},
               "length": 4,
@@ -58,7 +58,7 @@ class VndbDataSourceTest {
         assertEquals("Katawa Shoujo", vn.title)
         // 中文标题从 titles 提取
         assertEquals("片轮少女", vn.titles.firstOrNull { it.lang.startsWith("zh") }?.title)
-        assertEquals(90, vn.rating)
+        assertEquals(90.0, vn.rating ?: 0.0, 0.001)
         assertEquals(1234, vn.votecount)
         assertEquals("2012-01-04", vn.released)
         assertEquals(listOf("win"), vn.platforms)
@@ -93,6 +93,16 @@ class VndbDataSourceTest {
     }
 
     @Test
+    fun decimalRatingFromVndbIsPreserved() {
+        val jsonWithDecimal = sampleResponse.replace("\"rating\": 90.0", "\"rating\": 80.7")
+        val parsed = json.decodeFromString(
+            com.otakup.niriko.data.remote.vndb.dto.VndbQueryResponse.serializer(),
+            jsonWithDecimal,
+        )
+        assertEquals(80.7, parsed.results.first().rating ?: 0.0, 0.001)
+    }
+
+    @Test
     fun rating_scale100To10() {
         // VNDB rating 0-100 → GameItem 统一 10 分制
         val parsed = json.decodeFromString(
@@ -101,7 +111,7 @@ class VndbDataSourceTest {
         )
         val vn = parsed.results.first()
         val score = vn.rating?.let { it / 10f }
-        assertEquals(9.0f, score!!, 0.001f)
+        assertEquals(9.0, score!!.toDouble(), 0.001)
     }
 
     @Test

@@ -14,6 +14,7 @@ Niriko 本体以 **MIT License** 发布（见 [`LICENSE`](LICENSE)）。下面�
 | core-splashscreen（AndroidX） | Apache-2.0 |
 | Media3 ExoPlayer / Media3 UI（AndroidX） | Apache-2.0 |
 | Coil（io.coil-kt） | Apache-2.0 |
+| telephoto：zoomable / zoomable-image-coil（me.saket.telephoto，随附 sub-sampling-image） | Apache-2.0 |
 | Retrofit / OkHttp（Square） | Apache-2.0 |
 | kotlinx.serialization（JetBrains） | Apache-2.0 |
 | miuix-blur（top.yukonga.miuix.kmp） | Apache-2.0 |

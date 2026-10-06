@@ -203,6 +203,7 @@ fun SearchResultsPane(
                     }
                     items(state.results, key = { it.subjectId }) { subject ->
                         SubjectResultCard(
+                            pressTiltEnabled = true,
                             model = subject.toCardDisplayModel(state.steamGames[subject.subjectId]),
                             isInCollection = subject.subjectId in state.collectedSubjectIds,
                             onClick = { onSubjectClick(subject.subjectId) },

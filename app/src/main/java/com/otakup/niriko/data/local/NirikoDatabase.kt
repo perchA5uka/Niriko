@@ -9,6 +9,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.otakup.niriko.data.local.dao.CollectionDao
+import com.otakup.niriko.data.local.dao.DetailCacheDao
 import com.otakup.niriko.data.local.dao.AniListDao
 import com.otakup.niriko.data.local.dao.BilibiliSyncItemDao
 import com.otakup.niriko.data.local.dao.EpisodeDao
@@ -40,6 +41,12 @@ import com.otakup.niriko.data.local.entity.SubjectExternalRatingEntity
 import com.otakup.niriko.data.local.entity.EpisodeRatingEntity
 import com.otakup.niriko.data.local.entity.EpisodeMyRatingEntity
 import com.otakup.niriko.data.local.entity.ManualAwardEntity
+import com.otakup.niriko.data.local.entity.SubjectDetailCacheEntity
+import com.otakup.niriko.data.local.entity.SubjectRelationCacheEntity
+import com.otakup.niriko.data.local.entity.EpisodeExternalCacheEntity
+import com.otakup.niriko.data.local.entity.LibraryFolderEntity
+import com.otakup.niriko.data.local.entity.LibraryFolderSubjectEntity
+import com.otakup.niriko.data.local.dao.LibraryFolderDao
 
 /**
  * Niriko 本地数据库。
@@ -47,9 +54,12 @@ import com.otakup.niriko.data.local.entity.ManualAwardEntity
  * 无匹配 Migration 时 Room 抛出异常（不会静默删除数据）。
  */
 @Database(
-    entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class, VndbBindingEntity::class, AniListBindingEntity::class, AnitabiPointEntity::class, EpisodeEntity::class, SubjectExternalIdEntity::class, SubjectExternalRatingEntity::class, EpisodeRatingEntity::class, EpisodeMyRatingEntity::class, ManualAwardEntity::class],
+    entities = [WorkItem::class, SubjectEntity::class, CollectionEntity::class, SearchHistoryEntity::class, PersonCollectionEntity::class, BilibiliSyncItemEntity::class, SteamGameEntity::class, SteamBindingEntity::class, SteamLibraryItemEntity::class, VndbBindingEntity::class, AniListBindingEntity::class, AnitabiPointEntity::class, EpisodeEntity::class, SubjectExternalIdEntity::class, SubjectExternalRatingEntity::class, EpisodeRatingEntity::class, EpisodeMyRatingEntity::class, ManualAwardEntity::class, SubjectDetailCacheEntity::class, SubjectRelationCacheEntity::class, EpisodeExternalCacheEntity::class, LibraryFolderEntity::class, LibraryFolderSubjectEntity::class],
     // 第 6 轮 v28 → v29：删除评分月刊的 rating_snapshots 表（DROP TABLE）
-    version = 29,
+    // B15 v29 → v30：详情页外部结果落 Room（三张新表，只加不改，见 MIGRATION_29_30）
+    // B15 v30 → v31：集合缓存主键改为按位置（见 MIGRATION_30_31）
+    // F09 v31 → v32：作品库自定义分区（两张新表，只加不改，见 MIGRATION_31_32）
+    version = 32,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -70,6 +80,12 @@ abstract class NirikoDatabase : RoomDatabase() {
     abstract fun externalIdDao(): ExternalIdDao
     abstract fun externalRatingDao(): ExternalRatingDao
     abstract fun manualAwardDao(): ManualAwardDao
+
+    /** B15：详情页外部结果缓存（subject_detail_cache / subject_relation_cache / episode_external_cache）。 */
+    abstract fun detailCacheDao(): DetailCacheDao
+
+    /** F09：作品库自定义分区（library_folder / library_folder_subject）。 */
+    abstract fun libraryFolderDao(): LibraryFolderDao
 
     companion object {
         private const val DB_NAME = "niriko.db"
@@ -97,7 +113,8 @@ abstract class NirikoDatabase : RoomDatabase() {
                     MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
                     MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23,
                     MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27,
-                    MIGRATION_27_28, MIGRATION_28_29,
+                    MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31,
+                    MIGRATION_31_32,
                 )
                 .build()
         }
@@ -586,6 +603,95 @@ abstract class NirikoDatabase : RoomDatabase() {
         private val MIGRATION_28_29 = object : Migration(28, 29) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("DROP TABLE IF EXISTS `rating_snapshots`")
+            }
+        }
+
+        /**
+         * B15（v29 → v30）：详情页外部结果落 Room —— **只加三张新表，不动任何既有列**。
+         *
+         * 为什么可以这么干净：这一版的目标是「重启后不用重新跑一遍外部源」，
+         * 属于纯新增缓存，因此不需要改既有表结构，也就不存在「用户评分/评论/分区/手动绑定」
+         * 被迁移影响的风险（§16 的口径：这些数据不可因此清除）。
+         * 回滚方式也最简单：停止读新表即可（§7.3 回滚条款），旧数据一动没动。
+         */
+
+        private val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `subject_detail_cache` (`subjectId` INTEGER NOT NULL, `sourceKey` TEXT NOT NULL, `schemaVersion` INTEGER NOT NULL, `fetchedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `payload` TEXT, `errorSummary` TEXT, `lastErrorAt` INTEGER, PRIMARY KEY(`subjectId`, `sourceKey`))",
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_subject_detail_cache_expiresAt` ON `subject_detail_cache` (`expiresAt`)",
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `subject_relation_cache` (`subjectId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `itemId` INTEGER NOT NULL, `sortIndex` INTEGER NOT NULL, `payload` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, PRIMARY KEY(`subjectId`, `kind`, `itemId`))",
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_subject_relation_cache_expiresAt` ON `subject_relation_cache` (`expiresAt`)",
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `episode_external_cache` (`subjectId` INTEGER NOT NULL, `epId` INTEGER NOT NULL, `seasonNumber` INTEGER, `episodeNumber` INTEGER, `tmdbTitle` TEXT, `sourceId` TEXT NOT NULL, `alignmentState` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, PRIMARY KEY(`subjectId`, `epId`))",
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_episode_external_cache_expiresAt` ON `episode_external_cache` (`expiresAt`)",
+                )
+            }
+        }
+
+        /**
+         * B15（v30 → v31）：`subject_relation_cache` 的主键从 (subjectId, kind, itemId) 改成
+         * (subjectId, kind, sortIndex)。
+         *
+         * 为什么必须改：staff 列表里同一个人会因为**多个职务**重复出现 —— 真机实测
+         * 「角色 46 条 / staff 524 条 / 关联 55 条」，用 itemId 做主键写入后只剩 381 行 staff，
+         * 读回来会静默少一批人（而且少得不明显）。改成按位置做主键后行数与列表长度严格一致。
+         *
+         * 直接 DROP + CREATE 是安全的：这张表**纯粹是可再取的缓存**，不含任何用户数据
+         * （用户评分/评论/分区/手动绑定都在别的表里，一律没动）。丢掉的只是「重启后不用重拉」，
+         * 下次进详情页会重新写一份。
+         */
+        /**
+         * F09（v31 → v32）：作品库自定义分区 —— **只加两张新表 + 两个索引，不动任何既有列**。
+         *
+         * 与 v29→v30 同一个口径：这两张表装的是**用户数据**（他自己建的分区与成员关系），
+         * 但迁移本身是纯新增 —— 不动 collections / subjects / episode_ratings 的任何一列，
+         * 因此不可能影响用户评分、评论、手动绑定或既有收藏（§16 的口径）。
+         *
+         * 回滚最简单的做法同样是**停止读新表**（§7.3 回滚条款配 §14 的回滚规则）：
+         * 表留着、数据留着，界面回到没有分区的样子，用户的收藏一条没动。
+         *
+         * `isCollapsed` 用 INTEGER NOT NULL（Room 的 Boolean 约定），默认 0 = 展开。
+         * 成员表的联合唯一键是复合主键 (folderId, subjectId) —— 重复加入是幂等的。
+         */
+        private val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `library_folder` (`id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `isCollapsed` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)",
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_library_folder_sortOrder` ON `library_folder` (`sortOrder`)",
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `library_folder_subject` (`folderId` INTEGER NOT NULL, `subjectId` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, PRIMARY KEY(`folderId`, `subjectId`))",
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_library_folder_subject_subjectId` ON `library_folder_subject` (`subjectId`)",
+                )
+            }
+        }
+
+        private val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("DROP TABLE IF EXISTS `subject_relation_cache`")
+                // 元信息行必须一起删：否则会留下「元信息说取过、数据行却没了」的漂移状态，
+                // 读侧会把三组列表都读成空、还因为「没过期」不发网络请求（真机实测踩到过）。
+                database.execSQL("DELETE FROM `subject_detail_cache` WHERE `sourceKey` = 'collections_meta'")
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `subject_relation_cache` (`subjectId` INTEGER NOT NULL, `kind` TEXT NOT NULL, `sortIndex` INTEGER NOT NULL, `itemId` INTEGER NOT NULL, `payload` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, PRIMARY KEY(`subjectId`, `kind`, `sortIndex`))",
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_subject_relation_cache_expiresAt` ON `subject_relation_cache` (`expiresAt`)",
+                )
             }
         }
     }

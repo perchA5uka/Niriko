@@ -5,6 +5,7 @@ import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.StaffInfo
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.util.RichTextParser
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,7 +38,7 @@ object AniListMapper {
             titleCN = title?.get("native")?.jsonPrimitive?.content
                 ?: title?.get("english")?.jsonPrimitive?.content,
             type = mapMediaType(typeStr),
-            summary = stripHtml(media["description"]?.jsonPrimitive?.content),
+            summary = media["description"]?.jsonPrimitive?.content?.let { RichTextParser.toPlainText(it) },
             coverUrl = cover?.get("large")?.jsonPrimitive?.content
                 ?: cover?.get("extraLarge")?.jsonPrimitive?.content,
             totalEpisodes = media["episodes"]?.jsonPrimitive?.content?.toIntOrNull()
@@ -116,12 +117,6 @@ object AniListMapper {
         val month = date["month"]?.jsonPrimitive?.content?.padStart(2, '0')
         val day = date["day"]?.jsonPrimitive?.content?.padStart(2, '0')
         return if (year != null) "${year}-${month ?: "01"}-${day ?: "01"}" else null
-    }
-
-    /** 去除 HTML 标签。 */
-    private fun stripHtml(html: String?): String? {
-        if (html == null) return null
-        return html.replace(Regex("<[^>]*>"), "").trim()
     }
 
     /** 解析 JSON 字符串数组。 */

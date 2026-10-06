@@ -4,12 +4,14 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -34,10 +37,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -48,6 +53,9 @@ import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.remote.CharacterDetailInfo
 import com.otakup.niriko.data.remote.PersonSubjectInfo
 import com.otakup.niriko.data.remote.displayTitle
+import com.otakup.niriko.ui.common.CreditSubjectCard
+import com.otakup.niriko.ui.common.CreditSubjectCardMetrics
+import com.otakup.niriko.ui.components.RichText
 import com.otakup.niriko.ui.components.ErrorContent
 import com.otakup.niriko.ui.components.LoadingContent
 import com.otakup.niriko.viewmodel.CharacterDetailViewModel
@@ -106,6 +114,7 @@ private fun CharacterDetailBody(
                     Modifier.sharedElement(
                         sharedContentState = rememberSharedContentState("character_avatar_${detail.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
                     )
                 }
             } else {
@@ -177,63 +186,35 @@ private fun CharacterDetailBody(
         if (!detail.summary.isNullOrBlank()) {
             Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(detail.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            RichText(
+                text = detail.summary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                onSubjectLink = onSubjectClick,
+            )
             Spacer(Modifier.height(20.dp))
         }
 
-        // 出演作品
+        // 出演作品（F01）：由纵向整行大卡改为**固定宽度横滑卡**，与人物页「参与作品」同款同尺寸。
+        // 保留：共享元素（cover_{id} → 作品详情封面）、点击语义、返回手势（外层竖向滚动不受影响）。
         if (subjects.isNotEmpty()) {
             Text("出演作品", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            subjects.forEach { subject ->
-                CharacterSubjectRow(
-                    subject = subject,
-                    onClick = { onSubjectClick(subject.subjectId) },
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-                Spacer(Modifier.height(6.dp))
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-private fun CharacterSubjectRow(
-    subject: PersonSubjectInfo,
-    onClick: () -> Unit,
-    sharedTransitionScope: SharedTransitionScope? = null,
-    animatedVisibilityScope: AnimatedVisibilityScope? = null,
-) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-    ) {
-        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // 共享元素：参与作品封面 → 作品详情封面（key 与全局 "cover_{subjectId}" 约定一致）
-            val coverModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
-                with(sharedTransitionScope) {
-                    Modifier.sharedElement(
-                        sharedContentState = rememberSharedContentState("cover_${subject.subjectId}"),
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(CreditSubjectCardMetrics.railSpacing),
+                // 轨道高度稳定：卡片本身用 heightIn(min) 固定内容下限，横滑时不会有高矮跳变
+                contentPadding = PaddingValues(vertical = 2.dp),
+            ) {
+                items(subjects, key = { it.subjectId }) { subject ->
+                    CreditSubjectCard(
+                        subject = subject,
+                        onClick = { onSubjectClick(subject.subjectId) },
+                        // 角色页副标题 = 饰演的角色名；没有台词/角色名时回退到 staff
+                        subtitle = subject.staff?.takeIf { it.isNotBlank() }?.let { "饰演：$it" },
+                        sharedTransitionScope = sharedTransitionScope,
                         animatedVisibilityScope = animatedVisibilityScope,
                     )
                 }
-            } else {
-                Modifier
-            }
-            AsyncImage(
-                model = subject.imageUrl,
-                contentDescription = subject.displayTitle,
-                modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant).then(coverModifier),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(subject.displayTitle, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                subject.staff?.let { Text("饰演：$it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                Text(typeLabel(subject.type), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -249,13 +230,4 @@ private fun formatCount(value: Int): String = when {
     value >= 10_000 -> "%.1f万".format(value / 10_000f)
     value >= 1_000 -> "%.1fk".format(value / 1_000f)
     else -> value.toString()
-}
-
-private fun typeLabel(type: Int): String = when (type) {
-    2 -> "动画"
-    1 -> "书籍"
-    4 -> "游戏"
-    3 -> "音乐"
-    6 -> "三次元"
-    else -> "其他"
 }

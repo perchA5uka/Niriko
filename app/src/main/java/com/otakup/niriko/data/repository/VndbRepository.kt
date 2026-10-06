@@ -258,7 +258,7 @@ class VndbRepository(
         val title: String,
         val ctitle: String?,
         val released: String?,
-        val rating: Int?,
+        val rating: Double?,
         val coverUrl: String?,
         val official: Boolean,
     ) {

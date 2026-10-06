@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.match.AniListCandidateMapper
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.model.EpisodeInfo
@@ -14,9 +15,11 @@ import com.otakup.niriko.data.remote.SubjectRemoteDataSource
 import com.otakup.niriko.data.remote.SubjectRelationInfo
 import com.otakup.niriko.data.remote.InfoBoxEntry
 import com.otakup.niriko.data.repository.CollectionRepository
+import com.otakup.niriko.data.repository.DetailCacheStore
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
 import com.otakup.niriko.data.repository.VndbRepository
+import com.otakup.niriko.util.AniListIdParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,7 +28,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -69,14 +71,6 @@ private const val DOUBAN_PHOTO_PAGE_SIZE = 40
 private val DOUBAN_ID_REGEX = Regex("""(?:subject|game|movie|book|music)/(\d{5,12})""")
 
 /**
- * AniList id 提取（第 4 轮 D 的手动兜底）。
- *
- * 覆盖 `12345`、`https://anilist.co/anime/12345`、`anime/12345` 三种写法：
- * 都是「取第一段数字」。刻意不用 `\b`（Unicode 模式下对全角字符行为不直观）。
- */
-private val ANILIST_ID_REGEX = Regex("""(\d{1,8})""")
-
-/**
  * 作品详情 UI 快照。
  */
 data class SubjectDetailUiState(
@@ -88,6 +82,8 @@ data class SubjectDetailUiState(
     // 收藏状态
     val isInCollection: Boolean = false,
     val collectionId: Long = 0L,
+    /** Existing collection timestamp, exposed only for personal-record presentation. */
+    val collectionCreateTime: Long? = null,
     val currentStatus: WatchStatus = WatchStatus.PLAN_TO_WATCH,
     val isUpdating: Boolean = false,
     // 个人记录
@@ -146,8 +142,8 @@ data class SubjectDetailUiState(
     val anilistDetail: com.otakup.niriko.data.remote.game.GameItemDetail? = null,
     /** AniList 独有富信息（热度/趋势/排名/下一集等）。 */
     val anilistRichDetail: com.otakup.niriko.data.model.AniListRichDetail? = null,
-    /** AniList 候选（未绑定条目：按标题搜索的 Top 候选，供手动绑定）。 */
-    val anilistCandidates: List<com.otakup.niriko.data.remote.game.GameItem> = emptyList(),
+    /** AniList 候选（未绑定条目：按标题搜索的 Top 候选；匹配度由 AniListCandidateMapper 算好，供手动绑定）。 */
+    val anilistCandidates: List<com.otakup.niriko.data.match.MatchCandidate> = emptyList(),
     /** AniList 手动入口（搜索/粘贴 id）的一行反馈，第 4 轮 D。 */
     val anilistManualMessage: String? = null,
     // 圣地巡礼（Anitabi，阶段 K）
@@ -254,9 +250,20 @@ class SubjectDetailViewModel(
     private val tmdbRepository: com.otakup.niriko.data.repository.TmdbRepository? = null,
     private val externalIdRepository: com.otakup.niriko.data.repository.ExternalIdRepository? = null,
     private val manualAwardRepository: com.otakup.niriko.data.repository.ManualAwardRepository? = null,
+    /** B15：集合类结果的落库缓存；未注入时退回纯网络（改造前行为）。 */
+    private val detailCacheStore: DetailCacheStore? = null,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(SubjectDetailUiState())
+    private val completionFeedback = CompletionEvents()
+    val completionEvents = completionFeedback.events
+
+    /** F14：**进度写满**的独立通道（剧集区块的波浪点亮用，与状态完成的全屏庆祝分开）。 */
+    val episodeCompletionEvents = completionFeedback.progressEvents
+
+    private val navigationSeed = com.otakup.niriko.util.SubjectNavigationSeed.takeSubject(subjectId)
+    private val _uiState = MutableStateFlow(SubjectDetailUiState(
+        subject = navigationSeed, isLoading = navigationSeed == null,
+    ))
     val uiState: StateFlow<SubjectDetailUiState> = _uiState.asStateFlow()
 
     /** 保存原始 createTime，避免更新时被 System.currentTimeMillis() 覆盖。 */
@@ -290,7 +297,7 @@ class SubjectDetailViewModel(
      */
     private fun loadSubject(forceExtended: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = it.subject == null, error = null) }
 
             // Step 1: 读缓存（不阻塞网络）
             val subject = withContext(Dispatchers.IO) {
@@ -366,6 +373,7 @@ class SubjectDetailViewModel(
             it.copy(
                 isInCollection = existing != null,
                 collectionId = existing?.id ?: 0L,
+                collectionCreateTime = existing?.createTime,
                 currentStatus = existing?.status ?: WatchStatus.PLAN_TO_WATCH,
                 watchedEpisodes = existing?.watchedEpisodes,
                 watchedVolumes = existing?.watchedVolumes,
@@ -394,56 +402,10 @@ class SubjectDetailViewModel(
         if (!force) {
             extendedCache.get(subjectId)?.let { snap ->
                 Log.d(TAG, "loadExtendedData: 命中缓存 subjectId=$subjectId")
-                _uiState.update {
-                    it.copy(
-                        characters = snap.characters,
-                        staff = snap.staff,
-                        episodes = snap.episodes,
-                        ratingDistribution = snap.ratingDistribution,
-                        relations = snap.relations,
-                        infoBox = snap.infoBox,
-                        steam = snap.steam,
-                        achievements = snap.achievements,
-                        chartRank = snap.chartRank,
-                        vndbBinding = snap.vndbBinding,
-                        vndbDetail = snap.vndbDetail,
-                        vndbCandidates = snap.vndbCandidates,
-                        anilistBinding = snap.anilistBinding,
-                        anilistDetail = snap.anilistDetail,
-                        anilistRichDetail = snap.anilistRichDetail,
-                        anilistCandidates = snap.anilistCandidates,
-                        anitabiCity = snap.anitabiCity,
-                        anitabiPoints = snap.anitabiPoints,
-                        anitabiPointsLength = snap.anitabiPointsLength,
-                        anitabiImagesLength = snap.anitabiImagesLength,
-                        guessYouLike = snap.guessYouLike,
-                        // 计划 B5 · 6-4：补上此前没进快照的字段，二次进详情页不再重跑
-                        // 权威评分 / 每集评分 / TMDb / 豆瓣这几路外部源
-                        externalRatings = snap.externalRatings,
-                        steamMetacritic = snap.steamMetacritic,
-                        manualAwards = snap.manualAwards,
-                        episodeRatings = snap.episodeRatings,
-                        episodeRatingLoad = snap.episodeRatingLoad,
-                        imdbEpisodeLoad = snap.imdbEpisodeLoad,
-                        imdbEpisodeEntryEnabled = snap.imdbEpisodeEntryEnabled,
-                        imdbEntry = snap.imdbEntry,
-                        myEpisodeRatings = snap.myEpisodeRatings,
-                        tmdbSupported = snap.tmdbSupported,
-                        tmdbBinding = snap.tmdbBinding,
-                        tmdbMovieBinding = snap.tmdbMovieBinding,
-                        tmdbDetail = snap.tmdbDetail,
-                        tmdbBackdrops = snap.tmdbBackdrops,
-                        tmdbCandidates = snap.tmdbCandidates,
-                        tmdbPastedCandidate = snap.tmdbPastedCandidate,
-                        episodeStills = snap.episodeStills,
-                        doubanEnabled = snap.doubanEnabled,
-                        doubanBoundId = snap.doubanBoundId,
-                        doubanThumbs = snap.doubanThumbs,
-                        doubanImageReferer = snap.doubanImageReferer,
-                        doubanCandidates = snap.doubanCandidates,
-                        isExtendedLoading = false,
-                    )
-                }
+                // 恢复逻辑抽到 SubjectDetailSnapshot.kt 的纯函数里：
+                // 那里与写入映射同文件，并有反射用例锁住「写入与恢复一一对应」
+                //（此前 VNDB 匹配结果簇就因为只有写入、没有恢复，在二次进页面时整块消失）。
+                _uiState.update { it.withExtendedSnapshot(snap).copy(isExtendedLoading = false) }
                 // 缓存命中路径同样要算洞察（否则二次进页面争议度会消失）
                 loadRatingInsights(snap.ratingDistribution)
                 return
@@ -451,12 +413,44 @@ class SubjectDetailViewModel(
         }
         _uiState.update { it.copy(isExtendedLoading = true) }
         withContext(Dispatchers.IO) {
+            // B15：先读本地（进程重启后也在），新鲜就直接用、连网络都不发；
+            // 过期也先拿来垫着，失败时不让好数据消失（§7.3 步骤 3/5）。
+            val cachedCollections = runCatching { detailCacheStore?.readCollections(subjectId) }.getOrNull()
+            val fetchCollections = cachedCollections == null || cachedCollections.isExpired()
+            // 标量类来源（infobox / 评分分布 / 权威评分）同样先读本地。
+            // 判据是「有没有一行成功的记录且未过期」，不是「值是不是空」——
+            // 取值与过期判定都要读同一行，所以这里一次读回来。
+            val keys = com.otakup.niriko.data.local.entity.SubjectDetailCacheEntity.SourceKeys
+            val nowMs = System.currentTimeMillis()
+            suspend fun freshRow(key: String): com.otakup.niriko.data.local.entity.SubjectDetailCacheEntity? {
+                val row = runCatching { detailCacheStore?.readRow(subjectId, key) }.getOrNull() ?: return null
+                return row.takeIf { it.expiresAt > nowMs && it.errorSummary == null }
+            }
+            val infoBoxRow = freshRow(keys.INFOBOX)
+            val distributionRow = freshRow(keys.RATING_DISTRIBUTION)
+            val ratingsRow = freshRow(keys.EXTERNAL_RATINGS)
+            val fetchInfoBox = infoBoxRow == null
+            val fetchDistribution = distributionRow == null
+            val fetchExternalRatings = ratingsRow == null
+            val cachedInfoBox = infoBoxRow?.let { runCatching { detailCacheStore?.readInfoBox(subjectId) }.getOrNull() }
+            val cachedDistribution = distributionRow?.let { runCatching { detailCacheStore?.readRatingDistribution(subjectId) }.getOrNull() }
+            val cachedRatings = ratingsRow?.let { runCatching { detailCacheStore?.readExternalRatings(subjectId) }.getOrNull() }
             coroutineScope {
+                // 用 Result 而不是 try/catch 吞成空列表：**「取到空」与「取失败」必须分开** ——
+                // 前者是合法结果（这个作品确实没有关联作品），后者绝不能覆盖上一次的成功数据。
                 val charactersDeferred = async {
-                    try { remoteDataSource.getCharacters(subjectId) } catch (_: Exception) { emptyList() }
+                    if (!fetchCollections) {
+                        Result.success(cachedCollections!!.characters)
+                    } else {
+                        runCatching { remoteDataSource.getCharacters(subjectId) }
+                    }
                 }
                 val staffDeferred = async {
-                    try { remoteDataSource.getStaff(subjectId) } catch (_: Exception) { emptyList() }
+                    if (!fetchCollections) {
+                        Result.success(cachedCollections!!.staff)
+                    } else {
+                        runCatching { remoteDataSource.getStaff(subjectId) }
+                    }
                 }
                 val episodesDeferred = async {
                     // 修复 R1：改造前这里直接打远端、**从不落库**，导致 episodes 表始终为空，
@@ -469,13 +463,25 @@ class SubjectDetailViewModel(
                     }
                 }
                 val distDeferred = async {
-                    try { remoteDataSource.getRatingDistribution(subjectId) } catch (_: Exception) { emptyMap<Int, Int>() }
+                    if (fetchDistribution) {
+                        runCatching { remoteDataSource.getRatingDistribution(subjectId) }
+                    } else {
+                        Result.success(cachedDistribution!!)
+                    }
                 }
                 val relationsDeferred = async {
-                    try { remoteDataSource.getSubjectRelations(subjectId) } catch (_: Exception) { emptyList() }
+                    if (!fetchCollections) {
+                        Result.success(cachedCollections!!.relations)
+                    } else {
+                        runCatching { remoteDataSource.getSubjectRelations(subjectId) }
+                    }
                 }
                 val infoBoxDeferred = async {
-                    try { remoteDataSource.getInfoBox(subjectId) } catch (_: Exception) { emptyList() }
+                    if (fetchInfoBox) {
+                        runCatching { remoteDataSource.getInfoBox(subjectId) }
+                    } else {
+                        Result.success(cachedInfoBox!!)
+                    }
                 }
                 val biliDeferred = async {
                     try { fetchAndPersistBilibiliRating() } catch (_: Exception) { Unit }
@@ -502,7 +508,19 @@ class SubjectDetailViewModel(
                     try { loadGuessYouLike() } catch (_: Exception) { Unit }
                 }
                 val externalRatingDeferred = async {
-                    try { loadExternalRatingData() } catch (_: Exception) { Unit }
+                    if (fetchExternalRatings) {
+                        try { loadExternalRatingData() } catch (_: Exception) { Unit }
+                        // loadExternalRatingData 把结果直接写进 _uiState（不是返回值式的），这里把它读出来落库。
+                        // 失败时它保持空 → 只记失败信息，不覆盖上一次成功的数据。
+                        val produced = _uiState.value.externalRatings
+                        if (produced.isNotEmpty()) {
+                            runCatching { detailCacheStore?.writeExternalRatings(subjectId, produced) }
+                        } else {
+                            runCatching { detailCacheStore?.markValueFailure(subjectId, keys.EXTERNAL_RATINGS, "empty or failed") }
+                        }
+                    } else {
+                        _uiState.update { it.copy(externalRatings = cachedRatings!!) }
+                    }
                 }
                 val episodeRatingDeferred = async {
                     try { loadEpisodeRatingData() } catch (_: Exception) { Unit }
@@ -510,12 +528,42 @@ class SubjectDetailViewModel(
                 val tmdbDeferred = async {
                     try { loadTmdbSupplement() } catch (_: Exception) { Unit }
                 }
-                val characters = charactersDeferred.await()
-                val staff = staffDeferred.await()
+                val charactersResult = charactersDeferred.await()
+                val staffResult = staffDeferred.await()
                 val episodes = episodesDeferred.await()
-                val ratingDistribution = distDeferred.await()
-                val relations = relationsDeferred.await()
-                val infoBox = infoBoxDeferred.await()
+                val distResult = distDeferred.await()
+                val ratingDistribution = distResult.getOrElse { cachedDistribution ?: emptyMap() }
+                val relationsResult = relationsDeferred.await()
+                // 失败就用上一次落库的数据垫着（可能是 null → 空列表），绝不让界面因此变空。
+                val characters = charactersResult.getOrElse { cachedCollections?.characters ?: emptyList() }
+                val staff = staffResult.getOrElse { cachedCollections?.staff ?: emptyList() }
+                val relations = relationsResult.getOrElse { cachedCollections?.relations ?: emptyList() }
+                if (fetchCollections) {
+                    if (charactersResult.isSuccess && staffResult.isSuccess && relationsResult.isSuccess) {
+                        // 三个都成功才写：否则会把「角色成功、关联失败」写成一整份看似完整的数据
+                        //（读侧要求三类要么一起给、要么都不给）。
+                        runCatching { detailCacheStore?.writeCollections(subjectId, characters, staff, relations) }
+                    } else {
+                        runCatching { detailCacheStore?.markCollectionsFailure(subjectId, "collections fetch failed") }
+                    }
+                }
+                val infoBoxResult = infoBoxDeferred.await()
+                val infoBox = infoBoxResult.getOrElse { cachedInfoBox ?: emptyList() }
+                // 落库：只写成功的那一路；失败的只记失败信息（下一次进来还会重取，不会看到空数据）。
+                if (fetchDistribution) {
+                    if (distResult.isSuccess) {
+                        runCatching { detailCacheStore?.writeRatingDistribution(subjectId, ratingDistribution) }
+                    } else {
+                        runCatching { detailCacheStore?.markValueFailure(subjectId, keys.RATING_DISTRIBUTION, "fetch failed") }
+                    }
+                }
+                if (fetchInfoBox) {
+                    if (infoBoxResult.isSuccess) {
+                        runCatching { detailCacheStore?.writeInfoBox(subjectId, infoBox) }
+                    } else {
+                        runCatching { detailCacheStore?.markValueFailure(subjectId, keys.INFOBOX, "fetch failed") }
+                    }
+                }
                 biliDeferred.await()
                 steamDeferred.await()
                 achievementsDeferred.await()
@@ -525,11 +573,18 @@ class SubjectDetailViewModel(
                 externalRatingDeferred.await()
                 episodeRatingDeferred.await()
                 tmdbDeferred.await()
+                // B13：TMDb 回填的分集标题只有**写库之后重读**才看得见。
+                // episodesDeferred 与 loadEpisodeRatingData 是并行的，谁先跑完并不确定，
+                // 因此这里在两者都结束后再读一次本地库；此时 Bangumi 侧刚刷过、数据是新鲜的，
+                // getEpisodes 会直接命中缓存（不打远端），只是在同一屏里把补好的标题一起显示出来。
+                val episodesWithBackfilledTitles = runCatching {
+                    nirikoApp().episodeRepository.getEpisodes(subjectId)
+                }.getOrNull()?.takeIf { it.isNotEmpty() } ?: episodes
                 _uiState.update {
                     it.copy(
                         characters = characters,
                         staff = staff,
-                        episodes = episodes,
+                        episodes = episodesWithBackfilledTitles,
                         ratingDistribution = ratingDistribution,
                         relations = relations,
                         infoBox = infoBox,
@@ -549,102 +604,6 @@ class SubjectDetailViewModel(
         // 记录快照：补充数据源是各自直接写 _uiState 的，因此在这里统一抓取最终结果
         extendedCache.put(subjectId, _uiState.value.toExtendedSnapshot())
     }
-
-    private fun SubjectDetailUiState.toExtendedSnapshot(): ExtendedSnapshot = ExtendedSnapshot(
-        characters = characters,
-        staff = staff,
-        episodes = episodes,
-        ratingDistribution = ratingDistribution,
-        relations = relations,
-        infoBox = infoBox,
-        steam = steam,
-        achievements = achievements,
-        chartRank = chartRank,
-        vndbBinding = vndbBinding,
-        vndbDetail = vndbDetail,
-        vndbCandidates = vndbCandidates,
-        anilistBinding = anilistBinding,
-        anilistDetail = anilistDetail,
-        anilistRichDetail = anilistRichDetail,
-        anilistCandidates = anilistCandidates,
-        anitabiCity = anitabiCity,
-        anitabiPoints = anitabiPoints,
-        anitabiPointsLength = anitabiPointsLength,
-        anitabiImagesLength = anitabiImagesLength,
-        guessYouLike = guessYouLike,
-        // 计划 B5 · 6-4：以下字段此前不在快照里 → 二次进页面会重跑权威评分 / 每集评分 /
-        // TMDb（详情 + 剧照候选）/ 豆瓣候选，正是 README「工程待办」里记的那条
-        externalRatings = externalRatings,
-        steamMetacritic = steamMetacritic,
-        manualAwards = manualAwards,
-        episodeRatings = episodeRatings,
-        episodeRatingLoad = episodeRatingLoad,
-        imdbEpisodeLoad = imdbEpisodeLoad,
-        imdbEpisodeEntryEnabled = imdbEpisodeEntryEnabled,
-        imdbEntry = imdbEntry,
-        myEpisodeRatings = myEpisodeRatings,
-        tmdbSupported = tmdbSupported,
-        tmdbBinding = tmdbBinding,
-        tmdbMovieBinding = tmdbMovieBinding,
-        tmdbDetail = tmdbDetail,
-        tmdbBackdrops = tmdbBackdrops,
-        tmdbCandidates = tmdbCandidates,
-        tmdbPastedCandidate = tmdbPastedCandidate,
-        episodeStills = episodeStills,
-        doubanEnabled = doubanEnabled,
-        doubanBoundId = doubanBoundId,
-        doubanThumbs = doubanThumbs,
-        doubanImageReferer = doubanImageReferer,
-        doubanCandidates = doubanCandidates,
-    )
-
-    /** 扩展数据快照（详情页十余路并行结果的合并快照）。 */
-    private data class ExtendedSnapshot(
-        val characters: List<CharacterInfo>,
-        val staff: List<StaffInfo>,
-        val episodes: List<EpisodeInfo>,
-        val ratingDistribution: Map<Int, Int>,
-        val relations: List<SubjectRelationInfo>,
-        val infoBox: List<InfoBoxEntry>,
-        val steam: com.otakup.niriko.data.local.entity.SteamGameEntity?,
-        val achievements: com.otakup.niriko.data.remote.steam.SteamAchievements?,
-        val chartRank: com.otakup.niriko.data.remote.steam.SteamChartEntry?,
-        val vndbBinding: com.otakup.niriko.data.local.entity.VndbBindingEntity?,
-        val vndbDetail: com.otakup.niriko.data.remote.vndb.dto.VndbVisualNovelDto?,
-        val vndbCandidates: List<com.otakup.niriko.data.remote.vndb.dto.VndbVisualNovelDto>,
-        val anilistBinding: com.otakup.niriko.data.local.entity.AniListBindingEntity?,
-        val anilistDetail: com.otakup.niriko.data.remote.game.GameItemDetail?,
-        val anilistRichDetail: com.otakup.niriko.data.model.AniListRichDetail?,
-        val anilistCandidates: List<com.otakup.niriko.data.remote.game.GameItem>,
-        val anitabiCity: String?,
-        val anitabiPoints: List<com.otakup.niriko.data.remote.anitabi.AnitabiLitePoint>,
-        val anitabiPointsLength: Int,
-        val anitabiImagesLength: Int,
-        val guessYouLike: List<SubjectEntity>,
-        // ===== v6-4 补齐（计划 B5）=====
-        val externalRatings: List<com.otakup.niriko.data.remote.rating.ExternalRating>,
-        val steamMetacritic: com.otakup.niriko.data.remote.rating.ExternalRating?,
-        val manualAwards: List<com.otakup.niriko.data.local.entity.ManualAwardEntity>,
-        val episodeRatings: Map<Long, Map<String, com.otakup.niriko.data.local.entity.EpisodeRatingEntity>>,
-        val episodeRatingLoad: com.otakup.niriko.data.repository.EpisodeRatingRepository.TmdbEpisodeLoad?,
-        val imdbEpisodeLoad: com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEpisodeLoad?,
-        val imdbEpisodeEntryEnabled: Boolean,
-        val imdbEntry: com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEntryStatus?,
-        val myEpisodeRatings: Map<Long, Float>,
-        val tmdbSupported: Boolean,
-        val tmdbBinding: com.otakup.niriko.data.local.entity.SubjectExternalIdEntity?,
-        val tmdbMovieBinding: com.otakup.niriko.data.local.entity.SubjectExternalIdEntity?,
-        val tmdbDetail: com.otakup.niriko.data.remote.tmdb.dto.TmdbTvDetailDto?,
-        val tmdbBackdrops: List<com.otakup.niriko.data.remote.tmdb.dto.TmdbImageDto>,
-        val tmdbCandidates: List<com.otakup.niriko.data.remote.rating.RatingCandidate>,
-        val tmdbPastedCandidate: com.otakup.niriko.data.remote.rating.RatingCandidate?,
-        val episodeStills: Map<Long, String>,
-        val doubanEnabled: Boolean,
-        val doubanBoundId: String?,
-        val doubanThumbs: List<String>,
-        val doubanImageReferer: String?,
-        val doubanCandidates: List<com.otakup.niriko.data.remote.douban.DoubanClient.DoubanSearchItem>,
-    )
 
     companion object {
         /**
@@ -1071,7 +1030,13 @@ class SubjectDetailViewModel(
                     emptyList()
                 }
                 Log.w(TAG, "loadAniListSupplement unbound candidates=${candidates.size}")
-                _uiState.update { it.copy(anilistCandidates = candidates) }
+                // 匹配度只在这里算一次：界面此前自己手搓 MatchCandidate 漏传 confidence，落回默认 0f，
+                // 于是无论真实匹配度多少都显示 0%（用户反馈「单条目 UI 无论匹配度多少都展示 0%」）。
+                val scored = AniListCandidateMapper.mapAll(
+                    items = candidates,
+                    queryTitles = AniListCandidateMapper.queryTitles(current.title, current.titleCN),
+                )
+                _uiState.update { it.copy(anilistCandidates = scored) }
             }
         }
     }
@@ -1134,15 +1099,23 @@ class SubjectDetailViewModel(
         }
         viewModelScope.launch {
             // 第 4 轮 D：允许直接粘贴 AniList id（数字）或 anilist.co 链接
-            val directId = ANILIST_ID_REGEX.find(text)?.groupValues?.getOrNull(1)?.toLongOrNull()
+            val directId = AniListIdParser.parse(text)
             if (directId != null) {
                 val item = withContext(Dispatchers.IO) {
                     // getDetail 返回 GameItemDetail（含截图），候选列表只要 GameItem
                     runCatching { anilist.getDetail(directId)?.item }.getOrNull()
                 }
                 if (item != null) {
+                    // 用户明确指定 id：置信度直接置 1，不拿本地标题相似度给用户的选择打折
+                    val subject = _uiState.value.subject
+                    val candidate = AniListCandidateMapper.map(
+                        item = item,
+                        queryTitles = AniListCandidateMapper.queryTitles(subject?.title, subject?.titleCN),
+                        query = text,
+                        confidenceOverride = 1f,
+                    )
                     _uiState.update {
-                        it.copy(anilistCandidates = listOf(item), anilistManualMessage = null)
+                        it.copy(anilistCandidates = listOf(candidate), anilistManualMessage = null)
                     }
                     return@launch
                 }
@@ -1150,9 +1123,15 @@ class SubjectDetailViewModel(
             val list = withContext(Dispatchers.IO) {
                 runCatching { anilist.searchMore(text) }.getOrDefault(emptyList())
             }
+            val subject = _uiState.value.subject
+            val scored = AniListCandidateMapper.mapAll(
+                items = list,
+                queryTitles = AniListCandidateMapper.queryTitles(subject?.title, subject?.titleCN),
+                query = text,
+            )
             _uiState.update {
                 it.copy(
-                    anilistCandidates = list,
+                    anilistCandidates = scored,
                     anilistManualMessage = if (list.isEmpty()) {
                         "没有搜到「$text」的 AniList 条目"
                     } else {
@@ -1287,12 +1266,14 @@ class SubjectDetailViewModel(
         collectionMutation++
         viewModelScope.launch {
             _uiState.update { it.copy(isUpdating = true) }
+            val collection = CollectionEntity(subjectId = subjectId, status = WatchStatus.PLAN_TO_WATCH)
             val newId = withContext(Dispatchers.IO) {
-                collectionRepository.add(CollectionEntity(subjectId = subjectId, status = WatchStatus.PLAN_TO_WATCH))
+                collectionRepository.add(collection)
             }
             if (newId > 0) {
-                originalCreateTime = System.currentTimeMillis()
-                _uiState.update { it.copy(isInCollection = true, collectionId = newId, currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false) }
+                originalCreateTime = collection.createTime
+                _uiState.update { it.copy(isInCollection = true, collectionId = newId, collectionCreateTime = collection.createTime,
+                    currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false) }
             } else {
                 _uiState.update { it.copy(isUpdating = false) }
             }
@@ -1317,9 +1298,9 @@ class SubjectDetailViewModel(
         }
         val newStart = if (newStatus == WatchStatus.WATCHING && s.startDate == null) LocalDate.now() else s.startDate
         val newFinish = if (newStatus == WatchStatus.COMPLETED && s.finishDate == null) LocalDate.now() else s.finishDate
+        _uiState.update { it.copy(isUpdating = true) }
         viewModelScope.launch {
-            _uiState.update { it.copy(isUpdating = true) }
-            withContext(Dispatchers.IO) {
+            val written = withContext(Dispatchers.IO) {
                 collectionRepository.update(CollectionEntity(
                     id = s.collectionId, subjectId = subjectId, status = newStatus,
                     watchedEpisodes = newProgress, watchedVolumes = s.watchedVolumes,
@@ -1334,6 +1315,17 @@ class SubjectDetailViewModel(
                 currentStatus = newStatus, watchedEpisodes = newProgress,
                 startDate = newStart, finishDate = newFinish, isUpdating = false,
             ) }
+            completionFeedback.onStatusWritten(subjectId, s.currentStatus, newStatus, written)
+            completionFeedback.onProgressWritten(
+                subjectId,
+                com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
+                    s.watchedEpisodes, s.watchedVolumes, s.subject?.totalEpisodes, s.subject?.volumes,
+                ),
+                com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
+                    newProgress, s.watchedVolumes, s.subject?.totalEpisodes, s.subject?.volumes,
+                ),
+                s.subject?.type, written,
+            )
         }
     }
 
@@ -1344,7 +1336,7 @@ class SubjectDetailViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isUpdating = true) }
             withContext(Dispatchers.IO) { collectionRepository.deleteBySubjectId(subjectId) }
-            _uiState.update { it.copy(isInCollection = false, collectionId = 0L, currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false,
+            _uiState.update { it.copy(isInCollection = false, collectionId = 0L, collectionCreateTime = null, currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false,
                 watchedEpisodes = null, watchedVolumes = null, isPrivate = false, myRating = null, personalTags = emptyList(), personalImpression = null, remark = null, watchedTrackIds = emptySet(), startDate = null, finishDate = null) }
         }
     }
@@ -1381,7 +1373,7 @@ class SubjectDetailViewModel(
                 finishDate = finishDate,
                 watchedTrackIds = watchedTrackIds,
             ) }
-            withContext(Dispatchers.IO) {
+            val written = withContext(Dispatchers.IO) {
                 collectionRepository.update(CollectionEntity(
                     id = s.collectionId, subjectId = subjectId, status = s.currentStatus,
                     watchedEpisodes = finalWatched, watchedVolumes = watchedVolumes,
@@ -1392,6 +1384,25 @@ class SubjectDetailViewModel(
                     createTime = originalCreateTime, updateTime = System.currentTimeMillis(),
                 ))
             }
+            // F14：这次写入是否**跨过**了总量（边沿判据在 EpisodeCompletionPolicy 里，纯函数、有单测）。
+            // 读的是写入**前**的快照（s）与本次要写入的值 —— 因此初次加载/重复保存都不会触发。
+            completionFeedback.onProgressWritten(
+                subjectId = subjectId,
+                before = com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
+                    watchedEpisodes = s.watchedEpisodes,
+                    watchedVolumes = s.watchedVolumes,
+                    totalEpisodes = s.subject?.totalEpisodes,
+                    totalVolumes = s.subject?.volumes,
+                ),
+                after = com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
+                    watchedEpisodes = finalWatched,
+                    watchedVolumes = watchedVolumes,
+                    totalEpisodes = s.subject?.totalEpisodes,
+                    totalVolumes = s.subject?.volumes,
+                ),
+                type = s.subject?.type,
+                succeeded = written,
+            )
             _uiState.update { it.copy(isUpdating = false, snackbarMessage = "记录已保存") }
         }
     }
@@ -1796,17 +1807,73 @@ class SubjectDetailViewModel(
                 if (score == null) {
                     nirikoDatabase().externalRatingDao().deleteMyEpisodeRating(epId)
                 } else {
+                    // 修复（F07 顺带）：这里原本直接 upsert 一个「只有分数」的新行，
+                    // 而 DAO 是 @Insert(REPLACE) —— 于是在详情页改一次分数，就会把这一集
+                    // 在单集二级页写过的**短评**（以及二刷标记）静默清成 null。
+                    // 正确做法是先读回该集已有行，只改分数与时间，其余字段原样带着走。
+                    val existing = nirikoDatabase().externalRatingDao().getMyEpisodeRating(epId)
                     nirikoDatabase().externalRatingDao().upsertMyEpisodeRating(
                         com.otakup.niriko.data.local.entity.EpisodeMyRatingEntity(
                             epId = epId,
                             subjectId = subjectId,
                             score = score,
+                            comment = existing?.comment,
+                            rewatch = existing?.rewatch ?: false,
                             ratedAt = System.currentTimeMillis(),
                         )
                     )
                 }
             }
             loadMyEpisodeRatings()
+        }
+    }
+
+    /**
+     * F07：为「合并分集评价」取一份完整数据（集号标签 + 我的分数 + 我的短评）。
+     *
+     * 刻意**不进 uiState**：这不是常驻展示内容，只在预览弹层打开时用一次。
+     * 另外 SubjectDetailUiState 的每个字段都被 SubjectDetailSnapshotTest 要求显式分类
+     * （进快照或进白名单），为了一个弹层去动那份契约不划算。
+     */
+    fun loadEpisodeReviewEntries(
+        onResult: (List<com.otakup.niriko.util.EpisodeReviewMergePolicy.Entry>) -> Unit,
+    ) {
+        val subject = _uiState.value.subject
+        if (subject == null) {
+            onResult(emptyList())
+            return
+        }
+        viewModelScope.launch {
+            val entries = runCatching {
+                val episodes = nirikoDatabase().episodeDao().getBySubject(subject.subjectId)
+                val mine = nirikoDatabase().externalRatingDao()
+                    .getMyEpisodeRatings(subject.subjectId)
+                    .associateBy { it.epId }
+                val unit = when (subject.type) {
+                    com.otakup.niriko.data.model.SubjectType.MANGA,
+                    com.otakup.niriko.data.model.SubjectType.BOOK,
+                    -> "话"
+                    com.otakup.niriko.data.model.SubjectType.MUSIC -> "首"
+                    else -> "集"
+                }
+                episodes.mapIndexed { index, episode ->
+                    val row = mine[episode.epId]
+                    com.otakup.niriko.util.EpisodeReviewMergePolicy.Entry(
+                        epId = episode.epId,
+                        order = index,
+                        label = com.otakup.niriko.util.EpisodeReviewMergePolicy.entryLabel(
+                            ep = episode.ep,
+                            title = episode.nameCn?.takeIf { it.isNotBlank() } ?: episode.name,
+                            fallbackIndex = index,
+                            unit = unit,
+                        ),
+                        // 库里用 -1 占位「只写短评没打分」，不能当成 0 分
+                        score = row?.score?.takeIf { it >= 0f },
+                        comment = row?.comment,
+                    )
+                }
+            }.getOrDefault(emptyList())
+            onResult(entries)
         }
     }
 
@@ -2154,6 +2221,8 @@ class SubjectDetailViewModelFactory(
     private val tmdbRepository: com.otakup.niriko.data.repository.TmdbRepository? = null,
     private val externalIdRepository: com.otakup.niriko.data.repository.ExternalIdRepository? = null,
     private val manualAwardRepository: com.otakup.niriko.data.repository.ManualAwardRepository? = null,
+    /** B15：详情页集合结果的落库缓存（见 DetailCacheStore）。未注入时退回纯网络。 */
+    private val detailCacheStore: DetailCacheStore? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -2162,7 +2231,7 @@ class SubjectDetailViewModelFactory(
                 subjectRepository, collectionRepository, remoteDataSource, subjectId,
                 context.applicationContext, steamRepository, vndbRepository, anilistRepository, anitabiRepository,
                 externalRatingRepository, episodeRatingRepository, tmdbRepository, externalIdRepository,
-                manualAwardRepository,
+                manualAwardRepository, detailCacheStore,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

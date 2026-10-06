@@ -156,7 +156,7 @@ fun GrayChannelSettingsGroup(
                             modifier = Modifier.weight(1f),
                         ) {
                             if (running) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                                 Spacer(Modifier.width(8.dp))
                                 Text("自检中…")
                             } else {

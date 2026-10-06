@@ -224,6 +224,16 @@ class SyncManager(
                 if (mergedManualAwards.isNotEmpty()) {
                     database.manualAwardDao().insertAll(mergedManualAwards)
                 }
+
+                // F09：分区不参与 WebDAV 同步，但它们的成员关系指向 collections 表 ——
+                // 上面刚把 collections 整体重写过，因此这里清掉「已经不在收藏里」的成员，
+                // 否则同步完成后分区会显示一个点进去看不到的作品（幽灵成员）。
+                // 顺序必须在 collections 写入之后。
+                val orphanFolders = database.libraryFolderDao().foldersWithOrphanMembers()
+                if (orphanFolders.isNotEmpty()) {
+                    database.libraryFolderDao().pruneMembersNotInCollections()
+                    orphanFolders.forEach { database.libraryFolderDao().touchFolder(it) }
+                }
             }
 
             // 封面覆盖在 DataStore（不在 Room 事务里）：合并结果整体写回

@@ -9,6 +9,7 @@ import com.otakup.niriko.data.remote.vndb.dto.VndbQueryRequest
 import com.otakup.niriko.data.remote.vndb.dto.VndbVisualNovelDto
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.add
+import com.otakup.niriko.util.RichTextParser
 
 /**
  * VNDB 作为通用游戏数据源（[GameDataSource] 实现）。
@@ -110,7 +111,7 @@ class VndbGameDataSource(
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(", "),
             coverUrl = image?.url,
-            summary = description?.let { stripHtml(it).take(200) },
+            summary = description?.let { RichTextParser.toPlainText(it).take(200) },
             platforms = platforms.mapNotNull { platformName(it) },
             developers = developers.map { it.name },
             publishers = emptyList(),
@@ -155,9 +156,4 @@ class VndbGameDataSource(
         else -> code
     }
 
-    /** 剥 HTML 标签（VNDB description 含 <br> 等）。 */
-    private fun stripHtml(raw: String): String = raw
-        .replace(Regex("<[^>]+>"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
 }

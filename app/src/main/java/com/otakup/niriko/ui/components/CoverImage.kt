@@ -7,7 +7,6 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
@@ -23,20 +22,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import com.otakup.niriko.nirikoApp
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import coil.size.Size
+import coil.size.Dimension
 import kotlin.math.roundToInt
 
 /**
@@ -64,12 +65,16 @@ fun CoverImage(
     requestHeight: Int? = null,
     // 阶段 E：条目 id，非空时优先读取用户封面覆盖（更换封面）。
     subjectId: Long? = null,
+    // Presentation feedback lives inside the untransformed shared bounds.
+    coverContentModifier: Modifier = Modifier,
 ) {
     // 用户封面覆盖优先（CoverOverrideStore）
     val app = LocalContext.current.nirikoApp
-    var overrideUrl by remember(subjectId) { mutableStateOf<String?>(null) }
-    LaunchedEffect(subjectId) {
-        if (subjectId != null) overrideUrl = app.coverOverrideStore.overrideFor(subjectId)
+    val coverId = subjectId ?: sharedElementKey?.removePrefix("cover_")?.toLongOrNull()
+    val coverSeed = remember(coverId) { coverId?.let(com.otakup.niriko.util.SubjectNavigationSeed::coverFor) }
+    var overrideUrl by remember(coverId) { mutableStateOf(coverSeed?.url) }
+    LaunchedEffect(coverId) {
+        if (coverId != null) overrideUrl = app.coverOverrideStore.overrideFor(coverId)
     }
     val effectiveCoverUrl = overrideUrl ?: coverUrl
     // 共享元素：key 非空且 scope 齐备时挂 sharedElement（bounds 过渡 = 整个封面）
@@ -78,47 +83,67 @@ fun CoverImage(
             Modifier.sharedElement(
                 sharedContentState = rememberSharedContentState(sharedElementKey),
                 animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
             )
         }
     } else {
         Modifier
     }
-    // 显示尺寸感知解码：从 BoxWithConstraints 一次取到显示尺寸（真实约束），
-    // 直接算出请求尺寸（×2 超采样，cap 800×1000），避免「默认 600×800 → onSizeChanged → 二次解码」的双重解码。
-    // 有固定请求尺寸时（requestWidth != null）直接使用，跳过约束推导。
-    BoxWithConstraints(
+    // Decode dimensions stay independent of animated constraints. No per-frame subcomposition.
+    Box(
         modifier = modifier
-            .then(sharedModifier)
             .aspectRatio(aspectRatio)
+            .then(sharedModifier)
+            .subjectCoverPresentation(animatedVisibilityScope)
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (effectiveCoverUrl != null) {
-            val maxWidthPx = constraints.maxWidth.takeIf { it > 0 && it != Constraints.Infinity }
-            val reqW = requestWidth
-                ?: maxWidthPx?.let { (it * 2f).roundToInt().coerceAtMost(800) }
-                ?: 360
-            val reqH = requestHeight
-                ?: (reqW / aspectRatio).roundToInt().coerceAtMost(1000)
-            SubcomposeAsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
+            val context = LocalContext.current
+            val density = LocalDensity.current
+            val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+            val reqW = coverStableDecodeWidth(screenWidthPx, requestWidth)
+            val request = remember(context, effectiveCoverUrl, reqW, requestHeight, coverSeed?.memoryCacheKey) {
+                ImageRequest.Builder(context)
                     .data(effectiveCoverUrl)
-                    // crossfade 移除：Pager 滑动/预组合时多路并行淡入与手势争帧
+                    .placeholderMemoryCacheKey(coverSeed?.takeIf { it.url == effectiveCoverUrl }?.memoryCacheKey)
+                    .crossfade(false)
                     .memoryCachePolicy(CachePolicy.ENABLED)
                     .diskCachePolicy(CachePolicy.ENABLED)
-                    // 超采样 ×2 保证共享元素过渡放大不糊，同时避免固定大图放大内存
-                    .size(Size(reqW, reqH))
-                    .build(),
+                    .size(Size(Dimension.Pixels(reqW), requestHeight?.let { Dimension.Pixels(it) } ?: Dimension.Undefined))
+                    .build()
+            }
+            var failed by remember(effectiveCoverUrl) { mutableStateOf(false) }
+            // 加载失败时恢复占位图：v1.1.0 的 loading/error 槽位在改写为普通 AsyncImage 时被删掉，
+            // 只剩纯色底 —— 卡片会永远显示一块灰色矩形，看不出「这张封面没有」。占位图先画，
+            // 成功图后画会自然盖住它，因此不影响共享飞行的正常图片。
+            if (failed) PlaceholderContent()
+            AsyncImage(
+                model = request,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().then(coverContentModifier),
                 contentScale = ContentScale.Crop,
-                loading = { PlaceholderContent() },
-                error = { PlaceholderContent() },
+                onSuccess = { state ->
+                    val id = subjectId ?: sharedElementKey?.removePrefix("cover_")?.toLongOrNull()
+                    if (id != null) {
+                        failed = false
+                        val drawable = state.result.drawable
+                        com.otakup.niriko.util.SubjectNavigationSeed.rememberCover(
+                            id, effectiveCoverUrl, drawable.intrinsicWidth, drawable.intrinsicHeight,
+                            state.result.memoryCacheKey,
+                        )
+                    }
+                },
+                onError = { failed = true },
+
             )
         }
     }
 }
+
+internal fun coverStableDecodeWidth(screenWidthPx: Float, explicitWidth: Int?): Int =
+    explicitWidth?.coerceAtLeast(1) ?: (screenWidthPx * 2f / 3f).roundToInt().coerceIn(360, 800)
 
 @Composable
 private fun PlaceholderContent() {

@@ -23,7 +23,7 @@ data class ProgressSnapshot(
  *
  * 单位约定与收藏页 / 详情页一致：
  * - 动画 / 三次元：集（watchedEpisodes，上限 = totalEpisodes）
- * - 书籍 / 漫画：已经在记卷进度时用卷（watchedVolumes，无「总卷数」字段 → 不设上限）；否则退回集
+ * - 书籍 / 漫画：已经在记卷进度时用卷（watchedVolumes，上限 = Bangumi 的 volumes 总卷数）；否则退回集
  * - 游戏：分钟（watchedEpisodes 恒存分钟，见 [PlaytimeConverter]）
  * - 音乐 / 人物 / 其他：不支持快捷 ±（音乐是逐首勾选）
  *
@@ -37,6 +37,8 @@ object ProgressBumpPolicy {
         watchedEpisodes: Int?,
         watchedVolumes: Int?,
         totalEpisodes: Int?,
+        /** 总卷数（书籍 / 漫画的 Bangumi volumes）；未知或非正数时不设上限。 */
+        totalVolumes: Int? = null,
     ): ProgressSnapshot? = when (unitOf(type, watchedVolumes)) {
         ProgressUnit.EPISODE -> ProgressSnapshot(
             unit = ProgressUnit.EPISODE,
@@ -46,7 +48,7 @@ object ProgressBumpPolicy {
         ProgressUnit.VOLUME -> ProgressSnapshot(
             unit = ProgressUnit.VOLUME,
             value = (watchedVolumes ?: 0).coerceAtLeast(0),
-            total = null,
+            total = totalVolumes?.takeIf { it > 0 },
         )
         ProgressUnit.MINUTE -> ProgressSnapshot(
             unit = ProgressUnit.MINUTE,
@@ -74,12 +76,40 @@ object ProgressBumpPolicy {
         return snapshot.total?.let { stepped.coerceAtMost(it) } ?: stepped
     }
 
+    /**
+     * 进度条完成度（0..1），**与进度编辑入口同口径**。
+     *
+     * 修复 B11：收藏页进度条改造前固定用 `watchedEpisodes / totalEpisodes`，
+     * 而漫画 / 书籍的进度是按**卷**记的（「灌篮高手」记 31 卷，而 Bangumi 的
+     * totalEpisodes 是 276 话）→ 拿卷数除以话数，进度条永远只有 11% 左右。
+     * 现在按 [unitOf] 选单位：记卷就用卷 / 总卷数，记集就用集 / 总集数。
+     * 分母未知时返回 null —— 宁可不画进度条，也不画一条骗人的。
+     */
+    fun barFraction(
+        type: SubjectType,
+        watchedEpisodes: Int?,
+        watchedVolumes: Int?,
+        totalEpisodes: Int?,
+        totalVolumes: Int?,
+    ): Float? = when (unitOf(type, watchedVolumes)) {
+        ProgressUnit.EPISODE -> fraction(watchedEpisodes, totalEpisodes)
+        ProgressUnit.VOLUME -> fraction(watchedVolumes, totalVolumes)
+        ProgressUnit.MINUTE, ProgressUnit.UNSUPPORTED -> null
+    }
+
+    private fun fraction(value: Int?, total: Int?): Float? {
+        val t = total?.takeIf { it > 0 } ?: return null
+        return (value ?: 0).coerceIn(0, t).toFloat() / t.toFloat()
+    }
+
     /** 浮层上的进度文案：`7 / 12 集` / `3 卷` / `2h30m`。 */
     fun label(snapshot: ProgressSnapshot): String = when (snapshot.unit) {
         ProgressUnit.EPISODE ->
             if (snapshot.total != null) "${snapshot.value} / ${snapshot.total} 集"
             else "${snapshot.value} 集"
-        ProgressUnit.VOLUME -> "${snapshot.value} 卷"
+        ProgressUnit.VOLUME ->
+            if (snapshot.total != null) "${snapshot.value} / ${snapshot.total} 卷"
+            else "${snapshot.value} 卷"
         ProgressUnit.MINUTE -> PlaytimeConverter.format(snapshot.value)
         ProgressUnit.UNSUPPORTED -> ""
     }

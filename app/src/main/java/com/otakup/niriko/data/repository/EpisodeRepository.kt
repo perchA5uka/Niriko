@@ -8,6 +8,7 @@ import com.otakup.niriko.data.remote.SubjectRemoteDataSource
 import com.otakup.niriko.data.refresh.FreshnessDecider
 import com.otakup.niriko.data.refresh.RefreshDecision
 import com.otakup.niriko.data.refresh.RefreshResource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -53,8 +54,10 @@ class EpisodeRepository(
                 }
                 fetchAndStore(subjectId)
             }.getOrElse { e ->
+                if (e is CancellationException) throw e
                 Log.w(TAG, "getEpisodes failed subjectId=$subjectId", e)
-                emptyList()
+                // A failed refresh must not erase the dates already cached for historical calendars.
+                episodeDao.getBySubject(subjectId).map { it.toEpisodeInfo() }
             }
         }
 

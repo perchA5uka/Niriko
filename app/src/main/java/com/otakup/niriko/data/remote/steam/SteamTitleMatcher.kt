@@ -39,6 +39,11 @@ object SteamTitleMatcher {
     /** 版权/商标符号与干扰字符。 */
     private val SYMBOL_REGEX = Regex("[™®©·•]")
 
+    /** 汉字 / 假名（用来判定「空格只是排版差异」的那条捷径是否适用）。 */
+    private val CJK_REGEX = Regex("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+    private fun containsCjk(value: String): Boolean = CJK_REGEX.containsMatchIn(value)
+
     /**
      * 标题归一化：去版权符号、全角空格/括号转半角、剔除所有标点（保留字母/数字/汉字/空格/括号）、
      * 压缩连续空白、转小写、trim。
@@ -69,6 +74,18 @@ object SteamTitleMatcher {
         val b = normalizeTitle(steamName)
         if (a.isEmpty() || b.isEmpty()) return 0f
         if (a == b) return 1f
+
+        // CJK 标题里的空格只是**排版差异**：Bangumi 的 name_cn「女神异闻录5 皇家版」
+        // 与 Steam（l=schinese）返回的「女神异闻录5皇家版」只差一个空格。
+        // 中文/日文没有词边界，分词后公共 token 恒为 0 → 会被下面的 token 封顶压到 0.5，
+        // 低于阈值 0.7，于是整个中文游戏系列都绑不上 Steam（用户报告的《女神异闻录》系列）。
+        // 去空格后完全相同 = 同一部作品，直接判定命中；续作靠数字区分，不受影响
+        //（「女神异闻录3 携带版」与「女神异闻录4 携带版」去空格后仍不同，继续走下文的封顶逻辑）。
+        if (containsCjk(a) || containsCjk(b)) {
+            val compactA = a.replace(" ", "")
+            val compactB = b.replace(" ", "")
+            if (compactA == compactB) return 1f
+        }
 
         // 包含关系：区分"词边界包含"（带副标题/版本后缀，可信）与"连续子串"（短标题撞长标题，易误绑）
         if (a.contains(b) || b.contains(a)) {

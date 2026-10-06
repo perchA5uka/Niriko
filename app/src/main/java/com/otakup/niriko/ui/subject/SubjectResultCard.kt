@@ -24,6 +24,7 @@ fun SubjectResultCard(
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
+    pressTiltEnabled: Boolean = false,
 ) {
     UniversalSubjectCard(
         model = model,
@@ -33,6 +34,7 @@ fun SubjectResultCard(
         sharedTransitionScope = sharedTransitionScope,
         animatedVisibilityScope = animatedVisibilityScope,
         modifier = modifier,
+        pressTiltEnabled = pressTiltEnabled,
     )
 }
 

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.bottombar.LiquidBottomTabs
+import com.otakup.niriko.ui.bottombar.LiquidBottomTab
 import com.otakup.niriko.ui.common.bottomBarHideFraction
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -39,10 +40,12 @@ fun NirikoBottomBar(
     pagerState: PagerState,
     backdrop: Backdrop,
     modifier: Modifier = Modifier,
+    /** 点按已选中的 tab（F11）：切页之外的第二条语义，交给导航层处置。 */
+    onTabReselected: (Int) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     // 稳定 lambda：避免重组时新实例触发 LiquidBottomTabs 内部 remember 重置。
-    val selectedTabIndex = remember { { pagerState.currentPage } }
+    val selectedTabIndex = remember(pagerState) { { pagerState.targetPage } }
     val hideFraction = bottomBarHideFraction()
     val barAlpha by animateFloatAsState(
         targetValue = 1f - hideFraction * 0.15f,
@@ -60,6 +63,7 @@ fun NirikoBottomBar(
             onTabSelected = { page ->
                 scope.launch { pagerState.animateScrollToPage(page) }
             },
+            onTabReselected = onTabReselected,
             backdrop = backdrop,
             tabsCount = TopLevelDestination.entries.size,
             modifier = Modifier
@@ -68,10 +72,11 @@ fun NirikoBottomBar(
                 .padding(bottom = 14.dp),
         ) {
             TopLevelDestination.entries.forEach { destination ->
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                LiquidBottomTab(
+                    onClick = {
+                        if (pagerState.targetPage == destination.ordinal) onTabReselected(destination.ordinal)
+                        else scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
+                    },
                 ) {
                     val selected = pagerState.currentPage == destination.ordinal
                     Icon(

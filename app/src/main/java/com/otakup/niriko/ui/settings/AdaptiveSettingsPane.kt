@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -53,10 +54,12 @@ import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.animation.AnimDurationShort
 import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.animation.motionEnabled
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.ui.settings.pages.AboutSettingsContent
 import com.otakup.niriko.ui.settings.pages.AppearanceSettingsContent
 import com.otakup.niriko.ui.settings.pages.DataSourceSettingsContent
+import com.otakup.niriko.ui.settings.pages.DonateSettingsContent
 import com.otakup.niriko.ui.settings.pages.LibrarySettingsContent
 import com.otakup.niriko.ui.settings.pages.RefreshDiagnosticsContent
 import com.otakup.niriko.ui.settings.pages.SearchSettingsContent
@@ -69,7 +72,7 @@ import com.otakup.niriko.viewmodel.SettingsViewModelFactory
 /**
  * B2c：宽屏（EXPANDED）设置页的两栏外壳。
  *
- * 左列 = 分类导航（标题「设置」+ 三个分组 + 七个分类，选中态高亮）；
+ * 左列 = 分类导航（标题「设置」+ 三个分组 + 八个分类，选中态高亮）；
  * 右列 = 真实二级页正文（复用 ui/settings/pages 里抽出的 XxxSettingsContent，
  * 不含二级页自己的脚手架／返回箭头，因为宽屏不需要「返回上一页」）。
  *
@@ -117,6 +120,12 @@ private val SettingsNavWidth = 300.dp
  */
 private const val BILIBILI_SYNC_ROUTE = "bilibili_sync"
 private const val STEAM_SYNC_ROUTE = "steam_sync"
+
+/** 外观 → 壁纸库（与 NirikoNavHost 的 SETTINGS_WALLPAPER_LIBRARY_ROUTE 一致）。 */
+private const val WALLPAPER_LIBRARY_ROUTE = "settings_wallpaper_library"
+
+/** 外观 → 详情部件（F06，与 NirikoNavHost 的 SETTINGS_DETAIL_SECTIONS_ROUTE 一致）。 */
+private const val DETAIL_SECTIONS_ROUTE = "settings_detail_sections"
 
 /**
  * 左列：分类导航。结构刻意与窄屏 SettingsScreen 的单列列表同构
@@ -234,7 +243,7 @@ private fun SettingsNavRow(
     }
 }
 
-/** 分类图标：与窄屏 SettingsScreen 七行使用的图标逐一对应。 */
+/** 分类图标：与窄屏 SettingsScreen 八行使用的图标逐一对应。 */
 private fun SettingsCategory.icon(): ImageVector = when (this) {
     SettingsCategory.APPEARANCE -> Icons.Outlined.Palette
     SettingsCategory.LIBRARY -> Icons.Outlined.CollectionsBookmark
@@ -243,6 +252,7 @@ private fun SettingsCategory.icon(): ImageVector = when (this) {
     SettingsCategory.SYNC -> Icons.Outlined.Sync
     SettingsCategory.REFRESH -> Icons.Outlined.Refresh
     SettingsCategory.ABOUT -> Icons.Outlined.Info
+    SettingsCategory.DONATE -> Icons.Outlined.VolunteerActivism
 }
 
 /**
@@ -255,11 +265,12 @@ private fun SettingsCategoryDetailColumn(
     modifier: Modifier = Modifier,
 ) {
     val motion = motionEnabled()
+    val specs = NirikoMotionSpecs
     if (motion) {
         Crossfade(
             targetState = category,
             modifier = modifier,
-            animationSpec = tween(durationMillis = AnimDurationShort, easing = AnimEasingDefault),
+            animationSpec = specs.effectsFast(),
             label = "settingsCategoryPane",
         ) { target ->
             SettingsCategoryDetailContent(
@@ -328,6 +339,9 @@ private fun SettingsCategoryDetailBody(
         SettingsCategory.APPEARANCE -> AppearanceSettingsContent(
             viewModel = settingsViewModel(),
             snackbarHostState = snackbarHostState,
+            // 宽屏两栏里没有二级页脚手架，用分类导航同一个回调推到壁纸库路由
+            onOpenWallpaperLibrary = { onNavigateToCategory(WALLPAPER_LIBRARY_ROUTE) },
+            onOpenDetailSections = { onNavigateToCategory(DETAIL_SECTIONS_ROUTE) },
         )
 
         SettingsCategory.LIBRARY -> LibrarySettingsContent(
@@ -356,6 +370,8 @@ private fun SettingsCategoryDetailBody(
         )
 
         SettingsCategory.ABOUT -> AboutSettingsContent()
+
+        SettingsCategory.DONATE -> DonateSettingsContent()
     }
 }
 

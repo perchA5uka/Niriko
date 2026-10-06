@@ -25,6 +25,7 @@ import com.otakup.niriko.data.remote.game.GameDataSourceRegistry
 import com.otakup.niriko.data.remote.game.SteamGameDataSource
 import com.otakup.niriko.data.remote.vndb.VndbGameDataSource
 import com.otakup.niriko.data.repository.CollectionRepository
+import com.otakup.niriko.data.repository.DetailCacheStore
 import com.otakup.niriko.data.repository.NetworkMonitor
 import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
@@ -120,6 +121,16 @@ class NirikoApplication : Application() {
                 }
             }
         }
+        // 壁纸每日轮换（R3）：同一套响应式——开关开启→注册每日周期 Worker，关闭→取消。
+        applicationScope.launch(Dispatchers.IO) {
+            settingsDataStore.settings.collect { s ->
+                if (s.wallpaperRotationEnabled) {
+                    runCatching { com.otakup.niriko.data.wallpaper.WallpaperRotationScheduler.schedule(this@NirikoApplication) }
+                } else {
+                    runCatching { com.otakup.niriko.data.wallpaper.WallpaperRotationScheduler.cancel(this@NirikoApplication) }
+                }
+            }
+        }
         // 阶段 D：为存量条目补齐拼音搜索键（仅一次；新条目在 SubjectRepository 落库时已带）
         applicationScope.launch(Dispatchers.IO) {
             runCatching { backfillPinyinKeys() }
@@ -204,6 +215,15 @@ class NirikoApplication : Application() {
      */
     val subjectWriteGateway: SubjectWriteGateway by lazy {
         SubjectWriteGateway(database.subjectDao())
+    }
+
+    /**
+     * 详情页外部结果缓存（B15）：
+     * 让「同一个作品第二次打开 / 重启后再打开」不必重新跑一遍外部源。
+     * 目前承载集合类结果（角色 / Staff / 关联作品），见 [DetailCacheStore]。
+     */
+    val detailCacheStore: DetailCacheStore by lazy {
+        DetailCacheStore(database.detailCacheDao())
     }
 
     /**

@@ -18,6 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.LocalIndication
+import com.otakup.niriko.ui.animation.pressTilt
+import com.otakup.niriko.ui.animation.rememberReturnGlowModifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.ui.components.cardRarityMaterial
+import com.otakup.niriko.data.model.cardMaterialFromRating
 import com.otakup.niriko.ui.components.CoverImage
 import com.otakup.niriko.ui.components.FavoriteBadge
 import com.otakup.niriko.ui.components.RatingBadge
@@ -50,14 +57,25 @@ fun PosterGridCard(
     selected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val progress = if (totalEpisodes != null && totalEpisodes > 0)
-        (collection.watchedEpisodes ?: 0).toFloat() / totalEpisodes.toFloat()
-    else null
+    val interactionSource = remember { MutableInteractionSource() }
+    val lighting = remember { com.otakup.niriko.ui.animation.PressTiltLighting() }
+    // 修复 B11：进度条分母/单位交给 ProgressBumpPolicy —— 漫画按卷记录时
+    // 必须是「已读卷 / 总卷」，不能拿卷数去除以总话数。
+    val progress = com.otakup.niriko.util.ProgressBumpPolicy.barFraction(
+        type = subject.type,
+        watchedEpisodes = collection.watchedEpisodes,
+        watchedVolumes = collection.watchedVolumes,
+        totalEpisodes = totalEpisodes,
+        totalVolumes = subject.volumes,
+    )
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    // F17：刚从详情页返回这部作品时，这张卡扫一次约 300ms 的淡光（一次性事件，播完即清）
+    val returnGlow = rememberReturnGlowModifier(subject.subjectId)
+    Column(modifier = modifier.fillMaxWidth().then(returnGlow)) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .pressTilt(interactionSource, lighting = lighting)
                 .clip(RoundedCornerShape(PosterCardMetrics.CornerRadius))
                 .then(
                     if (selected) {
@@ -68,16 +86,22 @@ fun PosterGridCard(
                 )
                 .then(
                     if (onLongClick != null) {
-                        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                        Modifier.combinedClickable(
+                            interactionSource = interactionSource,
+                            indication = LocalIndication.current,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                        )
                     } else {
-                        Modifier.clickable(onClick = onClick)
+                        Modifier.clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick)
                     },
                 ),
         ) {
             CoverImage(
                 coverUrl = subject.coverUrl,
                 contentDescription = subject.displayTitle,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth()
+                    .cardRarityMaterial(cardMaterialFromRating(collection.rating), RoundedCornerShape(PosterCardMetrics.CornerRadius), lighting),
                 shape = RoundedCornerShape(PosterCardMetrics.CornerRadius),
                 aspectRatio = PosterCardMetrics.CoverAspectRatio,
                 sharedElementKey = "cover_" + subject.subjectId,

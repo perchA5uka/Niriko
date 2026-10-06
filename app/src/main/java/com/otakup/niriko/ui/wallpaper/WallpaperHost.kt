@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -68,6 +69,7 @@ fun WallpaperHost(
     blurDp: Int,
     atmosphere: WallpaperAtmosphere = WallpaperAtmosphere.BALANCED,
     modifier: Modifier = Modifier,
+    parallaxEnabled: Boolean = false,
 ) {
     val context = LocalContext.current
     val isDark = LocalDarkTheme.current
@@ -89,7 +91,7 @@ fun WallpaperHost(
     // 图片壁纸取平均亮度（32px 缩略图、进程级缓存），用于自适应 scrim；视频回退 mid
     val luminance = if (isVideo || uri == null) null else rememberWallpaperLuminance(uri)
 
-    Box(modifier = modifier.fillMaxSize().background(surface)) {
+    Box(modifier = modifier.fillMaxSize().clipToBounds().background(surface)) {
         val show = enabled && active && uri != null
         if (show) {
             val colorFilter = remember(atmosphere, isVideo) {
@@ -98,7 +100,10 @@ fun WallpaperHost(
             if (isVideo) {
                 VideoWallpaper(uri = uri!!, active = active)
             } else {
-                ImageWallpaper(uri = uri!!, blurDp = blurDp, colorFilter = colorFilter)
+                ImageWallpaper(
+                    uri = uri!!, blurDp = blurDp, colorFilter = colorFilter,
+                    parallaxEnabled = parallaxEnabled, calibrationKey = currentPage to uri,
+                )
             }
             // ① 自适应 scrim（色彩消化第三步）：亮壁纸加深、暗壁纸减轻；同时受氛围档位影响
             val scrimAlpha = remember(luminance, atmosphere) {
@@ -124,6 +129,8 @@ private fun ImageWallpaper(
     uri: Uri,
     blurDp: Int,
     colorFilter: ColorFilter?,
+    parallaxEnabled: Boolean,
+    calibrationKey: Any,
 ) {
     val density = LocalDensity.current
     val glassEffect = LocalGlassEffect.current
@@ -134,17 +141,29 @@ private fun ImageWallpaper(
         } else null
     }
     val context = LocalContext.current
+    val request = remember(context, uri) {
+        ImageRequest.Builder(context).data(uri).crossfade(true).build()
+    }
+    val parallax = rememberWallpaperParallax(parallaxEnabled, calibrationKey)
     AsyncImage(
-        model = ImageRequest.Builder(context)
-            .data(uri)
-            .crossfade(true)
-            .build(),
+        model = request,
         contentDescription = null,
         colorFilter = colorFilter,
         modifier = Modifier
             .fillMaxSize()
             .graphicsLayer {
                 if (blurEffect != null) renderEffect = blurEffect
+                if (parallax?.available == true) {
+                    scaleX = WALLPAPER_PARALLAX_SCALE
+                    scaleY = WALLPAPER_PARALLAX_SCALE
+                    translationX = parallax.x * wallpaperParallaxTravelPx(size.width, density.density)
+                    translationY = parallax.y * wallpaperParallaxTravelPx(size.height, density.density)
+                } else {
+                    scaleX = 1f
+                    scaleY = 1f
+                    translationX = 0f
+                    translationY = 0f
+                }
             },
         contentScale = ContentScale.Crop,
     )

@@ -58,6 +58,8 @@ data class AppSettings(
     val customSeedColor: Int = -1,
     /** 壁纸总开关。 */
     val wallpaperEnabled: Boolean = false,
+    /** 静态壁纸动态视差（默认关闭；减少动态效果开启时暂停）。 */
+    val wallpaperParallaxEnabled: Boolean = false,
     /** 全局壁纸（SAF content:// URI，图片或视频；空=未设置）。 */
     val wallpaperUri: String = "",
     /** 各顶层页壁纸覆盖（空=继承全局）。 */
@@ -69,6 +71,12 @@ data class AppSettings(
     val wallpaperBlurDp: Int = 0,
     /** 壁纸氛围：浓郁 / 均衡 / 素净（控制壁纸消化管线强度）。 */
     val wallpaperAtmosphere: WallpaperAtmosphere = WallpaperAtmosphere.BALANCED,
+    /** 壁纸库（R3）：整表序列化后存 DataStore，见 WallpaperLibraryCodec。 */
+    val wallpaperLibraryEntries: List<com.otakup.niriko.data.wallpaper.WallpaperLibraryEntry> = emptyList(),
+    /** 壁纸每日自动轮换（WorkManager 周期任务，见 WallpaperRotationScheduler）。 */
+    val wallpaperRotationEnabled: Boolean = false,
+    /** 轮换只从收藏项里挑（没有收藏时保持现状）。 */
+    val wallpaperRotationFavoritesOnly: Boolean = false,
     /** 卡片液态玻璃档位：全开 / 仅已收藏 / 关闭（性能保护，默认全开）。 */
     val cardGlassLevel: CardGlassLevel = CardGlassLevel.FULL,
     /** 开屏动画（系统 SplashScreen + Compose 衔接动画）。 */
@@ -77,6 +85,34 @@ data class AppSettings(
     val activeThemePackId: String = "",
     /** 减少动态效果：跳过入场类动画（系统 animator 关闭时同样生效）。 */
     val reduceMotion: Boolean = false,
+    /**
+     * 详情页被隐藏的部件（F06）：逗号分隔的稳定 key，见 ui/subject/DetailSectionId。
+     *
+     * 存字符串而不是枚举列表：设置层不该依赖 UI 枚举，而且这类「集合」设置
+     * 用一串 key 最直观（解析、去重、忽略未知值都由 DetailLayoutPolicy 负责）。
+     */
+    val detailHiddenSections: String = "",
+    /**
+     * 详情页部件顺序（F06 第二步）：逗号分隔的稳定 key。
+     *
+     * 空串 = 默认顺序（改造前的源码顺序）；解析时忽略未知 key，并把没出现在串里的部件
+     * 按默认顺序追加到尾部（见 DetailLayoutPolicy.resolveOrder）。
+     */
+    val detailSectionOrder: String = "",
+    /**
+     * 书籍 / 漫画的半调网点（F18）。
+     *
+     * 默认开：§11.3 要求「按类型自动启用低强度覆盖」，因此默认值必须是 true，
+     * 否则这条功能对所有人都不存在；提供总开关即可独立关闭（§16 的「可独立关闭」）。
+     */
+    val halftoneEnabled: Boolean = true,
+    /**
+     * CRT 老电视模式（F08）。
+     *
+     * **默认关闭**（§16 的决策）：这是彩蛋类效果，不该替用户做主；开启后只对
+     * 「2000 年以前的动画详情页」播放约 4 秒，然后恢复静态。
+     */
+    val crtModeEnabled: Boolean = false,
     /** 玻璃/特效强度：默认 FULL（全效果），可降级为 REDUCED/OFF（阶段 P 性能优化）。 */
     val glassEffect: GlassEffectLevel = GlassEffectLevel.FULL,
     /** 自定义桌面图标模式："none"=默认 / "theme"=主题色生成 / "image"=用户上传图。 */

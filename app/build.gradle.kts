@@ -27,8 +27,8 @@ android {
         applicationId = "com.otakup.niriko"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -198,5 +198,15 @@ dependencies {
     testImplementation(libs.robolectric)
     // Room 迁移测试；同时带入 androidx.test.ext:junit（@RunWith(AndroidJUnit4) 的来源）
     testImplementation(libs.androidx.room.testing)
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ui-reference-plan-round3 · P2（R5）telephoto（Apache-2.0，Coil 2 变体）：ImageViewer 的子采样缩放。
+    // 探针已通过（`gradlew :app:dependencyInsight --dependency kotlin-stdlib`）：基线本身就是
+    // kotlin-stdlib 2.3.21 / JBC foundation 1.11.0（由 miuix-blur 0.9.0 与 calendar 2.10.1 带来），
+    // 本库不产生任何额外顶版。R4 的雷达图改为自绘 Canvas（compose-charts 已发布版本里没有雷达图），
+    // 故 compose-charts 不引入。
+    // ─────────────────────────────────────────────────────────────────────
+    implementation(libs.telephoto.zoomable)
+    implementation(libs.telephoto.zoomable.image.coil)
 }
 

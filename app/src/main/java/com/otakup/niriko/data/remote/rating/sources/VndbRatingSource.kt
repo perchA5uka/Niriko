@@ -10,6 +10,7 @@ import com.otakup.niriko.data.remote.rating.float
 import com.otakup.niriko.data.remote.rating.int
 import com.otakup.niriko.data.remote.rating.objects
 import com.otakup.niriko.data.remote.rating.arr
+import kotlinx.serialization.json.JsonObject
 
 /**
  * VNDB 评分（VN 界唯一权威库，读接口免鉴权）。
@@ -44,14 +45,18 @@ class VndbRatingSource : RatingSource {
             contentType = "application/json",
         ) ?: return null
         val item = json.arr("results")?.objects()?.firstOrNull() ?: return null
+        return mapRating(vndbId, item)
+    }
+
+    fun mapRating(vndbId: String, item: JsonObject): ExternalRating? {
         val rating = item.float("rating") ?: item.float("average") ?: return null
         if (rating <= 0f) return null
         return ExternalRating(
             sourceId = id,
             label = label,
-            score = ExternalRating.toTenPoint(rating, 10f),
+            score = ExternalRating.toTenPoint(rating, 100f),
             nativeScore = rating,
-            scoreMax = 10f,
+            scoreMax = 100f,
             voteCount = item.int("votecount"),
             sourceUrl = "https://vndb.org/$vndbId",
         )

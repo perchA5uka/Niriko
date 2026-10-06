@@ -9,7 +9,7 @@ import kotlin.math.roundToInt
  * B2（5a 落点 → B2b 提升）：EXPANDED 宽屏左侧竖向玻璃 dock 展开时占用的起始内边距
  * （计划书 §三 宿主落点：约 96dp，与 ui/bottombar/LiquidVerticalDock.kt 的宽度对齐）。
  *
- * 原为 MainActivity 的私有常量。B2b 接管 5a 留下的缺口（宽屏详情页仍走 top=0 的 boxPadding，
+ * 原为 MainActivity 的私有常量。B2b 接管 5a 留下的缺口（详情页只抵消顶部 inset，
  * 96dp 的 dock 内边距对详情页不生效，dock 会与内容重叠），详情页也要吃同一份内边距，
  * 因此提升到 ui/adaptive/ 共享，而不是在详情页复制一份。
  */

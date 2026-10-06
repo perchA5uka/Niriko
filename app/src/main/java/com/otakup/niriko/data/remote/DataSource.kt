@@ -181,7 +181,8 @@ data class PersonSubjectInfo(
     val imageUrl: String?,
 )
 
-/** 关联条目（前后传/版本/系列等）。 */
+/** 关联条目（前后传/版本/系列等）。B15：加 @Serializable 以便落进 subject_relation_cache。 */
+@kotlinx.serialization.Serializable
 data class SubjectRelationInfo(
     val subjectId: Long,
     val title: String,
@@ -205,7 +206,9 @@ data class CalendarDaySchedule(
     val subjects: List<SubjectEntity>,
 )
 
-/** 条目 infobox 条目（如 艺术家/发行商/发售日期等）。value 已序列化为可读文本。 */
+/** 条目 infobox 条目（如 艺术家/发行商/发售日期等）。value 已序列化为可读文本。
+ * B15：加 @Serializable 以便落进 subject_detail_cache（重启后不必重拉 infobox）。 */
+@kotlinx.serialization.Serializable
 data class InfoBoxEntry(
     val key: String,
     val value: String,

@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -18,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -28,6 +31,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
@@ -54,6 +58,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
+import kotlin.math.roundToInt
 
 /**
  * 竖向悬浮玻璃 dock（计划书 §三 B2 / 5a）：[LiquidBottomTabs] 的 90° 旋转版本。
@@ -75,6 +80,8 @@ fun LiquidVerticalDock(
     backdrop: Backdrop,
     tabsCount: Int,
     modifier: Modifier = Modifier,
+    /** 点按**已选中**的 tab（F11）：切页之外的第二条语义，由导航层决定回顶/刷新。 */
+    onTabReselected: (index: Int) -> Unit = {},
     content: @Composable ColumnScope.() -> Unit
 ) {
     val isLightTheme = !LocalDarkTheme.current
@@ -92,7 +99,7 @@ fun LiquidVerticalDock(
         val tabHeight = with(density) { (constraints.maxHeight.toFloat() - 8f.dp.toPx()) / tabsCount }
 
         val offsetAnimation = remember { Animatable(0f) }
-        val panelOffset by remember(density) {
+        val panelOffset by remember(density, constraints.maxHeight) {
             derivedStateOf {
                 val fraction = (offsetAnimation.value / constraints.maxHeight).fastCoerceIn(-1f, 1f)
                 with(density) {
@@ -104,7 +111,15 @@ fun LiquidVerticalDock(
         val animationScope = rememberCoroutineScope()
         var currentIndex by remember(selectedTabIndex) { mutableIntStateOf(selectedTabIndex()) }
         val dragTarget = remember(selectedTabIndex) { mutableFloatStateOf(selectedTabIndex().toFloat()) }
-        val dampedDragAnimation = remember(animationScope) {
+        val latestSelected by rememberUpdatedState(selectedTabIndex)
+        val latestSelect by rememberUpdatedState(onTabSelected)
+        val latestReselect by rememberUpdatedState(onTabReselected)
+        val touchSlop = LocalViewConfiguration.current.touchSlop
+        val contentMarginPx = with(density) { 4.dp.toPx() }
+        val touchState = remember(tabHeight, tabsCount) {
+            DockTouchState(tabsCount, tabHeight)
+        }
+        val dampedDragAnimation = remember(animationScope, tabHeight, tabsCount) {
             DampedDragAnimation(
                 animationScope = animationScope,
                 initialValue = selectedTabIndex().toFloat(),
@@ -113,52 +128,58 @@ fun LiquidVerticalDock(
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
                 onDragStarted = { position ->
-                    // 竖向版：改看 y 轴，且无 RTL 翻转
-                    with(density) {
-                        val contentHeight = constraints.maxHeight.toFloat() - 8f.dp.toPx()
-                        val yInContent = position.y.fastCoerceIn(0f, contentHeight)
-                        dragTarget.floatValue = (yInContent / tabHeight)
-                            .fastCoerceIn(0f, (tabsCount - 1).toFloat())
-                    }
+                    touchState.start(position.y - contentMarginPx)
+                    dragTarget.floatValue = touchState.index.toFloat()
                     updateValue(dragTarget.floatValue)
                 },
                 onDragStopped = {
-                    val targetIndex = dragTarget.floatValue.toInt().fastCoerceIn(0, tabsCount - 1)
+                    val targetIndex = touchState.index
                     currentIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
+                    // 用户选择在这里直接上报 Pager，**不能**靠下面 currentIndex 的快照回流：
+                    // Pager 滚动途中 currentPage 会依次经过中间页，那条回路会把中间页当成
+                    // 用户选择而反过来打断滚动（与横向胶囊底栏同一个坑）。
+                    // F11：与横向胶囊底栏同一语义 —— 同一 tab 上再次点按走「重选」通道。
+                    if (targetIndex != latestSelected()) {
+                        latestSelect(targetIndex)
+                    } else if (!touchState.hasDragged(touchSlop)) {
+                        latestReselect(targetIndex)
+                    }
                     animationScope.launch {
                         offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
                 },
                 onDrag = { _, dragAmount ->
-                    if (dragAmount != Offset.Zero) {
-                        dragTarget.floatValue = (dragTarget.floatValue + dragAmount.y / tabHeight)
-                            .fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                    if (dragAmount.y != 0f) {
+                        touchState.move(dragAmount.y)
+                        dragTarget.floatValue = touchState.indicatorValue
                         updateValue(dragTarget.floatValue)
                         animationScope.launch {
                             offsetAnimation.snapTo(offsetAnimation.value + dragAmount.y)
                         }
                     }
+                },
+                onDragCancelled = {
+                    dragTarget.floatValue = latestSelected().toFloat()
+                    animateToValue(dragTarget.floatValue)
+                    animationScope.launch { offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
                 }
             )
         }
-        LaunchedEffect(selectedTabIndex) {
-            snapshotFlow { selectedTabIndex() }
-                .collectLatest { index ->
-                    currentIndex = index
-                    dragTarget.floatValue = index.toFloat()
-                }
-        }
+        // 外部选中态单向流进指示器：只更新选中项与手势基准，绝不回调 onTabSelected
+        //（回调点唯一，见 onDragStopped）。
         LaunchedEffect(dampedDragAnimation) {
-            snapshotFlow { currentIndex }
-                .drop(1)
+            snapshotFlow { latestSelected() }
                 .collectLatest { index ->
-                    dampedDragAnimation.animateToValue(index.toFloat())
-                    onTabSelected(index)
+                    if (!dampedDragAnimation.gestureActive) {
+                        currentIndex = index
+                        dragTarget.floatValue = index.toFloat()
+                        dampedDragAnimation.animateToValue(index.toFloat())
+                    }
                 }
         }
 
-        val interactiveHighlight = remember(animationScope) {
+        val interactiveHighlight = remember(animationScope, tabHeight) {
             InteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, _ ->
@@ -193,13 +214,12 @@ fun LiquidVerticalDock(
                 .then(interactiveHighlight.modifier)
                 .width(64f.dp)
                 .fillMaxHeight()
-                .padding(4f.dp)
-                .then(interactiveHighlight.gestureModifier)
-                .then(dampedDragAnimation.modifier),
+                .padding(4f.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             content = content
         )
         // 第 2 层：给选中片做折射的 tabs 层（同一个 content 渲染第二遍，alpha 0）
+        CompositionLocalProvider(LocalLiquidBottomTabInteractive provides false, LocalLiquidBottomTabScale provides { lerp(1f, 1.2f, dampedDragAnimation.pressProgress) }) {
         Column(
             Modifier
                 .clearAndSetSemantics {}
@@ -228,6 +248,7 @@ fun LiquidVerticalDock(
             horizontalAlignment = Alignment.CenterHorizontally,
             content = content
         )
+        }
         // 第 3 层：跟手选中的玻璃片（按下时色散 + 高光 + 阴影）
         Box(
             Modifier
@@ -275,7 +296,15 @@ fun LiquidVerticalDock(
                     }
                 )
                 .width(56f.dp)
-                .fillMaxHeight(1f / tabsCount)
+                .height(with(density) { tabHeight.toDp() })
         )
+        // This fixed input plane stays above both exported tabs and the moving glass.
+        Box(
+            Modifier.matchParentSize()
+                .clearAndSetSemantics {}
+                .then(interactiveHighlight.gestureModifier)
+                .then(dampedDragAnimation.modifier)
+        )
+
     }
 }

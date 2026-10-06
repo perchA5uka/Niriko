@@ -291,4 +291,41 @@ class ExternalMatchServiceTest {
         assertTrue(service.searchByQuery("does-not-exist", "x", subject()).isEmpty())
         assertNull(service.byId("does-not-exist", "1", subject()))
     }
+
+    // ==================== 真实数据回归（B09 的线上样本） ====================
+
+    @Test
+    fun `真实样本_魔法少女的魔女审判_按日文原名精确命中`() {
+        // 线上真实数据：
+        //   Bangumi 488392 name =「魔法少女ノ魔女裁判」（片假名 ノ），name_cn =「魔法少女的魔女审判」
+        //   VNDB 主标题同为「魔法少女ノ魔女裁判」（vndb.org/v?q= 可搜到同名条目）
+        // 这条测试锁的是「同一个标题集里至少有一条能精确命中」这个不变量，
+        // 且用的是 Bangumi 真实的片假名写法（改造前的旧样本写成了平假名 の）。
+        val realSubject = SubjectEntity(
+            subjectId = 488392L,
+            title = "魔法少女ノ魔女裁判",
+            titleCN = "魔法少女的魔女审判",
+            type = SubjectType.GAME,
+            airDate = "2025-07-17",
+        )
+        val queries = MatchQueryBuilder.build(realSubject)
+        assertTrue("中文名必须在查询串里", queries.contains("魔法少女的魔女审判"))
+        assertTrue("日文原名必须在查询串里", queries.contains("魔法少女ノ魔女裁判"))
+
+        val scored = MatchScorer.score(
+            bangumiTitles = queries,
+            candidate = RawCandidate(
+                externalId = "v00000",
+                titles = listOf("魔法少女ノ魔女裁判", "Magical Girl no Majo Saiban"),
+                year = 2025,
+            ),
+            bangumiYear = 2025,
+        )
+
+        assertTrue(
+            "日文原名一字不差时必须过阈值，实际 " + scored.score + "：" + scored.reasons,
+            scored.score >= MatchScorer.HIGH_CONFIDENCE,
+        )
+        assertEquals("魔法少女ノ魔女裁判", scored.matchedCandidateTitle)
+    }
 }

@@ -5,6 +5,8 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,8 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -33,6 +37,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
+import com.otakup.niriko.util.RailCardPolicy
 import android.graphics.Bitmap
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.CharacterInfo
@@ -65,6 +72,7 @@ fun CharacterSection(
         )
         Spacer(Modifier.height(8.dp))
         LazyRow(
+            state = rememberDetailLazyRailState("characters"),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -98,16 +106,22 @@ private fun CharacterCard(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember(character.id) { MutableInteractionSource() }
     GlassSectionCard(
         backdrop = glassBackdrop,
         isScrolling = isScrolling,
-        modifier = modifier.width(100.dp),
+        modifier = modifier.width(100.dp).height(staffRailHeight(labelLines = 2, extraGapDp = 2f)),
         shape = RoundedCornerShape(20.dp),
         contentPadding = 8.dp,
     ) {
     Box(
         modifier = Modifier
-            .clickable(onClick = onClick),
+            .pressTilt(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -132,29 +146,28 @@ private fun CharacterCard(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
-            // 角色类型
-            character.roleName?.let { role ->
-                Text(
-                    text = role,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            // 声优（点击跳转人物详情）
-            character.actors.firstOrNull()?.let { actor ->
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = "CV: ${actor.nameCn ?: actor.name}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.clickable { onActorClick(actor.id) },
-                )
-            }
+            // B03：角色类型与声优**都无条件占一行**（没有数据时渲染空文本 + minLines = 1）。
+            // 之前两行各自被 if / let 包着：有角色名或声优的卡更高 → 横滑时整条轨道高度变化。
+            Text(
+                text = character.roleName.orEmpty(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            val actor = character.actors.firstOrNull()
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = actor?.let { "CV: ${it.nameCn ?: it.name}" }.orEmpty(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = if (actor != null) Modifier.clickable { onActorClick(actor.id) } else Modifier,
+            )
         }
     }
     }
@@ -189,6 +202,7 @@ fun StaffSection(
         )
         Spacer(Modifier.height(8.dp))
         LazyRow(
+            state = rememberDetailLazyRailState("staff"),
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -231,16 +245,22 @@ private fun StaffCard(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember(person.id) { MutableInteractionSource() }
     GlassSectionCard(
         backdrop = glassBackdrop,
         isScrolling = isScrolling,
-        modifier = modifier.width(100.dp),
+        modifier = modifier.width(100.dp).height(staffRailHeight()),
         shape = RoundedCornerShape(20.dp),
         contentPadding = 8.dp,
     ) {
     Box(
         modifier = Modifier
-            .clickable(onClick = onClick),
+            .pressTilt(interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onClick = onClick,
+            ),
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -264,20 +284,27 @@ private fun StaffCard(
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
             )
-            // 角色名（监督/原画/音乐等）
-            person.roleName?.let { role ->
-                Text(
-                    text = role,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                )
-            }
+            // B03：角色名（监督/原画/音乐等）**无条件占一行**（空值渲染空文本 + minLines = 1）
+            Text(
+                text = person.roleName.orEmpty(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
     }
     }
+}
+
+@Composable
+private fun staffRailHeight(labelLines: Int = 1, extraGapDp: Float = 0f): androidx.compose.ui.unit.Dp {
+    val lineHeight = MaterialTheme.typography.labelSmall.lineHeight
+        .takeIf { it.value.isFinite() } ?: 16.sp
+    val lineHeightDp = with(LocalDensity.current) { lineHeight.toDp().value }
+    return RailCardPolicy.staffCardHeightDp(lineHeightDp, labelLines, extraGapDp).dp
 }
 
 /** "查看全部 N 人"卡片。 */
@@ -291,7 +318,7 @@ private fun ViewAllStaffCard(
     GlassSectionCard(
         backdrop = glassBackdrop,
         isScrolling = isScrolling,
-        modifier = Modifier.width(100.dp),
+        modifier = Modifier.width(100.dp).height(staffRailHeight()),
         shape = MaterialTheme.shapes.medium,
         contentPadding = 8.dp,
     ) {
@@ -301,7 +328,7 @@ private fun ViewAllStaffCard(
                 verticalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp)
+                    .height(staffRailHeight() - 16.dp)
                     .padding(4.dp),
             ) {
                 Text(
@@ -333,11 +360,15 @@ private fun CharacterAvatar(
     sharedTransitionScope: SharedTransitionScope?,
     animatedVisibilityScope: AnimatedVisibilityScope?,
 ) {
+    androidx.compose.runtime.SideEffect {
+        com.otakup.niriko.navigation.AvatarNavigationSeed.remember(sharedElementKey, contentDescription.orEmpty(), imageUrl)
+    }
     val sharedModifier = if (sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
             Modifier.sharedElement(
                 sharedContentState = rememberSharedContentState(sharedElementKey),
                 animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
             )
         }
     } else {

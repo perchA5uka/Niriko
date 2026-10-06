@@ -115,6 +115,30 @@ class SettingsViewModel(
         viewModelScope.launch { dataStore.setCustomSeedColor(argb) }
     }
 
+    fun setWallpaperParallaxEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setWallpaperParallaxEnabled(enabled) }
+    }
+
+    /** F06：写入「详情页隐藏的部件」（已编码的 key 串；编码规则在 ui 层的 DetailLayoutPolicy）。 */
+    fun setDetailHiddenSections(encoded: String) {
+        viewModelScope.launch { dataStore.setDetailHiddenSections(encoded) }
+    }
+
+    /** F06 第二步：写入「详情页部件顺序」（已编码的 key 串；空串 = 默认顺序）。 */
+    fun setDetailSectionOrder(encoded: String) {
+        viewModelScope.launch { dataStore.setDetailSectionOrder(encoded) }
+    }
+
+    /** F18：书籍 / 漫画网点总开关。 */
+    fun setHalftoneEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setHalftoneEnabled(enabled) }
+    }
+
+    /** F08：CRT 老电视模式开关。 */
+    fun setCrtModeEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setCrtModeEnabled(enabled) }
+    }
+
     fun setWallpaperEnabled(enabled: Boolean) {
         viewModelScope.launch { dataStore.setWallpaperEnabled(enabled) }
     }
@@ -136,6 +160,21 @@ class SettingsViewModel(
     /** 设置壁纸氛围（浓郁 / 均衡 / 素净）。 */
     fun setWallpaperAtmosphere(level: com.otakup.niriko.data.settings.WallpaperAtmosphere) {
         viewModelScope.launch { dataStore.setWallpaperAtmosphere(level) }
+    }
+
+    /** 设置壁纸库整表（R3 壁纸库）。 */
+    fun setWallpaperLibraryEntries(entries: List<com.otakup.niriko.data.wallpaper.WallpaperLibraryEntry>) {
+        viewModelScope.launch { dataStore.setWallpaperLibraryEntries(entries) }
+    }
+
+    /** 设置壁纸每日轮换开关。 */
+    fun setWallpaperRotationEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setWallpaperRotationEnabled(enabled) }
+    }
+
+    /** 设置轮换是否只取收藏项。 */
+    fun setWallpaperRotationFavoritesOnly(enabled: Boolean) {
+        viewModelScope.launch { dataStore.setWallpaperRotationFavoritesOnly(enabled) }
     }
 
     /** 设置卡片液态玻璃档位（全开 / 仅已收藏 / 关闭）。 */

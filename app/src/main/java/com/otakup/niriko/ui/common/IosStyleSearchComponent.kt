@@ -63,7 +63,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -75,7 +74,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
-import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.components.searchGlassSurface
 import com.otakup.niriko.ui.theme.NirikoTheme
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -118,6 +117,11 @@ fun IosStyleSearchComponent(
     onSearchSubmit: () -> Unit,
     onGestureLockChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
+    placeholder: String = "搜索作品、人物…",
+    tools: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null,
+    filters: (@Composable () -> Unit)? = null,
+    filterTitle: String = "类型",
+    expandedHeight: Dp = 200.dp,
 ) {
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
@@ -131,13 +135,11 @@ fun IosStyleSearchComponent(
 
     // ===== 尺寸常量（dp，与原型一致） =====
     val anchorDp = 56.dp            // COLLAPSED 表面/锚点尺寸
-    val menuH = 200.dp              // 菜单/沉浸展开高度
+    val menuH = expandedHeight              // 菜单/沉浸展开高度
     val collapsedH = 68.dp          // 滚动折叠后高度（仅留搜索框）
     val colPad = 8.dp
     val trackH = 56.dp
     val anchorSmall = 44.dp         // 菜单/沉浸态锚点（滑块）尺寸
-
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
     // ===== 展开卡片尺寸（仅在 phase 切换时动画，非手势帧 → 无卡顿） =====
     val isCollapsed = phase == SearchPhase.COLLAPSED
@@ -262,9 +264,8 @@ fun IosStyleSearchComponent(
                     // 仅保留内容淡入；尺寸由 requiredWidth/Height + animateDpAsState 驱动
                     alpha = if (isCollapsed) 1f else reveal.coerceIn(0f, 1f)
                 }
-                // 液态玻璃表面：appleGlassCard（真折射/静态玻璃自动降级）。
-                // 额外在内容层下方垫一层近不透明 surface，保证展开菜单叠在滚动列表上仍可读。
-                .appleGlassCard(shape = RoundedCornerShape(28.dp))
+                // Dock sampling/effects; no opaque backing hiding the refracted page.
+                .searchGlassSurface(shape = RoundedCornerShape(28.dp))
                 // 手势挂在不移动的卡片容器上（非锚点）：position 相对卡片稳定，dx 即手指真实位移，
                 // 1:1 跟手（修复"锚点参考系漂移 → 半速跟手/50% 封顶"的根因）。
                 // down 时校验手指落在右侧锚点区域才处理拖拽/短按，其余区域放行给模式/类型点击。
@@ -274,6 +275,8 @@ fun IosStyleSearchComponent(
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 // 锚点命中区：COLLAPSED 锚点填满整卡(56dp)；MENU/DRAGGING 为右侧 anchorSmall
+                                if (vm.value.phase != SearchPhase.COLLAPSED &&
+                                    down.position.y > with(density) { (colPad + trackH).toPx() }) return@awaitEachGesture
                                 val anchorZone = if (vm.value.phase == SearchPhase.COLLAPSED) size.width.toFloat() else anchorSmallPx
                                 if (down.position.x < size.width.toFloat() - anchorZone) return@awaitEachGesture
                                 lockChanged.value(true)
@@ -351,13 +354,6 @@ fun IosStyleSearchComponent(
                     } else Modifier
                 ),
         ) {
-            // 垫层：展开菜单压在滚动列表上时保证可读性（玻璃之上、内容之下）
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
-            ) {}
-
             // ===== 内容列（COLLAPSED 时整体淡出） =====
             // 自顶向下排布：Arrangement.Top 使第一行紧贴卡片顶部，卡片从 56dp 向下生长时
             // 第一行位置零移动（"从搜索按钮向下吐出"）；行 2/3/4 用固定高度+padding，不均分
@@ -385,7 +381,7 @@ fun IosStyleSearchComponent(
                             .fillMaxSize()
                             .padding(vertical = 4.dp)
                             .graphicsLayer { alpha = fakeAlpha }
-                            .appleGlassCard(shape = RoundedCornerShape(24.dp)),
+                            .searchGlassSurface(shape = RoundedCornerShape(24.dp)),
                     )
                     // 假输入框占位文字（仅非沉浸态）：提示左划解锁
                     if (!isImmersive) {
@@ -463,7 +459,7 @@ fun IosStyleSearchComponent(
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     if (query.isEmpty()) {
                                         Text(
-                                            text = "搜索作品、人物…",
+                                            text = placeholder,
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
@@ -484,18 +480,21 @@ fun IosStyleSearchComponent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Chip(
-                        "作品", viewModel.mode == SearchMode.WORKS,
-                        onClick = { onModeSelected(SearchMode.WORKS) },
-                    )
-                    Chip(
-                        "人物", viewModel.mode == SearchMode.CHARACTERS,
-                        onClick = { onModeSelected(SearchMode.CHARACTERS) },
-                    )
+                    if (filters == null) {
+                        Chip(
+                            "作品", viewModel.mode == SearchMode.WORKS,
+                            onClick = { onModeSelected(SearchMode.WORKS) },
+                        )
+                        Chip(
+                            "人物", viewModel.mode == SearchMode.CHARACTERS,
+                            onClick = { onModeSelected(SearchMode.CHARACTERS) },
+                        )
+                    }
+                    if (tools != null) tools()
                 }
                 // ---- 行 3：类型标题 ----
                 Text(
-                    text = "类型",
+                    text = filterTitle,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -524,7 +523,9 @@ fun IosStyleSearchComponent(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    SELECTABLE_CONTENT_TYPES.forEach { type ->
+                    if (filters != null) {
+                        filters()
+                    } else SELECTABLE_CONTENT_TYPES.forEach { type ->
                         TypeCell(
                             label = type.label,
                             type = type,
@@ -557,7 +558,7 @@ fun IosStyleSearchComponent(
                     // 凸起玻璃按钮：MENU/DRAGGING 态与 fake-track 拉出层级差
                     .then(
                         if (!isCollapsed && !isImmersive) {
-                            Modifier.appleGlassCard(shape = RoundedCornerShape(24.dp))
+                            Modifier.searchGlassSurface(shape = RoundedCornerShape(24.dp))
                         } else {
                             Modifier.clip(RoundedCornerShape(if (isCollapsed) 18.dp else 24.dp))
                         }
@@ -587,7 +588,7 @@ fun IosStyleSearchComponent(
                 Box(
                     modifier = Modifier
                         .size(anchorSmall)
-                        .appleGlassCard(shape = RoundedCornerShape(anchorSmall / 2))
+                        .searchGlassSurface(shape = RoundedCornerShape(anchorSmall / 2))
                         .clickable {
                             focusManager.clearFocus()
                             // 清空已输入内容（同步 SubjectSearchViewModel 与 SearchViewModel 镜像），

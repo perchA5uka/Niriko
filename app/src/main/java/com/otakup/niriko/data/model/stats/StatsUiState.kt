@@ -6,6 +6,19 @@ import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
+
+enum class BroadcastMonthStatus { LOADING, SUCCESS, EMPTY, ERROR }
+
+/** Success time belongs to this month and only advances after both sources succeed. */
+data class BroadcastMonthState(
+    val key: String = YearMonth.now().toString(),
+    val status: BroadcastMonthStatus = BroadcastMonthStatus.LOADING,
+    val lastSuccessAt: Long = 0L,
+    val error: String? = null,
+    val isPartial: Boolean = false,
+    val eventCount: Int = 0,
+)
 
 /** 统计页 UI 快照。 */
 data class StatsUiState(
@@ -36,6 +49,7 @@ data class StatsUiState(
     val calendarMode: CalendarMode = CalendarMode.PERSONAL,
     val broadcastSchedule: Map<DayOfWeek, List<AiringSubject>> = emptyMap(),
     val broadcastError: String? = null,
+    val selectedBroadcastMonth: BroadcastMonthState = BroadcastMonthState(),
     val isLoading: Boolean = true,
     val timelineEvents: List<TimelineEvent> = emptyList(),
     /** 照片墙（阶段 E）。 */

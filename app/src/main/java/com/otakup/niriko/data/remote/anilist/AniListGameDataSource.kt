@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import com.otakup.niriko.util.RichTextParser
 
 private const val TAG = "AniListRepo"
 
@@ -190,7 +191,7 @@ class AniListGameDataSource(
             coverUrl = cover?.get("large")?.jsonPrimitive?.content
                 ?: cover?.get("extraLarge")?.jsonPrimitive?.content,
             summary = this["description"]?.jsonPrimitive?.content
-                ?.replace(Regex("<[^>]*>"), ""), // 剥 HTML 标签
+                ?.let { RichTextParser.toPlainText(it) },
             platforms = listOfNotNull(
                 this["format"]?.jsonPrimitive?.content,
             ),

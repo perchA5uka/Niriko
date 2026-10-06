@@ -16,6 +16,7 @@ import com.otakup.niriko.data.remote.bangumi.dto.mapSubjectType
 import com.otakup.niriko.data.remote.bangumi.dto.SearchFilterDto
 import com.otakup.niriko.data.remote.bangumi.dto.SearchRequestDto
 import com.otakup.niriko.data.remote.bangumi.dto.toEntity
+import com.otakup.niriko.data.calculator.PagePager
 import com.otakup.niriko.data.remote.mapper.SubjectMapper
 import com.otakup.niriko.util.resolveCoverUrl
 import kotlinx.coroutines.CancellationException
@@ -23,6 +24,13 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.time.DayOfWeek
 import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * 翻页时单页请求条数（Bangumi 单页上限 100）。
+ *
+ * 存在的意义见 [PagePager]：以前这些接口只取一页就返回，条目多的月份/窗口会被截断。
+ */
+private const val PAGE_SIZE = 100
 
 class BangumiDataSource(
     private val apiService: BangumiApiService,
@@ -278,14 +286,26 @@ class BangumiDataSource(
         year: Int,
         month: Int,
     ): List<SubjectEntity> {
-        val response = apiService.getSubjectsByMonth(
-            type = type,
-            sort = "date",
-            year = year,
-            month = month,
-            limit = 100,
-        )
-        return mapper.fromSearchResponse(response)
+        // B10：以前只取一页（limit = 100）就返回。月度窗口里条目数超过一页时，
+        // 剩下的全被丢掉，翻到历史月份就会看到一片空白。现在按 offset 翻到 total / 安全上限为止。
+        val collected = ArrayList<SubjectEntity>()
+        var offset = 0
+        while (true) {
+            val response = apiService.getSubjectsByMonth(
+                type = type,
+                sort = "date",
+                year = year,
+                month = month,
+                limit = PAGE_SIZE,
+                offset = offset,
+            )
+            val page = mapper.fromSearchResponse(response)
+            collected += page
+            val next = PagePager.nextOffset(loaded = collected.size, total = response.total)
+            if (page.isEmpty() || next == null) break
+            offset = next
+        }
+        return collected
     }
 
     override suspend fun getSubjectsInDateRange(
@@ -295,14 +315,32 @@ class BangumiDataSource(
     ): List<SubjectEntity> {
         val request = SearchRequestDto(
             keyword = "",
-            sort = "date",
+            // POST search accepts rank/match/score/heat, not the GET listing sort=date.
+            sort = "rank",
             filter = SearchFilterDto(
                 type = listOf(type),
                 airDate = listOf(">=$startDate", "<$endDate"),
             ),
         )
-        val response = apiService.searchSubjectsByDateRange(request, limit = 100)
-        return mapper.fromSearchResponse(response)
+        // B10：区间接口同样只有一页。ensureSeasonalDataForMonth 传进来的是
+        // 「目标月 −6 个月 ~ 目标月末」的 6 个月开播窗口，条目数量级是几百，
+        // 单页 100 条只够覆盖窗口最前面一小段，目标月本身被整段截断 —— 这正是
+        // 「翻到过去月份看不到任何放送」的直接原因。
+        val collected = ArrayList<SubjectEntity>()
+        var offset = 0
+        while (true) {
+            val response = apiService.searchSubjectsByDateRange(
+                request = request,
+                limit = PAGE_SIZE,
+                offset = offset,
+            )
+            val page = mapper.fromSearchResponse(response)
+            collected += page
+            val next = PagePager.nextOffset(loaded = collected.size, total = response.total)
+            if (page.isEmpty() || next == null) break
+            offset = next
+        }
+        return collected
     }
 
     override suspend fun getRankingByType(type: Int, offset: Int, limit: Int): List<SubjectEntity> {

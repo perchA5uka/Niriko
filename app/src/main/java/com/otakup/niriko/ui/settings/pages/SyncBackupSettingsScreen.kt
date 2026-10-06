@@ -218,7 +218,7 @@ fun SyncBackupSettingsContent(
                     modifier = Modifier.weight(1f),
                     enabled = !viewModel.isSyncing.value,
                 ) {
-                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                     else Text("上传")
                 }
                 Spacer(Modifier.width(8.dp))
@@ -227,10 +227,20 @@ fun SyncBackupSettingsContent(
                     modifier = Modifier.weight(1f),
                     enabled = !viewModel.isSyncing.value,
                 ) {
-                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                     else Text("下载")
                 }
             }
+            // F09 的同步边界（§10.2 第 6 条）：分区**不随 WebDAV 同步**，只随 JSON 备份迁移。
+            // 这里必须写出来 —— 用户换设备时如果没有这句话，会以为分区已经同步过去了，
+            // 而实际上它们在另一端根本不存在（「不得静默丢失」）。
+            Text(
+                text = "作品库分区目前只随「数据备份」的 JSON 一起迁移，不随 WebDAV 同步；" +
+                    "换设备后请在另一台设备导入备份来恢复分区。",
+                style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+            )
         }
 
         // ===== 备份 =====

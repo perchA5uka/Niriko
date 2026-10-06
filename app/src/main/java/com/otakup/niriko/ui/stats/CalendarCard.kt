@@ -7,6 +7,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -71,9 +76,12 @@ import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.ui.theme.rememberChartTypeColors
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
 import com.otakup.niriko.data.model.stats.CalendarMode
+import com.otakup.niriko.data.model.stats.BroadcastMonthState
+import com.otakup.niriko.data.model.stats.BroadcastMonthStatus
 import com.otakup.niriko.ui.components.appleGlassCard
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import kotlinx.datetime.DayOfWeek as KDayOfWeek
 import kotlinx.datetime.LocalDate as KLocalDate
 import kotlinx.datetime.YearMonth as KYearMonth
@@ -119,6 +127,7 @@ fun CalendarCard(
     onRefreshBroadcast: (() -> Unit)? = null,
     /** 放送日历上次成功刷新时间（0 = 从未）。 */
     broadcastLastUpdatedAt: Long = 0L,
+    broadcastMonthState: BroadcastMonthState? = null,
     /**
      * 顶级页 Pager 手势锁。非 null 时，手指落在日历上即锁定 Pager，
      * 避免日历横向翻页与顶级页左右滑动抢手势（R2）。
@@ -142,6 +151,13 @@ fun CalendarCard(
                 anchorDate = anchorDate,
                 expanded = expanded,
                 onSwitchMonth = onSwitchMonth,
+            )
+            // 日期条（R9）：以今天为中心的固定 31 天横向窗口，一键跳到目标日
+            CalendarDateStrip(
+                anchorDate = anchorDate,
+                dayEvents = dayEvents,
+                gestureLock = gestureLock,
+                onPickDate = onAnchorDateChange,
             )
             // 星期表头：周 / 月两种视图共用，保证列对齐始终一致
             WeekdayHeader()
@@ -176,11 +192,120 @@ fun CalendarCard(
             CalendarLegend(calendarMode = calendarMode)
 
             // 错误提示 / 陈旧度 + 刷新
-            if (broadcastError != null || broadcastLastUpdatedAt > 0L) {
+            if (calendarMode != CalendarMode.PERSONAL) {
                 BroadcastStatusHint(
-                    message = broadcastError,
-                    lastUpdatedAt = broadcastLastUpdatedAt,
+                    message = broadcastError ?: broadcastMonthState?.let(::broadcastMonthMessage),
+                    lastUpdatedAt = broadcastMonthState?.lastSuccessAt ?: broadcastLastUpdatedAt,
                     onRefresh = onRefreshBroadcast,
+                )
+            }
+        }
+    }
+}
+
+// ==================== 日期条（R9：DateSelector 形态，自研实现） ====================
+
+/** 日期条窗口半径（天）：以今天为中心固定展示 31 天。 */
+internal const val DATE_STRIP_RADIUS = 15
+
+/** 以 [center] 为中心、半径 [radius] 的日期列表（升序，共 2 × radius + 1 天）。 */
+internal fun dateStripDates(center: LocalDate, radius: Int = DATE_STRIP_RADIUS): List<LocalDate> =
+    (-radius..radius).map { center.plusDays(it.toLong()) }
+
+/**
+ * 日期条窗口的中心：默认锚定在 [today]（点选近处日期时整条不移动，不会在手指下平移），
+ * 只有跳到 [today] 窗口之外的日期时才以该日期为中心重新开窗。
+ */
+internal fun dateStripCenter(
+    today: LocalDate,
+    anchorDate: LocalDate,
+    radius: Int = DATE_STRIP_RADIUS,
+): LocalDate = if (kotlin.math.abs(ChronoUnit.DAYS.between(today, anchorDate)) <= radius.toLong()) {
+    today
+} else {
+    anchorDate
+}
+
+/** 周日为一周第一天的星期索引（0 = 周日 … 6 = 周六）。 */
+internal fun weekdayIndexSunday0(date: LocalDate): Int = date.dayOfWeek.value % 7
+
+/**
+ * 横向日期条：31 天窗口，选中日高亮、今天淡色底、有事件的天带小圆点。
+ * 手势：套 [calendarGestureLock]，避免与日历网格 / 顶级 Pager 抢横向拖动。
+ */
+@Composable
+private fun CalendarDateStrip(
+    anchorDate: LocalDate,
+    dayEvents: Map<LocalDate, CalendarDayEvents>,
+    gestureLock: MutableState<Boolean>?,
+    onPickDate: (LocalDate) -> Unit,
+) {
+    val today = remember { LocalDate.now() }
+    val dates = remember(today, anchorDate) { dateStripDates(dateStripCenter(today, anchorDate)) }
+    val listState = rememberLazyListState()
+    val selectedIndex = dates.indexOf(anchorDate)
+
+    // 选中项回到可见区（左移 3 项，保留前文上下文）
+    LaunchedEffect(dates, selectedIndex) {
+        if (selectedIndex >= 0) listState.animateScrollToItem((selectedIndex - 3).coerceAtLeast(0))
+    }
+
+    LazyRow(
+        state = listState,
+        modifier = Modifier.fillMaxWidth().calendarGestureLock(gestureLock),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
+    ) {
+        itemsIndexed(dates, key = { _, date -> date.toString() }) { _, date ->
+            val selected = date == anchorDate
+            val isToday = date == today
+            val weekday = weekdayIndexSunday0(date)
+            Column(
+                modifier = Modifier
+                    .width(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        when {
+                            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                            isToday -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f)
+                            else -> Color.Transparent
+                        },
+                    )
+                    .clickable { onPickDate(date) }
+                    .padding(vertical = 5.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = weekdayLabels[weekday],
+                    style = MaterialTheme.typography.labelSmall,
+                    color = when {
+                        selected -> MaterialTheme.colorScheme.primary
+                        weekday == 0 || weekday == 6 -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                Text(
+                    text = date.dayOfMonth.toString(),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = if (selected || isToday) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 2.dp)
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (dayEvents[date]?.hasEvents == true) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                Color.Transparent
+                            },
+                        ),
                 )
             }
         }
@@ -286,6 +411,13 @@ private fun CalendarLegend(calendarMode: CalendarMode) {
             }
         }
     }
+}
+
+internal fun broadcastMonthMessage(state: BroadcastMonthState): String = when (state.status) {
+    BroadcastMonthStatus.LOADING -> "${state.key} 放送信息加载中"
+    BroadcastMonthStatus.SUCCESS -> "${state.key} 放送信息已更新"
+    BroadcastMonthStatus.EMPTY -> "${state.key} 暂无放送事件"
+    BroadcastMonthStatus.ERROR -> state.error ?: "${state.key} 放送信息加载失败，请重试"
 }
 
 /**
@@ -660,7 +792,7 @@ private fun CalendarDayCell(
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = if (hasEvents) 10.sp else 9.sp,
                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
-                    color = if (hasEvents) Color.White else MaterialTheme.colorScheme.onSurface,
+                    color = if (hasEvents && displayCoverUrl != null) Color.White else MaterialTheme.colorScheme.onSurface,
                 )
             }
             if (hasEvents) {

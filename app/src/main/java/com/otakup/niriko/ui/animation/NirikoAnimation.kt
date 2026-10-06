@@ -76,21 +76,24 @@ fun countTween() = tween<Float>(durationMillis = AnimDurationLong, easing = Anim
 /**
  * 页面进入过渡：淡入 + 从右侧 1/4 屏宽滑入。
  * 用于详情页、搜索页等二级页面。
+ * [specs] 由调用点从 MaterialTheme.motionScheme 取出（P0-B 动效统一）。
  */
-fun enterFromRight(): EnterTransition = fadeIn(animationSpec = tween(AnimDurationNormal)) +
-    slideInHorizontally(
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
-        initialOffsetX = { it / 4 },
-    )
+fun enterFromRight(specs: NirikoMotionSpecs): EnterTransition =
+    fadeIn(animationSpec = specs.effectsDefault()) +
+        slideInHorizontally(
+            animationSpec = specs.spatialDefault(),
+            initialOffsetX = { it / 4 },
+        )
 
 /**
  * 页面退出过渡：淡出 + 向右侧滑出。
  */
-fun exitToRight(): ExitTransition = fadeOut(animationSpec = tween(AnimDurationNormal)) +
-    slideOutHorizontally(
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
-        targetOffsetX = { it / 4 },
-    )
+fun exitToRight(specs: NirikoMotionSpecs): ExitTransition =
+    fadeOut(animationSpec = specs.effectsDefault()) +
+        slideOutHorizontally(
+            animationSpec = specs.spatialDefault(),
+            targetOffsetX = { it / 4 },
+        )
 
 /**
  * 底部 Tab 切换过渡：仅淡入淡出，无滑动。
@@ -100,21 +103,32 @@ val tabFadeOut: ExitTransition = fadeOut(animationSpec = tween(AnimDurationShort
 
 // ==================== M3 SharedAxis Z（P3） ====================
 
+/** Back returns to the previous depth instead of repeating the forward transition. */
+fun popEnterSharedAxisZ(specs: NirikoMotionSpecs): EnterTransition =
+    fadeIn(animationSpec = specs.effectsDefault()) +
+        scaleIn(initialScale = 0.92f, animationSpec = specs.spatialDefault())
+
+fun popExitSharedAxisZ(specs: NirikoMotionSpecs): ExitTransition =
+    fadeOut(animationSpec = specs.effectsDefault()) +
+        scaleOut(targetScale = 1.08f, animationSpec = specs.spatialDefault())
+
 /**
  * 二级页进入：fade + scale 0.92→1（M3 SharedAxis Z）。
  * 与封面共享元素过渡叠加更自然，替代原先"右侧滑入"。
  */
-fun enterSharedAxisZ(): EnterTransition = fadeIn(animationSpec = tween(AnimDurationNormal)) +
-    scaleIn(
-        initialScale = 0.92f,
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
-    )
+fun enterSharedAxisZ(specs: NirikoMotionSpecs): EnterTransition =
+    fadeIn(animationSpec = specs.effectsDefault()) +
+        scaleIn(
+            initialScale = 0.92f,
+            animationSpec = specs.spatialDefault(),
+        )
 
 /**
  * 二级页退出：fade + scale 1→0.92。
  */
-fun exitSharedAxisZ(): ExitTransition = fadeOut(animationSpec = tween(AnimDurationNormal)) +
-    scaleOut(
-        targetScale = 0.92f,
-        animationSpec = tween(AnimDurationNormal, easing = AnimEasingDefault),
-    )
+fun exitSharedAxisZ(specs: NirikoMotionSpecs): ExitTransition =
+    fadeOut(animationSpec = specs.effectsDefault()) +
+        scaleOut(
+            targetScale = 0.92f,
+            animationSpec = specs.spatialDefault(),
+        )

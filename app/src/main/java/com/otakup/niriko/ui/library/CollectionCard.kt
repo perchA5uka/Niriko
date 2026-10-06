@@ -14,6 +14,7 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectCardDisplayModel
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
+import com.otakup.niriko.ui.animation.rememberReturnGlowModifier
 import com.otakup.niriko.ui.subject.UniversalSubjectCard
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.util.toCardDisplayModel
@@ -28,6 +29,10 @@ fun CollectionCard(
     status: WatchStatus,
     watchedEpisodes: Int?,
     totalEpisodes: Int?,
+    /** 书籍 / 漫画的已读卷数（记卷进度时进度条按卷算）。 */
+    watchedVolumes: Int? = null,
+    /** Bangumi 总卷数（书籍 / 漫画）。 */
+    totalVolumes: Int? = null,
     myRating: Float?,
     updateTime: Long,
     personalTags: List<String> = emptyList(),
@@ -49,6 +54,9 @@ fun CollectionCard(
         status = status,
         watchedEpisodes = if (isGame) null else watchedEpisodes,
         totalEpisodes = totalEpisodes,
+        watchedVolumes = watchedVolumes,
+        totalVolumes = totalVolumes,
+        subjectType = subject.type,
         completionTime = if (isGame) watchedEpisodes else null,
         myRating = myRating,
         personalTags = personalTags,
@@ -60,7 +68,9 @@ fun CollectionCard(
         animatedVisibilityScope = animatedVisibilityScope,
         subjectId = subject.subjectId,
         isCollectionCard = true,
-        modifier = modifier,
+        pressTiltEnabled = true,
+        // F17：从详情页返回时这张卡扫一次淡光（一次性事件；播完才清口令，避免打断动画）
+        modifier = modifier.then(rememberReturnGlowModifier(subject.subjectId)),
     )
 }
 

@@ -23,8 +23,18 @@ object EpisodeAlignment {
     /** Bangumi 侧待对齐的章节。 */
     data class BangumiEp(val epId: Long, val sort: Double)
 
-    /** TMDb 侧单集（只保留对齐需要的字段）。 */
-    data class TmdbEp(val episodeNumber: Int, val score: Float?, val voteCount: Int?, val stillUrl: String?)
+    /**
+     * TMDb 侧单集（只保留对齐需要的字段）。
+     *
+     * [name] 是 B13 需要的：Bangumi 偶尔给不出某一集的标题，用 TMDb 名称补空缺。
+     */
+    data class TmdbEp(
+        val episodeNumber: Int,
+        val score: Float?,
+        val voteCount: Int?,
+        val stillUrl: String?,
+        val name: String? = null,
+    )
 
     /** TMDb 单集 → Bangumi 章节的映射结果。 */
     data class Aligned(

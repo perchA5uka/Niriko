@@ -1,6 +1,7 @@
 package com.otakup.niriko.data.model
 
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import kotlinx.serialization.Serializable
 
 /**
  * 详情页全量数据容器。
@@ -13,6 +14,13 @@ data class SubjectDetailData(
     val episodes: List<EpisodeInfo> = emptyList(),
 )
 
+/**
+ * 角色条目。
+ *
+ * B15：加 @Serializable 是为了把详情页的集合类结果落进 `subject_relation_cache`
+ * （每行一条，见 DetailCacheStore）—— 重启后不用为同一部作品重新拉一遍角色/Staff/关联作品。
+ */
+@Serializable
 data class CharacterInfo(
     val id: Long,
     val name: String,
@@ -22,6 +30,8 @@ data class CharacterInfo(
     val actors: List<StaffInfo> = emptyList(),
 )
 
+/** 制作人员条目（同样为 B15 的集合缓存加了 @Serializable）。 */
+@Serializable
 data class StaffInfo(
     val id: Long,
     val name: String,
@@ -30,6 +40,8 @@ data class StaffInfo(
     val imageUrl: String?,
 )
 
+/** 剧集条目（同样为 B15 的集合缓存加了 @Serializable）。 */
+@Serializable
 data class EpisodeInfo(
     val id: Long,
     val name: String,

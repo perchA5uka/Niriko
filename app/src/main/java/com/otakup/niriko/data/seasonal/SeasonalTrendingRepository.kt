@@ -2,6 +2,7 @@ package com.otakup.niriko.data.seasonal
 
 import android.util.Log
 import com.otakup.niriko.data.discover.DiscoveryFeed
+import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.remote.CalendarCache
 import com.otakup.niriko.data.remote.SubjectRemoteDataSource
 import com.otakup.niriko.data.repository.SubjectRepository
@@ -25,6 +26,16 @@ private const val TAG = "SeasonalTrending"
  *
  * 两条取并集、按 subjectId 去重（同 id 以日历为准）。这样即使日历只回动画，
  * 长连载的三次元也不会丢（《假面骑士zzz》就是靠这条救回来的）。
+ *
+ * ## 展示字段补全（B06）
+ *
+ * 用户报告「发现页部分动画类型卡片不展示简介（例如航海王 名侦探柯南）」。
+ * 根因不在卡片也不在 mapper：实测 `GET /calendar` 返回的每个条目 `summary` 都是**空串**
+ * （2026-10 抽样 70 条，70 条全空）。而同一 id 以日历为准（[SeasonalTrendingCalculator.merge]），
+ * 于是「只在日历里出现、开播于 1999 年（在 400 天兜底窗口之外）」的长连载永远没有简介。
+ * 修法：合并后按 id 用检索结果**补空缺字段**（不覆盖已有值、不改排序字段之外的结构），
+ * 且只在「可能被展示的条目」仍缺简介时才多跑一次热门检索
+ * （[SeasonalTrendingCalculator.needsFieldDonors]）。
  *
  * ## 选取（第 6 轮 §2.3 A 方案）
  *
@@ -80,10 +91,27 @@ class SeasonalTrendingRepository(
             .filter { it.subjectId !in confirmedIds }
             .let { SeasonalTrendingCalculator.fromSearch(it, today) }
 
-        // —— ③ 合并 → 类型过滤 → 人气选取（门槛 + 多样性）→ 截断 ——
+        // —— ③ 合并 → 展示字段补全 → 类型过滤 → 人气选取（门槛 + 多样性）→ 截断 ——
         val merged = SeasonalTrendingCalculator.merge(calendarItems, fallbackItems)
+        // /calendar 的 summary 恒为空串（实测 70/70 全空），只在日历里出现的长连载
+        // （航海王 / 名侦探柯南）因此没有简介。按 id 用检索结果补空缺字段：
+        // ① 免费来源 = 已经在手的兜底检索结果（覆盖 400 天内开播的当季番）；
+        // ② 只有在「可能被展示的条目」还缺简介时，才多跑一次热门检索（覆盖开播多年的长连载）。
+        // 补全放在 select 之前，保证 all 与 items 携带同一份补齐后的字段
+        //（applySeasonalLocally 会在 all 上重跑 select）。
+        val donors = LinkedHashMap<Long, SubjectEntity>()
+        fallback.items.forEach { donors.offerDonor(it) }
+        val freeEnriched = SeasonalTrendingCalculator.fillBlankFields(merged, donors)
+        val enriched = if (
+            SeasonalTrendingCalculator.needsFieldDonors(freeEnriched, types, sort, targetSize, donors)
+        ) {
+            loadFieldDonors(nsfw).forEach { donors.offerDonor(it) }
+            SeasonalTrendingCalculator.fillBlankFields(merged, donors)
+        } else {
+            freeEnriched
+        }
         val selection = SeasonalTrendingCalculator.select(
-            items = merged,
+            items = enriched,
             types = types,
             sort = sort,
             targetSize = targetSize,
@@ -105,7 +133,8 @@ class SeasonalTrendingRepository(
 
         return SeasonalTrendingResult(
             items = selection.items,
-            all = merged,
+            // all 也必须带补齐后的字段：applySeasonalLocally 会在 all 上重跑 select
+            all = enriched,
             totalCandidates = selection.candidateCount,
             calendarAvailable = snapshot != null,
             stale = snapshot?.stale == true,
@@ -125,7 +154,7 @@ class SeasonalTrendingRepository(
         today: LocalDate,
     ): FallbackResult {
         val airDate = SeasonalTrendingCalculator.fallbackAirDateRange(today)
-        val merged = LinkedHashMap<Long, com.otakup.niriko.data.local.entity.SubjectEntity>()
+        val merged = LinkedHashMap<Long, SubjectEntity>()
         var failedTypes = 0
         types.forEach { bangumiType ->
             val attempt = runCatching {
@@ -147,9 +176,37 @@ class SeasonalTrendingRepository(
         )
     }
 
+    /**
+     * 展示字段捐赠者：一次**热门动画检索**（不带开播窗口，因此能覆盖开播多年的长连载）。
+     *
+     * 只用来给候选池里**已存在**的条目补简介等空缺字段，绝不用它往池子里加条目 ——
+     * 否则「当季热门」就变成了「历史热门」。失败不抛：补不上简介只是少一行文字，
+     * 不应该把整个当季热门拖成错误态。
+     */
+    private suspend fun loadFieldDonors(nsfw: Boolean?): List<SubjectEntity> = runCatching {
+        subjectRepository.search(
+            keyword = "",
+            type = SeasonalTypes.ANIME,
+            nsfw = nsfw,
+            sort = "heat",
+            limit = DONOR_LIMIT,
+        )
+    }.onFailure { Log.w(TAG, "field donor search failed", it) }.getOrDefault(emptyList())
+
+    /**
+     * 登记一个捐赠者：同 id 已有条目时，优先保留**有简介**的那一份
+     * （兜底检索与热门检索都可能给出同一条，检索响应偶尔也会缺 summary）。
+     */
+    private fun MutableMap<Long, SubjectEntity>.offerDonor(entity: SubjectEntity) {
+        val existing = this[entity.subjectId]
+        if (existing == null || (existing.summary.isNullOrBlank() && !entity.summary.isNullOrBlank())) {
+            this[entity.subjectId] = entity
+        }
+    }
+
     /** 兜底检索的结果：条目 + 是否**每个类型都失败**（第 6 轮 R7 用来判定网络失败）。 */
     private data class FallbackResult(
-        val items: List<com.otakup.niriko.data.local.entity.SubjectEntity>,
+        val items: List<SubjectEntity>,
         val allFailed: Boolean,
     )
 
@@ -160,5 +217,13 @@ class SeasonalTrendingRepository(
          * 现在是**类内候选**而不是展示量：展示量由 [DiscoveryFeed.TARGET_SIZE] 决定（30）。
          */
         const val PER_TYPE_LIMIT = 100
+
+        /**
+         * 「展示字段捐赠者」一次取多少条。
+         *
+         * 只需覆盖**开播多年、只在日历里出现的长连载**（航海王 / 名侦探柯南这类），
+         * 它们是热度最高的一批，60 条足够命中；再多就是在为看不见的条目付流量。
+         */
+        const val DONOR_LIMIT = 60
     }
 }

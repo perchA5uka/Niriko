@@ -3,6 +3,7 @@ package com.otakup.niriko.data.remote.game
 import com.otakup.niriko.data.remote.steam.SteamApiClient
 import com.otakup.niriko.data.remote.steam.SteamApiService
 import com.otakup.niriko.data.remote.steam.dto.SteamStoreSearchItemDto
+import com.otakup.niriko.util.RichTextParser
 
 /**
  * Steam 作为通用游戏数据源（[GameDataSource] 的第一个实现）。
@@ -48,7 +49,7 @@ class SteamGameDataSource(
                 item = GameItem(
                     sourceGameId = sourceGameId,
                     title = data.name ?: "App $appId",
-                    summary = data.shortDescription,
+                    summary = data.shortDescription?.let { RichTextParser.toPlainText(it) },
                     platforms = data.platforms?.let { p ->
                         listOfNotNull(
                             p.windows?.takeIf { it }?.let { "Windows" },

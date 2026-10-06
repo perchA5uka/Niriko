@@ -19,7 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.LocalIndication
+import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.Alignment
+import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -29,9 +34,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import com.otakup.niriko.ui.components.SharedSubjectCover
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.ui.components.cardRarityMaterial
+import com.otakup.niriko.data.model.cardMaterialFromRating
 import com.otakup.niriko.ui.components.FavoriteBadge
 import com.otakup.niriko.ui.components.RatingBadge
 import com.otakup.niriko.ui.components.StatusBadge
@@ -55,12 +62,15 @@ fun LibraryGalleryCard(
     selected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val lighting = remember { com.otakup.niriko.ui.animation.PressTiltLighting() }
     // 共享元素：与网格/列表卡同 key（cover_id），进入详情封面缩放飞入
     val sharedModifier = if (sharedElementKey != null && sharedTransitionScope != null && animatedVisibilityScope != null) {
         with(sharedTransitionScope) {
             Modifier.sharedElement(
                 sharedContentState = rememberSharedContentState(sharedElementKey),
                 animatedVisibilityScope = animatedVisibilityScope,
+                boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
             )
         }
     } else Modifier
@@ -69,14 +79,18 @@ fun LibraryGalleryCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(24.dp))
             .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)) else Modifier)
-            .clickable(onClick = onClick),
+            .clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick),
         contentAlignment = Alignment.BottomStart,
     ) {
         // 封面大图
-        AsyncImage(
-            model = subject.coverUrl,
+        SharedSubjectCover(
+            subjectId = subject.subjectId,
+            coverUrl = subject.coverUrl,
             contentDescription = subject.displayTitle,
-            modifier = Modifier.then(sharedModifier).fillMaxWidth().height(340.dp),
+            modifier = Modifier.fillMaxWidth().height(340.dp).then(sharedModifier)
+                .subjectCoverPresentation(animatedVisibilityScope)
+                .pressTilt(interactionSource, lighting = lighting)
+                .cardRarityMaterial(cardMaterialFromRating(collection.rating), RoundedCornerShape(24.dp), lighting),
             contentScale = ContentScale.Crop,
         )
         // 底部渐变（保证标题可读）

@@ -75,6 +75,11 @@ class BackupManager(
         val myEpisodeRatings = database.externalRatingDao().getAllMyEpisodeRatings()
         val manualAwards = database.manualAwardDao().getAll()
         val coverOverrides = coverOverrideStore?.all().orEmpty()
+        // F09：作品库自定义分区（分区 + 成员关系）。成员关系一并在分区对象里导出，
+        // 因为它脱离分区没有意义；身份用**分区名**（自增 id 换库即失效，见 BackupFolderNames）。
+        val libraryFolders = database.libraryFolderDao().getFolders()
+        // 一次取全部成员再按分区分组：避免「每个分区一次查询」的 N+1（分区多时导出会明显变慢）
+        val folderMembers = database.libraryFolderDao().getAllMembers().groupBy { it.folderId }
 
         return json.encodeToString(JsonObject.serializer(), buildJsonObject {
             put("version", JsonPrimitive(EXPORT_VERSION))
@@ -139,6 +144,25 @@ class BackupManager(
             put("coverOverrides", buildJsonObject {
                 coverOverrides.forEach { (id, uri) -> put(id.toString(), JsonPrimitive(uri)) }
             })
+            put("libraryFolders", buildJsonArray {
+                libraryFolders.forEach { folder ->
+                    add(buildJsonObject {
+                        put("name", JsonPrimitive(folder.name))
+                        put("sortOrder", JsonPrimitive(folder.sortOrder))
+                        put("isCollapsed", JsonPrimitive(folder.isCollapsed))
+                        put("createdAt", JsonPrimitive(folder.createdAt))
+                        put(
+                            "members",
+                            buildJsonArray {
+                                folderMembers[folder.id]
+                                    .orEmpty()
+                                    .sortedBy { it.sortOrder }
+                                    .forEach { member -> add(JsonPrimitive(member.subjectId)) }
+                            },
+                        )
+                    })
+                }
+            })
             if (settings != null) {
                 put("settings", settingsToJson(settings))
             }
@@ -173,6 +197,8 @@ class BackupManager(
         val myEpisodeRatings = parseMyEpisodeRatings(root["myEpisodeRatings"])
         val manualAwards = parseManualAwards(root["manualAwards"])
         val coverOverrides = parseCoverOverrides(root["coverOverrides"])
+        // F09：作品库自定义分区（v4 起）。旧备份没有这个字段 → 空列表，导入照常成功。
+        val backupFolders = parseBackupFolders(root["libraryFolders"])
         // 修复 BUG-8：新表此前不校验 subjectId，导入会写进孤儿数据
         val knownSubjectIds = subjects.map { it.subjectId }.toHashSet()
         val validExternalIds = externalIds.filter { it.subjectId in knownSubjectIds }
@@ -192,6 +218,7 @@ class BackupManager(
         var insertedCollections = 0
         var insertedWorkItems = 0
         var insertedHistory = 0
+        var insertedFolders = 0
         try {
             database.withTransaction {
                 if (!merge) {
@@ -254,6 +281,17 @@ class BackupManager(
                 insertedCollections = collectionsToInsert.size
                 insertedWorkItems = workItemsToInsert.size
                 insertedHistory = historyToInsert.size
+                // F09：分区与成员在同一事务里恢复 —— 分区行与关系行要么都进去、要么都不进去。
+                // 成员只保留「指向本次备份确实存在的作品」的那些（与上面几张表同一条防孤儿规则）。
+                if (backupFolders.isNotEmpty()) {
+                    insertedFolders = BackupFolderRestore.restore(
+                        dao = database.libraryFolderDao(),
+                        folders = backupFolders.map { folder ->
+                            folder.copy(subjectIds = folder.subjectIds.filter { it in knownSubjectIds })
+                        },
+                        fullReplace = !merge,
+                    ).touched
+                }
             }
             // 封面覆盖同样本地优先：本地已有该作品的覆盖 → 保留本地
             val coverToWrite = if (merge) {
@@ -285,6 +323,7 @@ class BackupManager(
             collectionsCount = insertedCollections,
             workItemsCount = insertedWorkItems,
             historyCount = insertedHistory,
+            foldersCount = insertedFolders,
             settings = settings,
         )
     }
@@ -388,6 +427,10 @@ class BackupManager(
         put("wallpaperSettingsUri", JsonPrimitive(s.wallpaperSettingsUri))
         put("wallpaperBlurDp", JsonPrimitive(s.wallpaperBlurDp))
         put("wallpaperAtmosphere", JsonPrimitive(s.wallpaperAtmosphere.name))
+        // 壁纸库（R3）：整表编码成一行 JSON 存进设置备份，恢复时由 WallpaperLibraryCodec 解析
+        put("wallpaperLibrary", JsonPrimitive(com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.encode(s.wallpaperLibraryEntries)))
+        put("wallpaperRotationEnabled", JsonPrimitive(s.wallpaperRotationEnabled))
+        put("wallpaperRotationFavoritesOnly", JsonPrimitive(s.wallpaperRotationFavoritesOnly))
         put("cardGlassLevel", JsonPrimitive(s.cardGlassLevel.name))
         put("splashEnabled", JsonPrimitive(s.splashEnabled))
         put("activeThemePackId", JsonPrimitive(s.activeThemePackId))
@@ -467,6 +510,31 @@ class BackupManager(
                 rank = o["rank"]?.jsonPrimitive?.content?.toIntOrNull(),
             )
         }.filterNotNull()
+    }
+
+    /**
+     * 解析备份里的作品库分区（F09）。
+     *
+     * 容错口径与其它解析函数一致：字段缺失用默认值，整条记录结构不对就跳过，
+     * **不因为一个新字段让整份备份导入失败**（旧版本备份根本没有这个字段）。
+     */
+    private fun parseBackupFolders(element: JsonElement?): List<BackupFolder> {
+        val array = element as? JsonArray ?: return emptyList()
+        return array.mapNotNull { item ->
+            val obj = item as? JsonObject ?: return@mapNotNull null
+            val name = obj["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            BackupFolder(
+                name = name,
+                sortOrder = obj["sortOrder"]?.jsonPrimitive?.intOrNull ?: 0,
+                isCollapsed = obj["isCollapsed"]?.jsonPrimitive?.booleanOrNull ?: false,
+                createdAt = obj["createdAt"]?.jsonPrimitive?.longOrNull ?: System.currentTimeMillis(),
+                subjectIds = (obj["members"] as? JsonArray)
+                    ?.mapNotNull { it.jsonPrimitive.longOrNull }
+                    ?.filter { it > 0L }
+                    .orEmpty(),
+            )
+        }
     }
 
     private fun parseCollections(element: JsonElement?): List<CollectionEntity> {
@@ -635,6 +703,13 @@ class BackupManager(
             wallpaperAtmosphere = o["wallpaperAtmosphere"]?.jsonPrimitive?.content?.let { n ->
                 try { WallpaperAtmosphere.valueOf(n) } catch (_: Exception) { null }
             } ?: defaults.wallpaperAtmosphere,
+            wallpaperLibraryEntries = com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.decode(
+                o["wallpaperLibrary"]?.jsonPrimitive?.content,
+            ),
+            wallpaperRotationEnabled = o["wallpaperRotationEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+                ?: defaults.wallpaperRotationEnabled,
+            wallpaperRotationFavoritesOnly = o["wallpaperRotationFavoritesOnly"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
+                ?: defaults.wallpaperRotationFavoritesOnly,
             cardGlassLevel = o["cardGlassLevel"]?.jsonPrimitive?.content?.let { n ->
                 try { CardGlassLevel.valueOf(n) } catch (_: Exception) { null }
             } ?: defaults.cardGlassLevel,
@@ -699,7 +774,13 @@ class BackupManager(
     }
 
     companion object {
-        private const val EXPORT_VERSION = 3
+        /**
+     * 备份格式版本（F09 起为 4）。
+     *
+     * v3 → v4：新增 `libraryFolders`（作品库自定义分区）与每个分区下的 `members`。
+     * 旧版本备份（≤3）没有这两个字段 → 解析成空列表，导入照常成功（不视为错误）。
+     */
+    private const val EXPORT_VERSION = 4
         private val APP_VERSION: String = com.otakup.niriko.BuildConfig.VERSION_NAME
         private const val TAG = "BackupManager"
     }
@@ -713,5 +794,7 @@ data class ImportResult(
     val collectionsCount: Int = 0,
     val workItemsCount: Int = 0,
     val historyCount: Int = 0,
+    /** F09：本次恢复涉及的作品库分区数（新建 + 填充成员）。0 = 备份里没有分区或已存在同名分区。 */
+    val foldersCount: Int = 0,
     val settings: AppSettings? = null,
 )

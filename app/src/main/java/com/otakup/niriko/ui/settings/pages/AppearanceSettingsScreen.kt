@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Animation
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.BlurCircular
 import androidx.compose.material.icons.outlined.BlurLinear
 import androidx.compose.material.icons.outlined.BlurOff
@@ -18,6 +21,7 @@ import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.BrightnessHigh
 import androidx.compose.material.icons.outlined.Brush
 import androidx.compose.material.icons.outlined.CollectionsBookmark
+import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
@@ -81,6 +85,8 @@ fun AppearanceSettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenWallpaperLibrary: () -> Unit = {},
+    onOpenDetailSections: () -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -89,6 +95,8 @@ fun AppearanceSettingsScreen(
             AppearanceSettingsContent(
                 viewModel = viewModel,
                 snackbarHostState = snackbarHostState,
+                onOpenWallpaperLibrary = onOpenWallpaperLibrary,
+                onOpenDetailSections = onOpenDetailSections,
             )
         }
         SnackbarHost(
@@ -109,6 +117,8 @@ fun AppearanceSettingsScreen(
 fun AppearanceSettingsContent(
     viewModel: SettingsViewModel,
     snackbarHostState: SnackbarHostState,
+    onOpenWallpaperLibrary: () -> Unit = {},
+    onOpenDetailSections: () -> Unit = {},
 ) {
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
@@ -273,6 +283,30 @@ fun AppearanceSettingsContent(
 
         // ===== 壁纸 =====
         val globalUri = settings.wallpaperUri
+        // F18：书籍 / 漫画半调网点（其他类型不生效）
+        SettingsGroupTitle("漫画 / 书籍")
+        SettingsSplitGroup(content = listOf(
+            {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.AutoAwesome,
+                    title = "半调网点",
+                    description = "漫画与书籍详情页叠加一层很淡的网点纸质感，可随时关闭",
+                    checked = settings.halftoneEnabled,
+                    onCheckedChange = viewModel::setHalftoneEnabled,
+                )
+            },
+            {
+                // F08：默认关闭；开启后只对 2000 年以前的动画播放约 4 秒（首次说明写在这里）
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Tv,
+                    title = "CRT 老电视模式",
+                    description = "打开后，2000 年以前的动画详情页会播放约 4 秒扫描线效果（不含真正的几何畸变）",
+                    checked = settings.crtModeEnabled,
+                    onCheckedChange = viewModel::setCrtModeEnabled,
+                )
+            },
+        ))
+
         SettingsGroupTitle("壁纸")
         SettingsSplitGroup(content = listOf(
             {
@@ -285,6 +319,14 @@ fun AppearanceSettingsContent(
                 )
             },
             {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Wallpaper,
+                    title = "动态视差",
+                    checked = settings.wallpaperParallaxEnabled,
+                    onCheckedChange = viewModel::setWallpaperParallaxEnabled,
+                )
+            },
+            {
                 SettingsPickerRow(
                     icon = Icons.Outlined.Image,
                     title = "全局壁纸",
@@ -294,6 +336,32 @@ fun AppearanceSettingsContent(
                         pendingWallpaperTarget = null
                         wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
                     },
+                )
+            },
+            {
+                SettingsActionRow(
+                    icon = Icons.Outlined.Collections,
+                    title = "壁纸库",
+                    description = "收藏壁纸、打标签、每日自动轮换",
+                    value = if (settings.wallpaperLibraryEntries.isEmpty()) {
+                        "空"
+                    } else {
+                        settings.wallpaperLibraryEntries.size.toString() + " 张"
+                    },
+                    onClick = onOpenWallpaperLibrary,
+                )
+            },
+            {
+                // F06：详情部件显示 / 隐藏（顺序见该页说明，第二步做）
+                SettingsActionRow(
+                    icon = Icons.Outlined.Visibility,
+                    title = "详情部件",
+                    description = "关掉详情页里用不到的区块",
+                    value = detailVisibleSectionSummary(
+                        settings.detailHiddenSections,
+                        settings.detailSectionOrder,
+                    ),
+                    onClick = onOpenDetailSections,
                 )
             },
             {

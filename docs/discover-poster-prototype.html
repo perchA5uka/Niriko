@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niriko 发现页海报视图原型 · 现状 vs 改后</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    color: #e8e8ea;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    gap: 48px;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 32px 24px;
+    flex-wrap: wrap;
+  }
+  h2 { font-size: 18px; margin-bottom: 4px; }
+  .note { font-size: 12px; color: #888; margin-bottom: 16px; }
+
+  /* ============ 手机框 ============ */
+  .phone {
+    width: 360px;
+    height: 720px;
+    border-radius: 28px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #333;
+    flex-shrink: 0;
+    background: #0b0b0d;
+  }
+  .scroll { position: absolute; inset: 0; overflow-y: auto; scrollbar-width: none; }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* 壁纸铺底（发现页为顶层页，有壁纸层） */
+  .wp {
+    position: absolute; inset: -40px;
+    background:
+      radial-gradient(ellipse 80% 45% at 25% 10%, rgba(120,160,190,.55), transparent 70%),
+      radial-gradient(ellipse 70% 40% at 80% 25%, rgba(90,120,110,.5), transparent 68%),
+      linear-gradient(165deg, #1b2430 0%, #16202a 45%, #0e1216 100%);
+    filter: blur(26px) brightness(.55) saturate(.9);
+    transform: scale(1.15);
+  }
+  .wp-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.55) 60%, rgba(0,0,0,.7)); }
+
+  /* ============ 发现页顶栏 ============ */
+  .dt-top {
+    position: sticky; top: 0; z-index: 6;
+    padding: 14px 14px 6px;
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(#000000cc, #00000000);
+    backdrop-filter: blur(6px);
+  }
+  .dt-top .ttl { font-size: 17px; font-weight: 700; margin-right: 2px; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+  .dt-top .sp { flex: 1; }
+  .chip { font-size: 11.5px; padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+  .before .chip { border: 1px solid rgba(255,255,255,.22); color: rgba(255,255,255,.72); }
+  .before .chip.on { border-color: rgba(165,214,167,.5); color: #b9dec0; }
+  .after .chip { background: rgba(165,214,167,.13); color: #b9dec0; }
+  .after .chip.on { background: rgba(165,214,167,.30); color: #d7f0db; font-weight: 600; }
+
+  .tbtn {
+    width: 30px; height: 30px; border-radius: 999px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; color: #a5d6a7; background: rgba(255,255,255,.07);
+    flex-shrink: 0;
+  }
+  .fresh { position: relative; font-size: 11px; color: #8b8b90; padding: 6px 16px 10px; }
+  .fresh b { color: #a5d6a7; font-weight: 600; }
+
+  /* ============ 现状：玻璃横向卡列表 ============ */
+  .before .dcard {
+    margin: 0 12px 9px;
+    display: flex; gap: 10px; padding: 10px;
+    border-radius: 20px;
+    background: rgba(28,28,32,.55);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border: 1px solid rgba(255,255,255,.06);
+    box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .thumb { width: 80px; height: 107px; border-radius: 12px; flex: 0 0 80px; position: relative; overflow: hidden; }
+  .thumb .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.16); }
+  .thumb .prog i { display: block; height: 100%; width: 46%; background: #a5d6a7; }
+  .info { flex: 1; min-width: 0; }
+  .info .k { font-size: 10.5px; color: #a5d6a7; }
+  .info .k .sc { color: rgba(255,255,255,.6); margin-left: 4px; }
+  .info .t { font-size: 13.5px; font-weight: 600; margin-top: 2px; }
+  .info .s { font-size: 11px; color: rgba(255,255,255,.62); margin-top: 2px; }
+  .info .d { font-size: 10.5px; color: rgba(255,255,255,.42); margin-top: 4px; line-height: 1.5; }
+  .info .mine { display: inline-block; margin-top: 5px; font-size: 10px; padding: 2px 7px; border-radius: 999px; background: rgba(165,214,167,.13); color: #b9dec0; }
+
+  /* ============ 改后：海报网格 ============ */
+  .pgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 12px; }
+  .pcell { min-width: 0; }
+  .pcover { position: relative; border-radius: 16px; overflow: hidden; aspect-ratio: 2 / 3; background: #17171b; }
+  .pt {
+    font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.86);
+    padding: 5px 2px 0; line-height: 1.35; min-height: 29px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .pb { position: absolute; font-size: 9.5px; padding: 2px 6px; border-radius: 999px; background: rgba(0,0,0,.55); font-weight: 700; }
+  .pb.rate { left: 6px; bottom: 6px; color: #f59e0b; }
+  .pb.fav { right: 6px; top: 6px; color: #dc2626; font-size: 10.5px; }
+
+  /* 骨架（与真卡几何一致：16dp 圆角 + 2:3 封面 + 同高标题行） */
+  .skel-base { background: #1e1e22; }
+  .skel-shine { background: linear-gradient(100deg, #1e1e22 25%, #2b2b31 50%, #1e1e22 75%); }
+  .pcover.sk { border-radius: 16px; }
+  .sk-line { height: 9px; border-radius: 4px; margin: 7px 2px 0; }
+  .sk-line.short { width: 62%; }
+
+  /* ============ 封面（纯 CSS 模拟） ============ */
+  .cover-art {
+    background:
+      radial-gradient(ellipse 90% 45% at 30% 12%, rgba(255,183,197,.95), transparent 70%),
+      radial-gradient(ellipse 70% 40% at 75% 20%, rgba(255,205,215,.8), transparent 65%),
+      radial-gradient(ellipse 80% 50% at 50% 85%, rgba(84,110,61,.9), transparent 75%),
+      linear-gradient(165deg, #f2c9d4 0%, #d8a8b8 30%, #7a8a5c 62%, #3d4a30 100%);
+  }
+  .cv-frieren { background: radial-gradient(ellipse 80% 50% at 40% 20%, #cfe9e4, transparent 70%), linear-gradient(165deg,#79b6ad 0%,#3f6f74 45%,#20303a 100%); }
+  .cv-titan { background: radial-gradient(ellipse 70% 45% at 60% 15%, #d99a6c, transparent 70%), linear-gradient(165deg,#7d3a2a 0%,#40201c 55%,#15100f 100%); }
+  .cv-kusuri { background: radial-gradient(ellipse 70% 45% at 35% 18%, #e6c9f0, transparent 70%), linear-gradient(165deg,#8d6bb0 0%,#4a3566 55%,#1d1630 100%); }
+  .cv-bocchi { background: radial-gradient(ellipse 75% 45% at 55% 20%, #ffd6e7, transparent 70%), linear-gradient(165deg,#f39ab9 0%,#5b7fc7 60%,#232a4a 100%); }
+  .cv-dungeon { background: radial-gradient(ellipse 75% 45% at 45% 18%, #f6cf9a, transparent 70%), linear-gradient(165deg,#c98b3f 0%,#7a4a24 55%,#2a1a13 100%); }
+  .cv-mob { background: radial-gradient(ellipse 75% 45% at 50% 18%, #b7f0e4, transparent 70%), linear-gradient(165deg,#4fc3b4 0%,#2f6f78 55%,#141f26 100%); }
+  .cv-onimai { background: radial-gradient(ellipse 75% 45% at 45% 18%, #f6f2a8, transparent 70%), linear-gradient(165deg,#c9cf5a 0%,#5f7a34 55%,#1d2415 100%); }
+  .cv-sousou { background: radial-gradient(ellipse 75% 45% at 45% 18%, #9fb6ff, transparent 70%), linear-gradient(165deg,#5a6ec9 0%,#2b3266 55%,#12152a 100%); }
+  .cv-hibike { background: radial-gradient(ellipse 75% 45% at 45% 18%, #ffe0a8, transparent 70%), linear-gradient(165deg,#d9a94f 0%,#6b4a2a 55%,#221a13 100%); }
+
+  /* ============ 底部玻璃导航（两侧保持现状） ============ */
+  .nav {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    z-index: 10; display: flex; gap: 2px; padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(28,28,32,.6);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.1);
+  }
+  .navi { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 9px; font-size: 9.5px; color: rgba(255,255,255,.5); }
+  .navi .g { font-size: 13px; }
+  .navi.on { color: #a5d6a7; }
+
+  /* ============ 细节栏 ============ */
+  .detail-pad { padding: 26px 16px 0; }
+  .detail-h { font-size: 12.5px; font-weight: 700; color: #e8e8ea; margin: 0 2px 10px; }
+  .detail-h span { font-weight: 400; color: #888; font-size: 11px; }
+  .bigcard { width: 150px; margin: 0 auto; position: relative; }
+  .hr { height: 1px; background: rgba(255,255,255,.09); margin: 26px 0 18px; }
+  .mrow { display: flex; gap: 10px; padding: 0 12px; }
+  .mrow > div { flex: 1; }
+
+  /* 切换按钮三态 */
+  .statebox {
+    margin: 0 12px 12px; padding: 12px 12px 10px;
+    background: #131317; border-radius: 16px; border-top: 1px solid rgba(255,255,255,.06);
+  }
+  .statebox .hd { font-size: 11.5px; color: #bbb; margin-bottom: 9px; }
+  .statebox .hd b { color: #d7f0db; }
+  .statebox .row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .statebox .row:last-child { margin-bottom: 0; }
+  .statebox .lb { font-size: 11px; color: rgba(255,255,255,.62); flex: 1; }
+  .statebox .lb i { font-style: normal; color: #a5d6a7; }
+  .cols-demo { display: grid; gap: 3px; width: 62px; flex-shrink: 0; }
+  .cols-demo i { display: block; aspect-ratio: 2/3; background: #2a2a31; border-radius: 3px; }
+  .cols-demo.c3 { grid-template-columns: repeat(3, 1fr); }
+  .cols-demo.c4 { grid-template-columns: repeat(4, 1fr); }
+  .cols-demo.c6 { grid-template-columns: repeat(6, 1fr); }
+  .cols-txt { font-size: 10.5px; color: #888; width: 92px; flex-shrink: 0; line-height: 1.45; }
+
+  /* 编号标注 */
+  .badge {
+    position: absolute; z-index: 20;
+    min-width: 24px; height: 24px; border-radius: 999px;
+    padding: 0 6px;
+    background: #ffb300; color: #1a1200;
+    font-size: 13px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+  }
+  .badge.sm { min-width: 20px; height: 20px; font-size: 11px; padding: 0 5px; }
+  .badge.keep { background: #546e7a; color: #eceff1; font-size: 11px; font-weight: 600; }
+  .legend { width: 360px; margin-top: 18px; font-size: 13px; line-height: 1.85; color: #bbb; }
+  .legend b { color: #ffb300; margin-right: 6px; }
+  .legend .keep { color: #90a4ae; font-weight: 600; }
+  .legend code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #cfd8dc; background: rgba(255,255,255,.06); padding: 1px 4px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ================= 现状：发现页 · 卡片视图 ================= -->
+<div>
+  <h2>现状</h2>
+  <div class="note">发现页 · 卡片视图：趋势胶囊 + 上次更新行 + 玻璃横向卡列表</div>
+  <div class="phone before">
+    <div class="wp"></div><div class="wp-scrim"></div>
+    <div class="scroll">
+      <div class="dt-top">
+        <span class="ttl">发现</span>
+        <span class="chip on">当季热门</span><span class="chip">历史排名</span><span class="chip">Steam</span>
+        <span class="sp"></span>
+        <span class="tbtn">☰</span><span class="tbtn">⌕</span>
+        <span class="badge keep" style="top:-6px; left:150px">保持现状</span>
+      </div>
+      <div class="fresh">上次更新 3 分钟前 <b>· 点此强制刷新</b></div>
+
+      <div class="dcard">
+        <div class="thumb cover-art"><div class="prog"><i></i></div></div>
+        <div class="info">
+          <div class="k">动画<span class="sc">★ 8.2（3.3万人）</span></div>
+          <div class="t">冰菓</div>
+          <div class="s">氷菓 · TV · 26 集</div>
+          <div class="d">以神山高校为舞台的日常推理，节能主义者折木奉太郎…</div>
+          <span class="mine">已收藏 · 看到第 12 集</span>
+        </div>
+      </div>
+
+      <div class="dcard">
+        <div class="thumb cv-frieren" style="height:107px"></div>
+        <div class="info">
+          <div class="k">动画<span class="sc">★ 8.6（2.1万人）</span></div>
+          <div class="t">葬送的芙莉莲</div>
+          <div class="s">葬送のフリーレン · TV · 28 集</div>
+          <div class="d">勇者一行击败魔王之后，精灵魔法使芙莉莲踏上理解人类的旅途…</div>
+        </div>
+      </div>
+
+      <div class="dcard">
+        <div class="thumb cv-titan" style="height:107px"></div>
+        <div class="info">
+          <div class="k">动画<span class="sc">★ 8.4（5.6万人）</span></div>
+          <div class="t">进击的巨人</div>
+          <div class="s">進撃の巨人 · TV · 25 集</div>
+          <div class="d">人类居住在由三重巨大城墙环绕的城市中，对抗城墙外的巨人…</div>
+        </div>
+      </div>
+
+      <div style="height:96px"></div>
+    </div>
+    <div class="nav">
+      <div class="navi"><span class="g">▤</span>作品库</div>
+      <div class="navi on"><span class="g">◐</span>发现</div>
+      <div class="navi"><span class="g">◔</span>统计</div>
+      <div class="navi"><span class="g">⚙</span>设置</div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 改后：发现页 · 海报视图 ================= -->
+<div>
+  <h2>改后</h2>
+  <div class="note">发现页 · 海报视图（新增第三种布局）：同一份数据，海报优先的 3 列网格</div>
+  <div class="phone after">
+    <div class="wp"></div><div class="wp-scrim"></div>
+    <div class="scroll">
+      <div class="dt-top">
+        <span class="ttl">发现</span>
+        <span class="chip on">当季热门</span><span class="chip">历史排名</span><span class="chip">Steam</span>
+        <span class="sp"></span>
+        <span class="tbtn">☰</span><span class="tbtn">⌕</span>
+        <span class="badge" style="top:-12px; left:118px">1</span>
+      </div>
+      <div class="fresh">上次更新 3 分钟前 <b>· 点此强制刷新</b></div>
+
+      <div class="pgrid">
+        <div class="pcell">
+          <div class="pcover cover-art">
+            <span class="pb rate">★ 8.2</span>
+          </div>
+          <div class="pt">冰菓</div>
+        </div>
+        <div class="pcell">
+          <div class="pcover cv-frieren">
+            <span class="pb rate">★ 8.6</span><span class="pb fav">♥</span>
+          </div>
+          <div class="pt">葬送的芙莉莲</div>
+        </div>
+        <div class="pcell">
+          <div class="pcover cv-titan"><span class="pb rate">★ 8.4</span></div>
+          <div class="pt">进击的巨人</div>
+        </div>
+
+        <div class="pcell">
+          <div class="pcover cv-kusuri"><span class="pb rate">★ 8.1</span></div>
+          <div class="pt">药屋少女的呢喃</div>
+        </div>
+        <div class="pcell">
+          <div class="pcover cv-bocchi"><span class="pb rate">★ 8.3</span></div>
+          <div class="pt">孤独摇滚！</div>
+        </div>
+        <div class="pcell">
+          <div class="pcover cv-dungeon"><span class="pb rate">★ 8.0</span><span class="pb fav">♥</span></div>
+          <div class="pt">迷宫饭</div>
+        </div>
+
+        <div class="pcell">
+          <div class="pcover cv-mob"><span class="pb rate">★ 8.5</span></div>
+          <div class="pt">灵能百分百</div>
+        </div>
+        <div class="pcell">
+          <div class="pcover cv-sousou"><span class="pb rate">★ 7.9</span></div>
+          <div class="pt">葬送的芙莉莲 第二季</div>
+        </div>
+        <div class="pcell">
+          <div class="pcover cv-hibike"><span class="pb rate">★ 8.7</span></div>
+          <div class="pt">吹响吧！上低音号</div>
+        </div>
+      </div>
+
+      <div class="badge" style="top:120px; left:44px">2</div>
+      <div class="badge sm" style="top:236px; left:32px">3</div>
+      <div class="badge sm" style="top:310px; left:32px">4</div>
+      <div style="height:96px"></div>
+    </div>
+    <div class="nav">
+      <div class="navi"><span class="g">▤</span>作品库</div>
+      <div class="navi on"><span class="g">◐</span>发现</div>
+      <div class="navi"><span class="g">◔</span>统计</div>
+      <div class="navi"><span class="g">⚙</span>设置</div>
+    </div>
+    <div class="badge" style="bottom:18px; right:64px">5</div>
+  </div>
+
+  <div class="legend">
+    <span class="keep">顶栏趋势胶囊行、「上次更新 · 点此强制刷新」行、底部玻璃导航 —— 均保持现状，不改动。</span><br>
+    <b>①</b>顶栏布局切换按钮：二态（卡片⇄宫格）改三态循环 <code>卡片 → 宫格 → 海报 → 卡片</code>，图标始终显示「下一个布局」；位置/尺寸/tint 不变<br>
+    <b>②</b>海报网格本体：<code>LazyVerticalGrid</code> + <code>NirikoGridColumns</code>（手机 3 列 / 600dp+ 4 列 / 840dp+ 6 列），间距 10dp、页面边距 12dp，封面圆角 16dp、比例 2:3 —— <b>无玻璃容器</b>，封面本身就是卡<br>
+    <b>③</b>封面信息克制：只保留左下评分胶囊（★ 8.2，黑纱底金字）与右上已收藏心形；类型/集数/简介/进度条不进海报格<br>
+    <b>④</b>标题在图下，固定两行（<code>minLines = maxLines = 2</code>，超出省略），保证网格行高整齐<br>
+    <b>⑤</b>逐格骨架占位（几何与真卡一致）+ <code>Modifier.animateItem()</code> 逐项入场；加载更多时在网格末尾追加一行骨架
+  </div>
+</div>
+
+<!-- ================= 细节 1：海报卡 ================= -->
+<div>
+  <h2>改后 · 海报卡细节</h2>
+  <div class="note">作品库海报格已存在的同源几何：16dp 圆角 / 2:3 封面 / 图下标题</div>
+  <div class="phone after">
+    <div class="wp"></div><div class="wp-scrim"></div>
+    <div class="scroll">
+      <div class="detail-pad">
+        <div class="detail-h">单卡（放大示意）<span> · DiscoverPosterCard</span></div>
+        <div class="bigcard">
+          <div class="pcover cover-art">
+            <span class="pb rate" style="font-size:11px; padding:3px 8px">★ 8.2</span>
+            <span class="pb fav" style="font-size:12px; padding:3px 7px">♥</span>
+          </div>
+          <div class="pt" style="font-size:12px; min-height:33px">冰菓</div>
+          <div class="badge sm" style="top:6px; left:-14px">1</div>
+          <div class="badge sm" style="top:6px; right:-14px">2</div>
+          <div class="badge sm" style="bottom:-6px; right:-14px">3</div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="detail-h">骨架占位<span> · 复用 PosterGridSkeletonCard</span></div>
+        <div class="pgrid" style="padding:0">
+          <div>
+            <div class="pcover sk skel-shine"></div>
+            <div class="sk-line skel-base"></div>
+          </div>
+          <div>
+            <div class="pcover sk skel-shine"></div>
+            <div class="sk-line skel-base"></div>
+          </div>
+          <div>
+            <div class="pcover sk skel-shine"></div>
+            <div class="sk-line skel-base short"></div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="detail-h">与卡片视图的信息取舍<span> · 刻意减法</span></div>
+        <div style="font-size:11.5px; color:#9a9a9f; line-height:1.9; padding:0 2px">
+          海报格 <b style="color:#b9dec0">保留</b>：封面 · 标题（2 行） · 评分胶囊 · 已收藏心形<br>
+          海报格 <b style="color:#ef9a9a">移除</b>：类型标签 · 平台/集数 · 简介 · 进度条 · 我的评分 · 个人标签<br>
+          <span style="color:#7d7d82">理由：animeko 探索页封面卡上不放任何角标——网格形态靠封面本身辨识，长文案留给卡片视图。</span>
+        </div>
+      </div>
+      <div style="height:96px"></div>
+    </div>
+    <div class="nav">
+      <div class="navi"><span class="g">▤</span>作品库</div>
+      <div class="navi on"><span class="g">◐</span>发现</div>
+      <div class="navi"><span class="g">◔</span>统计</div>
+      <div class="navi"><span class="g">⚙</span>设置</div>
+    </div>
+  </div>
+  <div class="legend">
+    <b>①</b>评分胶囊：复用 <code>ui/components/Badges.kt</code> 的 <code>RatingBadge(subject.ratingScore)</code>，叠在封面左下（内边距 6dp）<br>
+    <b>②</b>已收藏心形：复用 <code>FavoriteBadge(filled = true)</code>，叠在封面右上；未收藏则完全不渲染<br>
+    <b>③</b>标题两行：<code>labelSmall</code> + Medium、<code>minLines = maxLines = 2</code>、左右内边距 2dp、上内边距 5dp<br>
+    <span class="keep">封面比例 2:3 与作品库海报格一致（animeko 用 9:16；9:16 会裁掉 Bangumi 封面上下信息，故不采用 —— 详见计划书 §三）。</span>
+  </div>
+</div>
+
+<!-- ================= 细节 2：切换与列数 ================= -->
+<div>
+  <h2>改后 · 切换按钮与列数</h2>
+  <div class="note">布局三态循环 · 列数沿用作品库网格断点</div>
+  <div class="phone after">
+    <div class="wp"></div><div class="wp-scrim"></div>
+    <div class="scroll">
+      <div class="detail-pad">
+        <div class="detail-h">切换按钮三态<span> · SearchToolbar 同一个按钮</span></div>
+        <div class="statebox">
+          <div class="hd">当前 <b>卡片视图</b> → 按钮显示</div>
+          <div class="row">
+            <span class="tbtn" style="position:static">☰</span>
+            <span class="lb">点击 → 切到 <i>宫格视图</i>（内容说明「切到宫格视图」）</span>
+          </div>
+        </div>
+        <div class="statebox">
+          <div class="hd">当前 <b>宫格视图</b> → 按钮显示</div>
+          <div class="row">
+            <span class="tbtn" style="position:static">▦</span>
+            <span class="lb">点击 → 切到 <i>海报视图</i>（新增一步）</span>
+          </div>
+        </div>
+        <div class="statebox">
+          <div class="hd">当前 <b>海报视图</b> → 按钮显示</div>
+          <div class="row">
+            <span class="tbtn" style="position:static">▤</span>
+            <span class="lb">点击 → 切回 <i>卡片视图</i></span>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="detail-h">列数断点<span> · NirikoGridColumns</span></div>
+        <div class="statebox">
+          <div class="row">
+            <span class="cols-demo c3"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="cols-txt">手机<br>&lt; 600dp</span>
+            <span class="lb"><b>3 列</b>（与作品库现状一致）</span>
+          </div>
+          <div class="row">
+            <span class="cols-demo c4"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="cols-txt">小平板<br>600–839dp</span>
+            <span class="lb"><b>4 列</b></span>
+          </div>
+          <div class="row">
+            <span class="cols-demo c6"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="cols-txt">大屏/折叠<br>≥ 840dp</span>
+            <span class="lb"><b>6 列</b></span>
+          </div>
+        </div>
+
+        <div class="detail-h">加载与滚动的复用<span> · 逻辑不变</span></div>
+        <div style="font-size:11.5px; color:#9a9a9f; line-height:1.9; padding:0 2px">
+          触底加载：同一份 <code>hasMore / isLoadingMore / onLoadMore()</code>，网格版把「剩余 200dp」换成「剩余 2 行」判定<br>
+          滚动恢复：同一份 <code>trendingScrollIndex / Offset</code> 状态（<code>LazyGridState</code>），与卡片视图互切后仍回到同一位置<br>
+          空/错态：复用现有 <code>TrendingEmptyState</code> 文案与 <code>ErrorContent</code>，仅改成整行跨列渲染
+        </div>
+      </div>
+      <div style="height:96px"></div>
+    </div>
+    <div class="nav">
+      <div class="navi"><span class="g">▤</span>作品库</div>
+      <div class="navi on"><span class="g">◐</span>发现</div>
+      <div class="navi"><span class="g">◔</span>统计</div>
+      <div class="navi"><span class="g">⚙</span>设置</div>
+    </div>
+  </div>
+  <div class="legend">
+    <b>①</b>面包屑不变：<code>DiscoveryLayout.fromKey("GRID")</code> 仍返回宫格 —— 老用户的已存布局值完全兼容；只有停在宫格时多出「再点一次进海报」这一步<br>
+    <b>②</b>宫格视图（<code>DiscoverGridPane</code>）与卡片视图（<code>TrendingSection</code>）本轮一行不改，海报视图是同层第三个分支<br>
+    <span class="keep">列数不做 animeko 的「按 minSize 自适应」（100/128/150/180dp）—— 本项目已有 NirikoGridColumns 断点表，沿用可保持作品库与发现页列数一致。</span>
+  </div>
+</div>
+
+</body>
+</html>

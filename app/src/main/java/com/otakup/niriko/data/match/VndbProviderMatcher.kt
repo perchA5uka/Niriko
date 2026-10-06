@@ -8,6 +8,7 @@ import com.otakup.niriko.data.remote.vndb.VndbApiService
 import com.otakup.niriko.data.remote.vndb.dto.VndbQueryRequest
 import com.otakup.niriko.data.remote.vndb.dto.VndbVisualNovelDto
 import com.otakup.niriko.data.remote.vndb.toRawCandidate
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 
@@ -43,6 +44,10 @@ class VndbProviderMatcher(
 
     override val label: String = "VNDB"
 
+    override val stopConfidence: Float = 0.92f
+    // At most four keywords, each with one primary and one fallback request.
+    override val maxQueryCount: Int = 4
+
     /**
      * infobox 里可能出现的 VNDB 键名。
      *
@@ -71,15 +76,31 @@ class VndbProviderMatcher(
      * 对中文标题与罗马音未必命中 —— 这正是《魔法少女的魔女审判》之类的
      * 「中文名搜不到」的来源之一。
      *
-     * 现在：先走全文检索；**只有返回 0 条时**才退回 `["or", search, title~, alttitle~]`
-     * （`~` 是子串匹配）。加「只有 0 条才退」这个条件是为了不白白多打一倍请求 ——
-     * VNDB 限流 200 次 / 5 分钟。
+     * 全文结果为空或所有候选低于自动绑定质量时，补充一次子串召回。
+     * 使用完整标题集合与共用打分，不降低自动绑定阈值；每个关键词最多两次请求。
      */
     override suspend fun query(text: String, subject: SubjectEntity): List<RawCandidate> {
+        return query(text, subject, listOfNotNull(subject.titleCN, subject.title))
+    }
+
+    override suspend fun query(
+        text: String,
+        subject: SubjectEntity,
+        scoringTitles: List<String>,
+    ): List<RawCandidate> {
         if (text.isBlank()) return emptyList()
         val primary = runQuery(searchFilters(text))
-        if (primary.isNotEmpty()) return primary
-        return runQuery(substringFilters(text))
+        val sufficient = primary.any { candidate ->
+            MatchScorer.score(
+                bangumiTitles = scoringTitles,
+                candidate = candidate,
+                bangumiYear = subject.airDate?.take(4)?.toIntOrNull(),
+                bangumiEpisodes = subject.totalEpisodes,
+                bangumiPlatforms = listOfNotNull(subject.platform),
+            ).score >= stopConfidence
+        }
+        if (sufficient) return primary
+        return (primary + runQuery(substringFilters(text))).distinctBy { it.externalId }
     }
 
     /** 执行一次 VNDB 查询；失败静默返回空（VNDB 是补充源，不能拖垮主流程）。 */
@@ -93,7 +114,10 @@ class VndbProviderMatcher(
                     results = 10,
                 )
             ).results.map { it.toRawCandidate() }
-        }.onFailure { Log.w(TAG, "query failed filters=$filters", it) }
+        }.onFailure {
+            if (it is CancellationException) throw it
+            Log.w(TAG, "query failed filters=$filters", it)
+        }
             .getOrDefault(emptyList())
 
     private fun searchFilters(text: String) = buildJsonArray {
@@ -118,7 +142,10 @@ class VndbProviderMatcher(
                     results = 1,
                 )
             ).results.firstOrNull()?.toRawCandidate()
-        }.onFailure { Log.w(TAG, "byId failed id=$id", it) }
+        }.onFailure {
+            if (it is CancellationException) throw it
+            Log.w(TAG, "byId failed id=$id", it)
+        }
             .getOrNull()
     }
 

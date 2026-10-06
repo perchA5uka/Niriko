@@ -1,5 +1,7 @@
 package com.otakup.niriko.data.remote.rating
 
+import kotlinx.serialization.Serializable
+
 /**
  * 统一的外部权威评分。
  *
@@ -7,6 +9,7 @@ package com.otakup.niriko.data.remote.rating
  * [nativeScore] + [scoreMax]（按原标尺展示）与 [score]（换算到 10 分制，用于同屏排序/对比）。
  * UI 必须显示来源名与标尺，避免「IMDb 8.6 与 Metacritic 87 谁高」这类误读。
  */
+@Serializable
 data class ExternalRating(
     /** tmdb / imdb / metacritic / steam_review / igdb / opencritic / rawg / musicbrainz / discogs / ... */
     val sourceId: String,

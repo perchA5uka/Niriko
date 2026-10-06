@@ -10,8 +10,6 @@ import android.provider.MediaStore
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -31,19 +29,16 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -52,10 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
-import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import me.saket.telephoto.zoomable.ZoomSpec
+import me.saket.telephoto.zoomable.ZoomableImageState
+import me.saket.telephoto.zoomable.rememberZoomableImageState
+import me.saket.telephoto.zoomable.rememberZoomableState
+import me.saket.telephoto.zoomable.coil.ZoomableAsyncImage
 import java.net.URL
 import kotlin.math.abs
 
@@ -64,9 +63,8 @@ import kotlin.math.abs
  *
  * 能力：
  * - `HorizontalPager` 翻页；
- * - 捏合缩放 + 双指平移（`detectTransformGestures`）；
- * - 双击在 1× 与 2.5× 之间切换；
- * - 缩放态下自动禁用翻页，避免手势打架；
+ * - 捏合缩放 + 平移 + 双击（telephoto `ZoomableAsyncImage`，缩放态自动禁翻页，避免手势打架）；
+ * - 大图子采样解码（`BitmapRegionDecoder`），超长海报不会整张进内存；
  * - 保存到相册（MediaStore，Android 10+ 免权限写入 Pictures/Niriko；API ≤ 28 在**初次点击保存**时申请写存储权限，B2-1）；
  * - 用浏览器打开原图。
  *
@@ -90,8 +88,11 @@ fun ImageViewer(
         initialPage = initialIndex.coerceIn(0, urls.lastIndex),
         pageCount = { urls.size },
     )
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    // 缩放状态按页各存一份：翻页回来时仍停在原来的缩放位置。
+    // 当前页是否处于放大态，决定 HorizontalPager 能不能翻页（缩放态禁翻页，避免与平移手势打架）。
+    val zoomStates = remember(urls.size) { mutableStateMapOf<Int, ZoomableImageState>() }
+    val currentPageZoomFraction = zoomStates[pagerState.currentPage]?.zoomableState?.zoomFraction
+    val isCurrentPageZoomed = currentPageZoomFraction != null && currentPageZoomFraction > 0f
 
     // 计划 B2-1（用户确认：初次在使用保存功能时申请）：
     // 只有 API ≤ 28 的 MediaStore 写入需要 WRITE_EXTERNAL_STORAGE；29+ 分区存储免权限。
@@ -112,12 +113,6 @@ fun ImageViewer(
         }
     }
 
-    // 翻页后重置缩放
-    LaunchedEffect(pagerState.currentPage) {
-        scale = 1f
-        offset = Offset.Zero
-    }
-
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -125,41 +120,21 @@ fun ImageViewer(
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(
                 state = pagerState,
-                userScrollEnabled = scale <= 1.02f,
+                userScrollEnabled = !isCurrentPageZoomed,
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
                 val url = urls[page]
+                // telephoto（Apache-2.0，me.saket.telephoto）：
+                // - 缩放/平移/双击/超缩回弹由 ZoomableAsyncImage 统一实现，缩放态不会把图拖出边界
+                //   （原实现按容器尺寸算平移上限，长图放大后仍能拖出画面）；
+                // - 大图走 BitmapRegionDecoder 子采样，只解码可见区域，超长海报不再整张进内存。
+                val zoomableState = rememberZoomableState(
+                    zoomSpec = remember { ZoomSpec(maxZoomFactor = IMAGE_MAX_ZOOM_FACTOR) },
+                )
+                val imageState = rememberZoomableImageState(zoomableState)
+                SideEffect { zoomStates[page] = imageState }
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(url) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                val newScale = (scale * zoom).coerceIn(1f, 5f)
-                                scale = newScale
-                                offset = if (newScale <= 1.02f) {
-                                    Offset.Zero
-                                } else {
-                                    val maxX = size.width * (newScale - 1f) / 2f
-                                    val maxY = size.height * (newScale - 1f) / 2f
-                                    Offset(
-                                        x = (offset.x + pan.x).coerceIn(-maxX, maxX),
-                                        y = (offset.y + pan.y).coerceIn(-maxY, maxY),
-                                    )
-                                }
-                            }
-                        }
-                        .pointerInput(url) {
-                            detectTapGestures(
-                                onDoubleTap = {
-                                    if (scale > 1.02f) {
-                                        scale = 1f
-                                        offset = Offset.Zero
-                                    } else {
-                                        scale = 2.5f
-                                    }
-                                },
-                            )
-                        },
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
                     val imageRequest = remember(url, referer) {
@@ -172,18 +147,12 @@ fun ImageViewer(
                             }
                             .build()
                     }
-                    AsyncImage(
+                    ZoomableAsyncImage(
                         model = imageRequest,
                         contentDescription = title,
+                        state = imageState,
                         contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = offset.x,
-                                translationY = offset.y,
-                            ),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
@@ -339,6 +308,9 @@ private fun needsLegacyStoragePermission(context: Context): Boolean =
         ) != PackageManager.PERMISSION_GRANTED
 
 /** 单张图片的下载上限（防止误点一张几十 MB 的原图把内存/流量打爆）。 */
+/** 图片查看器最大放大倍数（telephoto ZoomSpec；原实现为 1×..5×）。 */
+private const val IMAGE_MAX_ZOOM_FACTOR = 5f
+
 private const val MAX_DOWNLOAD_BYTES = 24L * 1024 * 1024
 
 /** 下载图片用的 UA（豆瓣等图床会按 UA 分流）。 */

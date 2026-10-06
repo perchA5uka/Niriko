@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,6 +42,7 @@ import com.otakup.niriko.navigation.SETTINGS_SEARCH_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_DATASOURCE_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_SYNC_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_ABOUT_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_DONATE_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_REFRESH_ROUTE
 import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
@@ -159,11 +162,35 @@ private fun SettingsCategoryListScreen(
                     onClick = { onNavigateToCategory(SETTINGS_ABOUT_ROUTE) },
                 )
             },
+            {
+                SettingsCategoryRow(
+                    title = "向开发者捐赠",
+                    subtitle = "帮助我继续更新",
+                    icon = Icons.Outlined.VolunteerActivism,
+                    onClick = { onNavigateToCategory(SETTINGS_DONATE_ROUTE) },
+                )
+            },
         ))
 
-        Spacer(Modifier.height(32.dp))
+        // 底部留白必须盖住悬浮 dock，否则最后一行会被压在胶囊底下。
+        // dock 的实际占位 = 64dp 胶囊 + 14dp 距底偏移(+ 系统导航栏 inset)，
+        // 这里取与发现/统计信息流同款的 120dp，并同样叠加导航栏 inset —— 两种 inset
+        // 归属模型（外层是否已消化底部 inset）下，最后一行到 dock 顶边的净空都是 ~42dp。
+        Spacer(
+            Modifier
+                .navigationBarsPadding()
+                .height(DockBottomReserve),
+        )
     }
 }
+
+/**
+ * 顶层页底部为悬浮 dock 预留的空白高度。
+ *
+ * dock 胶囊本身 64dp（见 [com.otakup.niriko.ui.bottombar.LiquidBottomTabs]），
+ * 再加距底 14dp；留白必须大于一个 dock 高度，否则分组最后一行会被挡住。
+ */
+private val DockBottomReserve = 120.dp
 
 /**
  * 分类行（Kazumi SettingsCategoryTile 等价物）：

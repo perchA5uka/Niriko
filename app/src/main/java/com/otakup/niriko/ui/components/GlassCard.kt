@@ -30,6 +30,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.otakup.niriko.ui.common.loadCoverAnalysisBitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -95,6 +99,9 @@ fun Modifier.appleGlassCard(
     tintColor: Color? = null,
     isCollectionCard: Boolean = false,
     interactionSource: MutableInteractionSource? = null,
+    material: com.otakup.niriko.data.model.CardMaterialState = com.otakup.niriko.data.model.CardMaterialState(),
+    lighting: com.otakup.niriko.ui.animation.PressTiltLighting? = null,
+    breathing: () -> Float = { 0f },
 ): Modifier {
     val isDark = LocalDarkTheme.current
     val cardBackdrop = LocalCardGlassBackdrop.current
@@ -144,15 +151,17 @@ fun Modifier.appleGlassCard(
     val shadow = { liquidGlassShadow(isDark = isDark) }
     // 玻璃内厚度：底部一条下沉暗边。
     val innerShadow = { liquidGlassInnerShadow(isDark = isDark) }
+    val raritySurface = rememberCardRaritySurface(material, shape, lighting, breathing)
     val onDrawSurface: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit = {
-        // 玻璃 tint 底
-        drawRect(color = glassBase)
-        // Ambient Tint（仅上 1/3）
-        tintBrush?.let { brush ->
-            drawRect(brush = brush, size = Size(size.width, size.height / 3f))
+        // Surface callbacks are outside the backdrop's clipped content layer.
+        drawClippedCardSurface(shape) {
+            drawRect(color = glassBase)
+            tintBrush?.let { brush ->
+                drawRect(brush = brush, size = Size(size.width, size.height / 3f))
+            }
+            drawRect(brush = highlightBrush)
+            raritySurface?.invoke(this)
         }
-        // 顶部受光 → 中心透明 → 底部沉降
-        drawRect(brush = highlightBrush)
     }
     // 判定集中到 GlassDecision（纯函数，真值表由 GlassDecisionTest 覆盖）
     val realEnabled = GlassDecision.cardUsesRealGlass(
@@ -164,7 +173,7 @@ fun Modifier.appleGlassCard(
     // 类型收窄：realEnabled 只可能在 cardBackdrop 非 null 时成立（判定内含判空），抽成纯函数后
     // 编译器无法再智能转换，这里显式收窄一次，语义与抽取前逐字一致。
     val realGlassBackdrop = if (realEnabled) cardBackdrop else null
-    return if (realGlassBackdrop != null) {
+    val glass = if (realGlassBackdrop != null) {
         // 真液态玻璃：和 dock 同管线 —— vibrancy → blur → lens（折射背后壁纸），
         // 再叠加发光边缘/外投影/内厚度。这就是“卡片=玻璃”。
         this.drawBackdrop(
@@ -199,6 +208,7 @@ fun Modifier.appleGlassCard(
             onDrawSurface = onDrawSurface,
         )
     }
+    return glass
 }
 
 /**
@@ -359,16 +369,12 @@ fun rememberCoverTint(url: String?): Color? {
     LaunchedEffect(url) {
         if (url != null && tint == null) {
             val extracted = runCatching {
-                val request = ImageRequest.Builder(context)
-                    .data(url)
-                    .size(32)
-                    .memoryCachePolicy(CachePolicy.ENABLED)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .build()
-                val result = Coil.imageLoader(context).execute(request)
-                val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
-                bitmap?.let(::extractAmbientTint)
-            }.getOrNull()
+                val bitmap = loadCoverAnalysisBitmap(context, url) ?: return@runCatching null
+                withContext(Dispatchers.Default) { extractAmbientTint(bitmap) }
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                null
+            }
             // ConcurrentHashMap 禁止 null value：取色失败（null）不入缓存，仅 UI 态回退
             if (extracted != null) {
                 coverTintCache[url] = extracted

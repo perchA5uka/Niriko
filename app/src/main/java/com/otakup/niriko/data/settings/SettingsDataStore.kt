@@ -31,6 +31,19 @@ class SettingsDataStore(private val context: Context) {
         val THEME_COLOR_INDEX = intPreferencesKey("theme_color_index")
         val CUSTOM_SEED_COLOR = intPreferencesKey("custom_seed_color")
         val WALLPAPER_ENABLED = booleanPreferencesKey("wallpaper_enabled")
+        val WALLPAPER_PARALLAX_ENABLED = booleanPreferencesKey("wallpaper_parallax_enabled")
+
+        /** F06：详情页隐藏的部件（逗号分隔的稳定 key）。 */
+        val DETAIL_HIDDEN_SECTIONS = stringPreferencesKey("detail_hidden_sections")
+
+        /** F06 第二步：详情页部件顺序（逗号分隔的稳定 key；空 = 默认顺序）。 */
+        val DETAIL_SECTION_ORDER = stringPreferencesKey("detail_section_order")
+
+        /** F18：书籍 / 漫画半调网点（默认开）。 */
+        val HALFTONE_ENABLED = booleanPreferencesKey("halftone_enabled")
+
+        /** F08：CRT 老电视模式（默认关）。 */
+        val CRT_MODE_ENABLED = booleanPreferencesKey("crt_mode_enabled")
         val WALLPAPER_URI = stringPreferencesKey("wallpaper_uri")
         val WALLPAPER_LIBRARY_URI = stringPreferencesKey("wallpaper_library_uri")
         val WALLPAPER_DISCOVER_URI = stringPreferencesKey("wallpaper_discover_uri")
@@ -38,6 +51,9 @@ class SettingsDataStore(private val context: Context) {
         val WALLPAPER_SETTINGS_URI = stringPreferencesKey("wallpaper_settings_uri")
         val WALLPAPER_BLUR_DP = intPreferencesKey("wallpaper_blur_dp")
         val WALLPAPER_ATMOSPHERE = stringPreferencesKey("wallpaper_atmosphere")  // WallpaperAtmosphere.name
+        val WALLPAPER_LIBRARY = stringPreferencesKey("wallpaper_library")  // JSON（WallpaperLibraryCodec）
+        val WALLPAPER_ROTATION_ENABLED = booleanPreferencesKey("wallpaper_rotation_enabled")
+        val WALLPAPER_ROTATION_FAVORITES_ONLY = booleanPreferencesKey("wallpaper_rotation_favorites_only")
         val CARD_GLASS_LEVEL = stringPreferencesKey("card_glass_level")  // CardGlassLevel.name
         val SPLASH_ENABLED = booleanPreferencesKey("splash_enabled")
         val ACTIVE_THEME_PACK_ID = stringPreferencesKey("active_theme_pack_id")
@@ -139,6 +155,11 @@ class SettingsDataStore(private val context: Context) {
             themeColorIndex = prefs[Keys.THEME_COLOR_INDEX] ?: defaults.themeColorIndex,
             customSeedColor = prefs[Keys.CUSTOM_SEED_COLOR] ?: defaults.customSeedColor,
             wallpaperEnabled = prefs[Keys.WALLPAPER_ENABLED] ?: defaults.wallpaperEnabled,
+            wallpaperParallaxEnabled = prefs[Keys.WALLPAPER_PARALLAX_ENABLED] ?: defaults.wallpaperParallaxEnabled,
+            detailHiddenSections = prefs[Keys.DETAIL_HIDDEN_SECTIONS] ?: defaults.detailHiddenSections,
+            detailSectionOrder = prefs[Keys.DETAIL_SECTION_ORDER] ?: defaults.detailSectionOrder,
+            halftoneEnabled = prefs[Keys.HALFTONE_ENABLED] ?: defaults.halftoneEnabled,
+            crtModeEnabled = prefs[Keys.CRT_MODE_ENABLED] ?: defaults.crtModeEnabled,
             wallpaperUri = prefs[Keys.WALLPAPER_URI] ?: defaults.wallpaperUri,
             wallpaperLibraryUri = prefs[Keys.WALLPAPER_LIBRARY_URI] ?: defaults.wallpaperLibraryUri,
             wallpaperDiscoverUri = prefs[Keys.WALLPAPER_DISCOVER_URI] ?: defaults.wallpaperDiscoverUri,
@@ -148,6 +169,9 @@ class SettingsDataStore(private val context: Context) {
             wallpaperAtmosphere = prefs[Keys.WALLPAPER_ATMOSPHERE]?.let { name ->
                 try { WallpaperAtmosphere.valueOf(name) } catch (_: IllegalArgumentException) { defaults.wallpaperAtmosphere }
             } ?: defaults.wallpaperAtmosphere,
+            wallpaperLibraryEntries = com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.decode(prefs[Keys.WALLPAPER_LIBRARY]),
+            wallpaperRotationEnabled = prefs[Keys.WALLPAPER_ROTATION_ENABLED] ?: defaults.wallpaperRotationEnabled,
+            wallpaperRotationFavoritesOnly = prefs[Keys.WALLPAPER_ROTATION_FAVORITES_ONLY] ?: defaults.wallpaperRotationFavoritesOnly,
             cardGlassLevel = prefs[Keys.CARD_GLASS_LEVEL]?.let { name ->
                 try { CardGlassLevel.valueOf(name) } catch (_: IllegalArgumentException) { defaults.cardGlassLevel }
             } ?: defaults.cardGlassLevel,
@@ -248,6 +272,30 @@ class SettingsDataStore(private val context: Context) {
         runCatching { context.dataStore.edit { it[Keys.THEME_COLOR_INDEX] = index.coerceAtLeast(0) } }
     }
 
+    suspend fun setWallpaperParallaxEnabled(enabled: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.WALLPAPER_PARALLAX_ENABLED] = enabled } }
+    }
+
+    /** F06：写入「详情页隐藏的部件」（已编码的 key 串）。 */
+    suspend fun setDetailHiddenSections(encoded: String) {
+        runCatching { context.dataStore.edit { it[Keys.DETAIL_HIDDEN_SECTIONS] = encoded } }
+    }
+
+    /** F06 第二步：写入「详情页部件顺序」（已编码的 key 串；空串 = 默认顺序）。 */
+    suspend fun setDetailSectionOrder(encoded: String) {
+        runCatching { context.dataStore.edit { it[Keys.DETAIL_SECTION_ORDER] = encoded } }
+    }
+
+    /** F18：书籍 / 漫画网点总开关。 */
+    suspend fun setHalftoneEnabled(enabled: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.HALFTONE_ENABLED] = enabled } }
+    }
+
+    /** F08：CRT 老电视模式开关。 */
+    suspend fun setCrtModeEnabled(enabled: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.CRT_MODE_ENABLED] = enabled } }
+    }
+
     suspend fun setWallpaperEnabled(enabled: Boolean) {
         runCatching { context.dataStore.edit { it[Keys.WALLPAPER_ENABLED] = enabled } }
     }
@@ -277,6 +325,22 @@ class SettingsDataStore(private val context: Context) {
     /** 设置壁纸氛围（浓郁/均衡/素净）。 */
     suspend fun setWallpaperAtmosphere(level: WallpaperAtmosphere) {
         runCatching { context.dataStore.edit { it[Keys.WALLPAPER_ATMOSPHERE] = level.name } }
+    }
+
+    /** 设置壁纸库整表（R3 壁纸库）。 */
+    suspend fun setWallpaperLibraryEntries(entries: List<com.otakup.niriko.data.wallpaper.WallpaperLibraryEntry>) {
+        val encoded = com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.encode(entries)
+        runCatching { context.dataStore.edit { it[Keys.WALLPAPER_LIBRARY] = encoded } }
+    }
+
+    /** 设置壁纸每日轮换开关。 */
+    suspend fun setWallpaperRotationEnabled(enabled: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.WALLPAPER_ROTATION_ENABLED] = enabled } }
+    }
+
+    /** 设置轮换是否只取收藏项。 */
+    suspend fun setWallpaperRotationFavoritesOnly(enabled: Boolean) {
+        runCatching { context.dataStore.edit { it[Keys.WALLPAPER_ROTATION_FAVORITES_ONLY] = enabled } }
     }
 
     /** 设置卡片液态玻璃档位（全开 / 仅已收藏 / 关闭）。 */
@@ -586,6 +650,11 @@ class SettingsDataStore(private val context: Context) {
                 if (settings.customSeedColor == -1) prefs.remove(Keys.CUSTOM_SEED_COLOR)
                 else prefs[Keys.CUSTOM_SEED_COLOR] = settings.customSeedColor
                 prefs[Keys.WALLPAPER_ENABLED] = settings.wallpaperEnabled
+                prefs[Keys.WALLPAPER_PARALLAX_ENABLED] = settings.wallpaperParallaxEnabled
+        prefs[Keys.DETAIL_HIDDEN_SECTIONS] = settings.detailHiddenSections
+        prefs[Keys.DETAIL_SECTION_ORDER] = settings.detailSectionOrder
+        prefs[Keys.HALFTONE_ENABLED] = settings.halftoneEnabled
+        prefs[Keys.CRT_MODE_ENABLED] = settings.crtModeEnabled
                 prefs[Keys.WALLPAPER_URI] = settings.wallpaperUri
                 prefs[Keys.WALLPAPER_LIBRARY_URI] = settings.wallpaperLibraryUri
                 prefs[Keys.WALLPAPER_DISCOVER_URI] = settings.wallpaperDiscoverUri
@@ -593,6 +662,9 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.WALLPAPER_SETTINGS_URI] = settings.wallpaperSettingsUri
                 prefs[Keys.WALLPAPER_BLUR_DP] = settings.wallpaperBlurDp
                 prefs[Keys.WALLPAPER_ATMOSPHERE] = settings.wallpaperAtmosphere.name
+                prefs[Keys.WALLPAPER_LIBRARY] = com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.encode(settings.wallpaperLibraryEntries)
+                prefs[Keys.WALLPAPER_ROTATION_ENABLED] = settings.wallpaperRotationEnabled
+                prefs[Keys.WALLPAPER_ROTATION_FAVORITES_ONLY] = settings.wallpaperRotationFavoritesOnly
                 prefs[Keys.CARD_GLASS_LEVEL] = settings.cardGlassLevel.name
                 prefs[Keys.SPLASH_ENABLED] = settings.splashEnabled
                 prefs[Keys.ACTIVE_THEME_PACK_ID] = settings.activeThemePackId
