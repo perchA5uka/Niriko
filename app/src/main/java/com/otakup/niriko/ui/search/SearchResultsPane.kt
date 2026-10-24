@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.filter.FilterDimension
+import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.data.model.search.SearchSortMode
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.probe.ProbeResult
@@ -94,7 +95,11 @@ fun SearchResultsPane(
         when {
             query.isBlank() -> {
                 // 未输入：搜索历史 + 搜索链路自检入口（F9；刻意只放空态，不动设置页）
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = topInset)) {
+                Column(
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                        .reportBottomBarScroll()
+                        .padding(top = topInset),
+                ) {
                     if (state.searchHistory.isNotEmpty()) {
                         SearchHistorySection(
                             history = state.searchHistory,
@@ -120,6 +125,7 @@ fun SearchResultsPane(
 
             state.isPersonSearch && state.personResults.isNotEmpty() -> {
                 LazyColumn(
+                    modifier = Modifier.reportBottomBarScroll(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -164,6 +170,7 @@ fun SearchResultsPane(
             state.results.isNotEmpty() -> {
                 LazyColumn(
                     state = listState,
+                    modifier = Modifier.reportBottomBarScroll(),
                     contentPadding = PaddingValues(top = topInset, bottom = 120.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {

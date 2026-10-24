@@ -100,6 +100,16 @@ data class AppSettings(
      */
     val detailSectionOrder: String = "",
     /**
+     * 详情页「外部源区块」的折叠状态（批次 C · 6.15）：按作品分组的字符串，
+     * 见 util/DetailCollapseState（"subjectId:steam,vndb;…"）。空串 = 全部展开。
+     */
+    val detailCollapsedSections: String = "",
+    /**
+     * 标题 logo 三档（批次 C · 13.1）："off"（默认）/ "always" / "text_when_unclear"。
+     * 存字符串而不是枚举：设置层不依赖 UI，解析与容错在 util/TitleLogoPolicy.fromKey。
+     */
+    val titleLogoMode: String = "off",
+    /**
      * 书籍 / 漫画的半调网点（F18）。
      *
      * 默认开：§11.3 要求「按类型自动启用低强度覆盖」，因此默认值必须是 true，
@@ -115,6 +125,12 @@ data class AppSettings(
     val crtModeEnabled: Boolean = false,
     /** 玻璃/特效强度：默认 FULL（全效果），可降级为 REDUCED/OFF（阶段 P 性能优化）。 */
     val glassEffect: GlassEffectLevel = GlassEffectLevel.FULL,
+    /**
+     * 玻璃自动降档（10.1）：AUTO = 按本机能力自动降档；MANUAL = 只听 [glassEffect]。
+     *
+     * 存字符串而不是布尔：以后要加「只降折射 / 只降模糊」等细分档时不用改键名。
+     */
+    val glassAutoTier: String = "AUTO",
     /** 自定义桌面图标模式："none"=默认 / "theme"=主题色生成 / "image"=用户上传图。 */
     val customIconMode: String = "none",
     /** 分享卡包含项（阶段 I）。 */
@@ -143,7 +159,6 @@ data class AppSettings(
     val airingReminderEnabled: Boolean = false,
 
     // ===== 数据源 =====
-    val activeDataSourceId: String = "bangumi",
     /** Bangumi 接口端点：官方站 / 国内反代。 */
     val bangumiEndpoint: BangumiEndpoint = BangumiEndpoint.OFFICIAL,
     /** Steam Web API key（可选，公开接口无需 key，仅未来扩展用）。 */

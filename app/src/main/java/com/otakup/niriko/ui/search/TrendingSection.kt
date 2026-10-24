@@ -41,12 +41,19 @@ import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.navigation.applyTabReselectTo
 import com.otakup.niriko.ui.animation.RevealOnScroll
 import com.otakup.niriko.ui.common.reportBottomBarScroll
+import androidx.compose.ui.platform.LocalContext
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.model.search.TrendingMode
+import com.otakup.niriko.data.rank.RankDelta
+import com.otakup.niriko.data.rank.RankingSnapshotStore
+import com.otakup.niriko.data.rank.SettingsRankingSnapshotStorage
+import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.components.ErrorContent
 import com.otakup.niriko.ui.components.SkeletonSubjectCard
 import com.otakup.niriko.ui.subject.SubjectResultCard
 import com.otakup.niriko.util.toCardDisplayModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * 趋势区的「上次更新」一行。
@@ -195,6 +202,8 @@ fun TrendingSection(
                     }
                 }
             }
+            // 3.7：榜单周快照 → 行尾 ▲▼。只在历史排名（有 rank）时计算；本周首次采集当周没有旧快照，箭头自然为空。
+            val rankDeltas = rememberRankingDeltas(state.trendingMode, state.trendingResults)
             LazyColumn(state = listState, modifier = Modifier.reportBottomBarScroll(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = topInset, bottom = 120.dp)) {
                 item(key = "feed_header") {
                     Column { headerContent?.invoke(); TrendingFreshnessRow(lastUpdatedAt, onForceRefresh) }
@@ -204,6 +213,8 @@ fun TrendingSection(
                     RevealOnScroll(staggerIndex = index % 5) {
                         SubjectResultCard(
                             pressTiltEnabled = true,
+                            // 3.7：榜单行尾的 ▲▼（只在历史排名且有上周快照时出现）
+                            rankDelta = rankDeltas[subject.subjectId],
                             model = subject.toCardDisplayModel(state.steamGames[subject.subjectId]),
                             isInCollection = subject.subjectId in state.collectedSubjectIds,
                             onClick = { onSubjectClick(subject.subjectId) },
@@ -304,4 +315,42 @@ internal fun TrendingEmptyState(
             TextButton(onClick = onOpenAllTime) { Text("查看历史排名 ›") }
         }
     }
+}
+
+/**
+ * 3.7：历史排名的周对比（▲/▼）。
+ *
+ * 采集时机：榜单加载成功后再判断「本周是否已有快照」，没有就滚动一版；同一周内重复打开
+ * 只读不写，因此不需要 Worker。首次采集没有上周数据 → 返回空表 → 行尾不显示任何角标。
+ */
+@Composable
+private fun rememberRankingDeltas(
+    mode: TrendingMode,
+    results: List<com.otakup.niriko.data.local.entity.SubjectEntity>,
+): Map<Long, RankDelta> {
+    if (mode != TrendingMode.ALL_TIME || results.isEmpty()) return emptyMap()
+    val context = LocalContext.current
+    val ranks = remember(results) {
+        results.mapNotNull { subject ->
+            subject.rank?.takeIf { it > 0 }?.let { subject.subjectId to it }
+        }.toMap()
+    }
+    var deltas by remember(ranks) { mutableStateOf<Map<Long, RankDelta>>(emptyMap()) }
+    LaunchedEffect(ranks) {
+        if (ranks.isEmpty()) {
+            deltas = emptyMap()
+            return@LaunchedEffect
+        }
+        deltas = withContext(Dispatchers.IO) {
+            // runCatching：预览 / 非 App context 取不到 DataStore 时退化为"无快照"（不显示箭头）。
+            runCatching {
+                val store = RankingSnapshotStore(
+                    SettingsRankingSnapshotStorage(context.nirikoApp.settingsDataStore),
+                )
+                store.captureIfNeeded(ranks)
+                store.deltas(ranks)
+            }.getOrDefault(emptyMap())
+        }
+    }
+    return deltas
 }

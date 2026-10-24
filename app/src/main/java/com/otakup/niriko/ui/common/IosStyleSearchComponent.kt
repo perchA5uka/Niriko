@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,11 +77,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
 import com.otakup.niriko.ui.components.searchGlassSurface
 import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.util.TopFadePolicy
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** 拖拽提交阈值：滑块接近最左端（0.9）即触发沉浸，无需精确拖到边缘。 */
 private const val COMMIT_THRESHOLD = 0.9f
+
+/** 行 2–4 的几何总高（40 + 18 + 58 dp）：展开动画期间挡板要正好盖住这三行（B4）。 */
+private val MenuRowsBlockHeight = 40.dp + 18.dp + 58.dp
+
+/**
+ * 搜索菜单展开高度（dp）。组件与调用点（发现页的顶部让位）共用同一个值，
+ * 避免两处各写一个 200 之后悄悄漂移（B3）。
+ */
+internal val SearchMenuHeight = 200.dp
+
+/** 沉浸搜索但未编辑 / 未展开筛选行时的卡片高度（dp）。 */
+internal val SearchImmersiveCollapsedHeight = 68.dp
 
 /** 沉浸态绿条变暗后的底色（原型 rgba(46,125,50,.16)）。 */
 private val IndicatorDim = Color(0x292E7D32)
@@ -121,7 +135,7 @@ fun IosStyleSearchComponent(
     tools: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null,
     filters: (@Composable () -> Unit)? = null,
     filterTitle: String = "类型",
-    expandedHeight: Dp = 200.dp,
+    expandedHeight: Dp = SearchMenuHeight,
 ) {
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
@@ -136,7 +150,7 @@ fun IosStyleSearchComponent(
     // ===== 尺寸常量（dp，与原型一致） =====
     val anchorDp = 56.dp            // COLLAPSED 表面/锚点尺寸
     val menuH = expandedHeight              // 菜单/沉浸展开高度
-    val collapsedH = 68.dp          // 滚动折叠后高度（仅留搜索框）
+    val collapsedH = SearchImmersiveCollapsedHeight // 滚动折叠后高度（仅留搜索框）
     val colPad = 8.dp
     val trackH = 56.dp
     val anchorSmall = 44.dp         // 菜单/沉浸态锚点（滑块）尺寸
@@ -153,20 +167,24 @@ fun IosStyleSearchComponent(
         // 若仍用 maxWidth-32dp 会把展开卡片宽度塌缩成 24dp；改屏幕宽彻底规避。
         val screenW = with(LocalConfiguration.current) { screenWidthDp.dp }
         val fullW = (screenW - 32.dp).coerceAtLeast(anchorDp)
+        val cardWTarget = if (isCollapsed) anchorDp else fullW
         val cardW by animateDpAsState(
-            targetValue = if (isCollapsed) anchorDp else fullW,
+            targetValue = cardWTarget,
             animationSpec = cardSpring,
             label = "cardW",
         )
+        val cardHTarget = when {
+            isCollapsed -> anchorDp
+            immersiveCollapsed -> collapsedH
+            else -> menuH
+        }
         val cardH by animateDpAsState(
-            targetValue = when {
-                isCollapsed -> anchorDp
-                immersiveCollapsed -> collapsedH
-                else -> menuH
-            },
+            targetValue = cardHTarget,
             animationSpec = cardSpring,
             label = "cardH",
         )
+        // 尺寸动画是否还在跑：期间行 2–4 会跟着长/缩，手指落点不可预测（B4）。
+        val surfaceAnimating = cardW != cardWTarget || cardH != cardHTarget
 
         // 卡片浮现：右上角锚点缩放 + 透明度（transformOrigin = (1, 0)）
         val reveal by animateFloatAsState(
@@ -354,6 +372,18 @@ fun IosStyleSearchComponent(
                     } else Modifier
                 ),
         ) {
+            // ===== 展开态的不透明底（B3） =====
+            // 玻璃会折射"背后"的内容，于是菜单展开后趋势卡片/筛选行会从菜单里透出来，看着没有边界。
+            // 在玻璃之上、内容之下垫一层 94% 实心底（与 GlassEffectLevel.OFF 的底色同值），
+            // 只加在展开态：收起态就是这个按钮本身，不改变它。
+            if (!isCollapsed) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)),
+                )
+            }
             // ===== 内容列（COLLAPSED 时整体淡出） =====
             // 自顶向下排布：Arrangement.Top 使第一行紧贴卡片顶部，卡片从 56dp 向下生长时
             // 第一行位置零移动（"从搜索按钮向下吐出"）；行 2/3/4 用固定高度+padding，不均分
@@ -470,77 +500,94 @@ fun IosStyleSearchComponent(
                         )
                     }
                 }
-                // ---- 行 2：模式切换（作品/人物） ----
-                Row(
+                // 收起态不组合行 2–4（B4）：卡片只有 56dp，这些行不可见却仍在命中测试里，
+                // 点到搜索按钮下缘就会命中「排序」之类的工具按钮。收起态直接不组合，最彻底。
+                if (shouldComposeMenuRows(phase, surfaceAnimating)) {
+                    // ---- 行 2：模式切换（作品/人物） ----
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                            .padding(top = 4.dp)
+                            .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (filters == null) {
+                            Chip(
+                                "作品", viewModel.mode == SearchMode.WORKS,
+                                onClick = { onModeSelected(SearchMode.WORKS) },
+                            )
+                            Chip(
+                                "人物", viewModel.mode == SearchMode.CHARACTERS,
+                                onClick = { onModeSelected(SearchMode.CHARACTERS) },
+                            )
+                        }
+                        if (tools != null) tools()
+                    }
+                    // ---- 行 3：类型标题 ----
+                    Text(
+                        text = filterTitle,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .height(18.dp)
+                            .padding(top = 4.dp, start = 12.dp)
+                            .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                    )
+                    // ---- 行 4：类型（含「全部」；横向可滚动） ----
+                    // 第 5 轮 D21/D22：
+                    //  - **「全部」回来了**。第 4 轮为了去掉「发现页的『全部』」删掉了
+                    //    SELECTABLE_CONTENT_TYPES 里的 ALL，但那个常量**只被本组件使用**
+                    //    （当时「找条目」另有自己的类型常量；第 6 轮它已并入历史排名并被删除），
+                    //    结果发现页没改对、搜索菜单的「全部」反而被误删。
+                    //    搜索场景下「不按类型过滤」是真实需求，必须保留。
+                    //  - **改回 SpaceEvenly 均分**（第 5 轮返工）。
+                    //    中间那版为了塞下 6 个类型改成了横向滚动 + spacedBy，结果每个 cell
+                    //    缩成内容宽：图标看起来变小、右侧留出一大片空白 —— 用户明确反馈了这两点。
+                    //    6 个 cell 在 360dp 下每个约 60dp，放得下 20dp 图标 + 3 字标签。
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp)
+                            .padding(top = 4.dp)
+                            .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (filters != null) {
+                            filters()
+                        } else SELECTABLE_CONTENT_TYPES.forEach { type ->
+                            TypeCell(
+                                label = type.label,
+                                type = type,
+                                selected = viewModel.contentType == type,
+                                onClick = {
+                                    // 「全部」本身就是合法选择；其余类型再点一次取消 → 回到「全部」
+                                    if (type != ContentType.ALL && viewModel.contentType == type) {
+                                        onTypeSelected(ContentType.ALL)
+                                    } else {
+                                        onTypeSelected(type)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 展开 / 收起动画期间，行 2–4 随卡片长缩而移动，手指落点不可预测：
+            // 用一层只覆盖行 2–4 矩形、只在动画窗口内存在的挡板吞掉点击（B4）。
+            // 它不是全屏透明层：不进组合之外、不覆盖锚点、动画结束即消失。
+            if (shouldComposeMenuRows(phase, surfaceAnimating) && !shouldEnableToolRow(isCollapsed, surfaceAnimating)) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(40.dp)
-                        .padding(top = 4.dp)
-                        .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (filters == null) {
-                        Chip(
-                            "作品", viewModel.mode == SearchMode.WORKS,
-                            onClick = { onModeSelected(SearchMode.WORKS) },
-                        )
-                        Chip(
-                            "人物", viewModel.mode == SearchMode.CHARACTERS,
-                            onClick = { onModeSelected(SearchMode.CHARACTERS) },
-                        )
-                    }
-                    if (tools != null) tools()
-                }
-                // ---- 行 3：类型标题 ----
-                Text(
-                    text = filterTitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .height(18.dp)
-                        .padding(top = 4.dp, start = 12.dp)
-                        .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                        .height(MenuRowsBlockHeight)
+                        .offset(y = colPad + trackH)
+                        .pointerInput(Unit) { detectTapGestures { } },
                 )
-                // ---- 行 4：类型（含「全部」；横向可滚动） ----
-                // 第 5 轮 D21/D22：
-                //  - **「全部」回来了**。第 4 轮为了去掉「发现页的『全部』」删掉了
-                //    SELECTABLE_CONTENT_TYPES 里的 ALL，但那个常量**只被本组件使用**
-                //    （当时「找条目」另有自己的类型常量；第 6 轮它已并入历史排名并被删除），
-                //    结果发现页没改对、搜索菜单的「全部」反而被误删。
-                //    搜索场景下「不按类型过滤」是真实需求，必须保留。
-                //  - **改回 SpaceEvenly 均分**（第 5 轮返工）。
-                //    中间那版为了塞下 6 个类型改成了横向滚动 + spacedBy，结果每个 cell
-                //    缩成内容宽：图标看起来变小、右侧留出一大片空白 —— 用户明确反馈了这两点。
-                //    6 个 cell 在 360dp 下每个约 60dp，放得下 20dp 图标 + 3 字标签。
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp)
-                        .padding(top = 4.dp)
-                        .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (filters != null) {
-                        filters()
-                    } else SELECTABLE_CONTENT_TYPES.forEach { type ->
-                        TypeCell(
-                            label = type.label,
-                            type = type,
-                            selected = viewModel.contentType == type,
-                            onClick = {
-                                // 「全部」本身就是合法选择；其余类型再点一次取消 → 回到「全部」
-                                if (type != ContentType.ALL && viewModel.contentType == type) {
-                                    onTypeSelected(ContentType.ALL)
-                                } else {
-                                    onTypeSelected(type)
-                                }
-                            },
-                        )
-                    }
-                }
             }
 
             // ===== 锚点（放大镜）：唯一手势入口（COLLAPSED 短按 ⇄ 菜单） =====
@@ -753,3 +800,47 @@ private fun phaseName(phase: SearchPhase): String = when (phase) {
     SearchPhase.DRAGGING -> "3 DRAGGING"
     SearchPhase.IMMERSIVE_SEARCH -> "4 IMMERSIVE_SEARCH"
 }
+
+// ===== 纯规则（B4 / B3）：不依赖 Compose，可在 JVM 单测里逐条断言 =====
+
+/**
+ * 收起态是否要组合行 2–4（B4）。
+ *
+ * 收起态卡片只有 56dp，行 2–4 在卡片外、肉眼不可见，但仍在命中测试里：
+ * 点到搜索按钮下缘就会命中「排序」之类的工具按钮。收起态直接不组合是唯一可靠的做法
+ * （只把 alpha 调成 0 不解决命中，裁剪也只影响绘制）。
+ *
+ * @param surfaceAnimating 收起动画进行中仍保留行 2–4，让它们随卡片一起淡出/缩小；
+ *   这段时间由透明挡板吃掉点击（[shouldEnableToolRow]）。
+ */
+internal fun shouldComposeMenuRows(phase: SearchPhase, surfaceAnimating: Boolean = false): Boolean =
+    phase != SearchPhase.COLLAPSED || surfaceAnimating
+
+/**
+ * 工具行（行 2 里的 [tools] 内容）是否可点（B4）。
+ *
+ * 展开 / 收起动画期间卡片正在长缩，行 2 的落点逐帧变化，此刻的点击必须丢弃：
+ * 用户按的是"刚点开的按钮"，不该由一颗还在移动的按钮来接收。
+ */
+internal fun shouldEnableToolRow(isCollapsed: Boolean, surfaceAnimating: Boolean): Boolean =
+    !isCollapsed && !surfaceAnimating
+
+/**
+ * 搜索表面展开后内容区的顶部让位（B3）。
+ *
+ * @param immersiveCollapsed 沉浸态但未编辑、未展开筛选行（卡片只有 68dp），
+ *   与组件内部的 `immersiveCollapsed` 同一判据。
+ */
+internal fun searchContentTopInsetDp(
+    phase: SearchPhase,
+    windowTopInsetDp: Float,
+    menuHeightDp: Float,
+    collapsedHeightDp: Float,
+    immersiveCollapsed: Boolean,
+): Float = TopFadePolicy.searchExpandedTopInsetDp(
+    windowTopInsetDp = windowTopInsetDp,
+    menuHeightDp = menuHeightDp,
+    collapsedHeightDp = collapsedHeightDp,
+    collapsed = phase == SearchPhase.COLLAPSED,
+    immersiveCollapsed = phase == SearchPhase.IMMERSIVE_SEARCH && immersiveCollapsed,
+)

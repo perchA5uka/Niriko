@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niriko 本轮 UI 改动原型 · 统计 / 详情 / 发现 / 设置 / 分享</title>
+<style>
+  :root{--bg:#07070a;--card:rgba(26,26,30,.62);--card2:rgba(34,34,40,.72);--line:rgba(255,255,255,.075);--txt:#e8e8ea;--dim:rgba(255,255,255,.56);--dim2:rgba(255,255,255,.34);--acc:#a5d6a7;--acc2:#b9dec0;--warn:#f0b36b;--down:#e28383;}
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--txt);font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:28px 20px 80px;display:flex;gap:44px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+  h2{font-size:17px;margin-bottom:4px;}
+  .note{font-size:12px;color:#8a8a90;margin-bottom:14px;line-height:1.6;max-width:360px;}
+  .sect{display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;justify-content:center;width:100%;}
+  .unit{display:flex;flex-direction:column;}
+
+  .idx{width:100%;max-width:1180px;border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:rgba(255,255,255,.02);}
+  .idx h1{font-size:16px;margin-bottom:4px;}
+  .idx p{font-size:12px;color:#8a8a90;margin-bottom:10px;}
+  .idx ol{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px;font-size:12px;padding-left:16px;color:var(--dim);}
+  .idx a{color:var(--acc2);text-decoration:none;}
+  .idx a:hover{text-decoration:underline;}
+
+  /* ---------- 手机框 ---------- */
+  .phone{width:360px;height:720px;border-radius:28px;overflow:hidden;position:relative;border:1px solid #2c2c31;background:#0b0b0d;flex-shrink:0;}
+  .scroll{position:absolute;inset:0;overflow-y:auto;scrollbar-width:none;}
+  .scroll::-webkit-scrollbar{display:none;}
+  .wp{position:absolute;inset:-40px;background:radial-gradient(ellipse 80% 45% at 25% 8%,rgba(110,150,130,.42),transparent 70%),radial-gradient(ellipse 70% 40% at 82% 22%,rgba(90,110,140,.45),transparent 68%),linear-gradient(165deg,#1b2430 0%,#141c24 45%,#0c1013 100%);filter:blur(26px) brightness(.5) saturate(.9);transform:scale(1.15);}
+  .wp.scrim{filter:none;transform:none;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.32),rgba(0,0,0,.55) 60%,rgba(0,0,0,.72));}
+
+  /* ---------- 顶栏 / 底栏 ---------- */
+  .top{position:sticky;top:0;z-index:6;padding:14px 14px 8px;display:flex;align-items:center;gap:8px;background:linear-gradient(#000000d0,#00000000);backdrop-filter:blur(6px);}
+  .top .ttl{font-size:17px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+  .top .sp{flex:1;}
+  .tb{width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--acc);background:rgba(255,255,255,.07);flex-shrink:0;}
+  .nav{position:absolute;left:12px;right:12px;bottom:12px;height:56px;z-index:7;display:flex;align-items:center;justify-content:space-around;border-radius:999px;background:rgba(20,20,24,.72);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border:1px solid rgba(255,255,255,.08);box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.09);}
+  .navi{font-size:10px;color:var(--dim2);display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .navi .g{font-size:15px;}
+  .navi.on{color:var(--acc);font-weight:600;}
+
+  /* ---------- 通用卡 / 文本 ---------- */
+  .pad{padding:0 12px;}
+  .card{margin:0 12px 10px;padding:14px;border-radius:20px;background:var(--card);-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.07);}
+  .card.tight{padding:12px 14px;}
+  .ch{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+  .ch .t{font-size:13.5px;font-weight:650;}
+  .ch .sp{flex:1;}
+  .ch .a{font-size:11px;color:var(--acc2);}
+  .sub{font-size:11px;color:var(--dim);line-height:1.6;}
+  .muted{color:var(--dim);}
+  .dim2{color:var(--dim2);}
+  .row{display:flex;align-items:center;gap:10px;}
+  .grow{flex:1;min-width:0;}
+  .ell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .pill{font-size:10.5px;padding:4px 9px;border-radius:999px;border:1px solid rgba(255,255,255,.16);color:var(--dim);white-space:nowrap;}
+  .pill.on{border-color:rgba(165,214,167,.45);background:rgba(165,214,167,.13);color:var(--acc2);font-weight:600;}
+  .btn{font-size:11.5px;padding:7px 12px;border-radius:999px;background:rgba(165,214,167,.16);color:var(--acc2);border:1px solid rgba(165,214,167,.28);font-weight:600;white-space:nowrap;}
+  .btn.ghost{background:rgba(255,255,255,.05);color:var(--dim);border-color:rgba(255,255,255,.12);font-weight:500;}
+  .btn.warn{background:rgba(240,179,107,.14);color:var(--warn);border-color:rgba(240,179,107,.3);}
+  .hr{height:1px;background:var(--line);margin:10px 0;}
+
+  /* ---------- 封面（纯 CSS 模拟） ---------- */
+  .cv{border-radius:12px;overflow:hidden;position:relative;background:#17171b;}
+  .cv-frieren{background:radial-gradient(circle at 30% 20%,#bfe3d0,#6fa,transparent 60%),linear-gradient(160deg,#20323a,#0f1a20);}
+  .cv-frieren::after{content:"葬送のフリーレン";position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:8px;color:#eaf7ef;letter-spacing:1px;text-shadow:0 1px 4px #000;}
+  .cv-kusuri{background:radial-gradient(circle at 70% 25%,#f0c6d8,#b06b8a,transparent 62%),linear-gradient(160deg,#3a2030,#1a0f16);}
+  .cv-kusuri::after{content:"薬屋のひとりごと";position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:8px;color:#ffe9f2;letter-spacing:1px;}
+  .cv-dan{background:radial-gradient(circle at 35% 70%,#ffd08a,#e0563f,transparent 60%),linear-gradient(160deg,#3a1f18,#160b08);}
+  .cv-dan::after{content:"ダンダダン";position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:9px;color:#ffe6d6;letter-spacing:2px;}
+  .cv-mahou{background:radial-gradient(circle at 60% 30%,#cfe0ff,#5b7bb5,transparent 62%),linear-gradient(160deg,#1c2438,#0b0f18);}
+  .cv-mahou::after{content:"魔法使いの嫁";position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:8px;color:#e8f0ff;letter-spacing:1px;}
+  .cv-plain{background:linear-gradient(160deg,#242430,#14141a);}
+
+  /* ---------- 统计页 ---------- */
+  .today{border-radius:20px;margin:0 12px 10px;padding:14px;background:linear-gradient(150deg,rgba(165,214,167,.16),rgba(26,26,30,.72) 45%);border:1px solid rgba(165,214,167,.24);}
+  .today .h{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;}
+  .today .h .n{font-size:15px;font-weight:700;}
+  .today .h .c{font-size:11px;color:var(--acc2);}
+  .today .l{font-size:11px;color:var(--dim);margin-bottom:10px;}
+  .evi{display:flex;align-items:center;gap:9px;padding:7px 0;}
+  .evi + .evi{border-top:1px solid rgba(255,255,255,.05);}
+  .evi .tm{font-size:11px;color:var(--acc2);width:40px;font-variant-numeric:tabular-nums;}
+  .evi .nm{font-size:12.5px;font-weight:600;}
+  .evi .ep{font-size:10.5px;color:var(--dim);}
+  .evi .pg{font-size:10px;color:var(--dim2);}
+  .behind{margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(240,179,107,.10);border:1px solid rgba(240,179,107,.2);font-size:11px;color:#f5cd9d;display:flex;align-items:center;gap:8px;}
+  .week{display:flex;gap:6px;margin:0 12px 10px;overflow:hidden;}
+  .wd{flex:1;border-radius:14px;padding:8px 4px;background:rgba(26,26,30,.6);border:1px solid var(--line);text-align:center;}
+  .wd .w{font-size:9.5px;color:var(--dim2);}
+  .wd .d{font-size:11px;font-weight:700;margin:2px 0 5px;}
+  .wd .c{height:34px;border-radius:8px;margin:0 auto 4px;width:26px;}
+  .wd .n{font-size:9px;color:var(--dim);}
+  .wd.on{border-color:rgba(165,214,167,.4);background:rgba(165,214,167,.10);}
+
+  .calhead{display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+  .calhead .m{font-size:12px;font-weight:650;}
+  .calhead .sp{flex:1;}
+  .wk{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font-size:9px;color:var(--dim2);text-align:center;margin-bottom:4px;}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+  .d{position:relative;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10.5px;color:var(--dim);background:rgba(255,255,255,.025);}
+  .d.today{background:rgba(165,214,167,.20);color:#dff3e2;font-weight:700;border:1px solid rgba(165,214,167,.45);}
+  .d.has::after{content:"";position:absolute;bottom:3px;width:3px;height:3px;border-radius:50%;background:var(--acc);}
+  .d.stop::before{content:"停";position:absolute;top:1px;right:2px;font-size:7px;color:var(--warn);}
+  .d.delay::before{content:"延";position:absolute;top:1px;right:2px;font-size:7px;color:#e28383;}
+
+  /* ---------- 数字 / 健康度 ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .kpi{border-radius:14px;padding:10px 11px;background:rgba(255,255,255,.035);border:1px solid var(--line);}
+  .kpi .v{font-size:18px;font-weight:700;letter-spacing:.5px;}
+  .kpi .k{font-size:10px;color:var(--dim);margin-top:2px;}
+  .kpi.warn .v{color:var(--warn);}
+
+  /* ---------- 榜单箭头 ---------- */
+  .rank{display:flex;align-items:center;gap:10px;padding:9px 0;}
+  .rank .no{font-size:15px;font-weight:800;width:26px;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums;}
+  .rank .no.top{color:var(--acc);}
+  .rank .cv{width:34px;height:46px;}
+  .rank .nm{font-size:12.5px;font-weight:600;}
+  .rank .mm{font-size:10px;color:var(--dim);margin-top:2px;}
+  .delta{display:inline-flex;align-items:center;gap:1px;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;padding:2px 6px;border-radius:7px;}
+  .delta.up{color:#0d1f13;background:rgba(165,214,167,.85);}
+  .delta.down{color:#2a1010;background:rgba(226,131,131,.85);}
+  .delta.flat{color:var(--dim2);background:rgba(255,255,255,.05);font-weight:600;}
+
+  /* ---------- 详情页 ---------- */
+  .hero{padding:14px 12px 10px;display:flex;gap:12px;}
+  .hero .pst{width:96px;height:136px;border-radius:14px;flex:0 0 96px;box-shadow:0 10px 26px rgba(0,0,0,.5);}
+  .logo-box{margin:2px 0 6px;padding:10px 12px;border-radius:12px;background:linear-gradient(120deg,rgba(255,255,255,.08),rgba(255,255,255,.02));border:1px dashed rgba(255,255,255,.18);}
+  .logo-word{font-size:22px;font-weight:900;letter-spacing:3px;color:#eef7ee;text-shadow:0 2px 10px rgba(0,0,0,.7),0 0 1px #fff;}
+  .logo-word small{display:block;font-size:8px;letter-spacing:4px;color:var(--acc2);font-weight:600;margin-top:3px;}
+  .ttl-text{font-size:20px;font-weight:800;line-height:1.25;}
+  .orig{font-size:10.5px;color:var(--dim);margin-top:3px;}
+  .tagrow{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;}
+  .tag{font-size:9.5px;padding:2px 7px;border-radius:999px;background:rgba(255,255,255,.06);color:var(--dim);}
+  .sec{border-radius:18px;margin:0 12px 9px;padding:12px 13px;background:rgba(26,26,30,.55);border:1px solid var(--line);}
+  .sec .sh{display:flex;align-items:center;gap:8px;}
+  .sec .sh .t{font-size:12.5px;font-weight:650;}
+  .sec .sh .sp{flex:1;}
+  .sec .sh .chev{font-size:11px;color:var(--dim2);transition:transform .2s;}
+  .sec.collapsed .sh .chev{transform:rotate(-90deg);}
+  .sec.collapsed .sb{display:none;}
+  .sb{margin-top:9px;}
+
+  /* ---------- 设置 ---------- */
+  .sgroup{margin:0 12px 10px;border-radius:16px;background:rgba(26,26,30,.6);border:1px solid var(--line);overflow:hidden;}
+  .sitem{display:flex;align-items:center;gap:10px;padding:12px 13px;}
+  .sitem + .sitem{border-top:1px solid var(--line);}
+  .sitem .ic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;background:rgba(165,214,167,.12);color:var(--acc);flex-shrink:0;}
+  .sitem .nm{font-size:12.5px;font-weight:600;}
+  .sitem .ds{font-size:10px;color:var(--dim);margin-top:2px;}
+  .sitem .val{font-size:11px;color:var(--dim);}
+  .sitem .chv{font-size:12px;color:var(--dim2);}
+  .searchbar{margin:0 12px 10px;display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);font-size:12px;color:var(--dim);}
+  .searchbar b{color:var(--txt);font-weight:600;}
+  .hl{color:#0d1f13;background:rgba(165,214,167,.85);border-radius:3px;padding:0 2px;font-weight:700;}
+
+  /* ---------- 体检 / 检查行 ---------- */
+  .ck{display:flex;align-items:center;gap:9px;padding:9px 0;font-size:12px;}
+  .ck + .ck{border-top:1px solid var(--line);}
+  .ck .st{width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;}
+  .ck .st.ok{background:rgba(165,214,167,.18);color:var(--acc);}
+  .ck .st.bad{background:rgba(240,179,107,.18);color:var(--warn);}
+  .ck .st.skip{background:rgba(255,255,255,.07);color:var(--dim2);}
+  .ck .rst{font-size:10.5px;color:var(--dim);text-align:right;}
+
+  /* ---------- 表格 / 演练 ---------- */
+  .tabs{display:flex;gap:4px;margin:0 12px 10px;overflow:hidden;}
+  .tab{font-size:10.5px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.04);color:var(--dim);white-space:nowrap;}
+  .tab.on{background:rgba(165,214,167,.16);color:var(--acc2);font-weight:700;}
+  .dir{display:flex;gap:3px;}
+  .dir .o{font-size:9.5px;padding:3px 7px;border-radius:7px;background:rgba(255,255,255,.05);color:var(--dim2);}
+  .dir .o.on{background:rgba(165,214,167,.2);color:var(--acc2);font-weight:700;}
+  .req{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:9.5px;line-height:1.7;color:#c8c8cf;background:rgba(0,0,0,.35);border-radius:10px;padding:9px 10px;border:1px solid var(--line);}
+  .req b{color:var(--acc2);font-weight:600;}
+  .req .k{color:#9aa7ff;}
+
+  /* ---------- 占用条 ---------- */
+  .use{display:flex;align-items:center;gap:10px;padding:10px 0;}
+  .use + .use{border-top:1px solid var(--line);}
+  .use .bar{flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden;}
+  .use .bar i{display:block;height:100%;background:var(--acc);border-radius:3px;}
+  .use .sz{font-size:10px;color:var(--dim);width:52px;text-align:right;font-variant-numeric:tabular-nums;}
+
+  /* ---------- 分享卡 ---------- */
+  .poster{margin:0 auto;width:300px;border-radius:18px;padding:16px;background:linear-gradient(165deg,#151a1f,#0b0d10);border:1px solid rgba(255,255,255,.09);box-shadow:0 14px 34px rgba(0,0,0,.5);}
+  .poster .ph{font-size:14px;font-weight:800;letter-spacing:1px;}
+  .poster .ps{font-size:9.5px;color:var(--dim);margin-top:2px;}
+  .p3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px;}
+  .p3 .cv{aspect-ratio:2/3;border-radius:8px;}
+  .poster .pf{margin-top:12px;display:flex;align-items:center;gap:6px;font-size:8.5px;color:var(--dim2);}
+  .poster .pf .dot{width:4px;height:4px;border-radius:50%;background:var(--acc);}
+
+  /* ---------- 标注 ---------- */
+  .badge{position:absolute;width:22px;height:22px;border-radius:50%;background:var(--acc);color:#0d1f13;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;z-index:20;box-shadow:0 2px 8px rgba(0,0,0,.5);}
+  .badge.sm{width:18px;height:18px;font-size:10px;}
+  .legend{border-left:2px solid rgba(165,214,167,.35);padding:8px 0 8px 14px;margin-top:8px;font-size:11.5px;line-height:1.85;color:#b6b6bd;max-width:520px;}
+  .legend b{color:var(--acc2);}
+  .legend code{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px;color:#cfd8cf;}
+  .keep{color:#b9dec0;}
+
+  /* 英文界面示意 */
+  .en .nm,.en .ds,.en .val,.en .t,.en .k,.en .sub{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+  /* 小尺寸封面：隐藏其中的文字装饰，避免缩小时糊成一团 */
+  .evi .cv::after,.rank .cv::after,.wd .c::after,.p3 .cv::after{display:none;}
+  .wd .c{border-radius:7px;}
+  .hero .pst::after{display:none;}
+  .poster .cv::after{display:none;}
+  .poster .cv{box-shadow:inset 0 -34px 34px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.06);}
+</style>
+</head>
+<body>
+
+<div class="idx">
+  <h1>Niriko 本轮 UI 改动原型</h1>
+  <p>按 v1.2.1 最终范围制作：7 处修复 + 27 项新功能中所有会改变界面的点（已剔除空结果引导与首启选线路）。深色主题、360×720 手机框、纯 CSS 模拟；页面底部有逐条标注。此文件与 <code>discover-poster-prototype.html</code> 同一套制作方式。</p>
+  <ol>
+    <li><a href="#s1">统计页顶部：今晚看什么 / 未来七天 / 漏看</a></li>
+    <li><a href="#s2">统计页：收藏健康度</a></li>
+    <li><a href="#s3">统计页：对比文案 + 口径说明</a></li>
+    <li><a href="#s4">统计页日历：导出 / 停播 / 延期 / 时区</a></li>
+    <li><a href="#s5">详情页：标题 logo</a></li>
+    <li><a href="#s6">详情页：区块折叠 + 分享入口</a></li>
+    <li><a href="#s7">发现页：榜单箭头</a></li>
+    <li><a href="#s9">设置：新增入口一览 + 设置搜索</a></li>
+    <li><a href="#s10">设置：数据体检</a></li>
+    <li><a href="#s11">设置：本地快照</a></li>
+    <li><a href="#s12">设置：同步预览与演练</a></li>
+    <li><a href="#s13">设置：图片占用清理</a></li>
+    <li><a href="#s14">关于：检查更新</a></li>
+    <li><a href="#s16">分享：分区海报 / 周报卡 / 评分对照卡</a></li>
+    <li><a href="#s17">系统：英文界面 / 报错复制</a></li>
+  </ol>
+</div>
+
+<!-- ========== S1 统计页顶部 ========== -->
+<div class="sect" id="s1">
+  <div class="unit">
+    <h2>现状</h2>
+    <div class="note">统计页进来第一屏是「收藏统计」+ 作品日历；要知道今晚看什么，得自己在日历里找今天那一格。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">收藏统计</span><span class="sp"></span><span class="tb">↻</span></div>
+        <div class="card tight">
+          <div class="calhead"><span class="m">2026 年 10 月</span><span class="sp"></span><span class="pill">月</span><span class="pill">周</span></div>
+          <div class="wk"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="cal">
+            <div class="d"></div><div class="d"></div><div class="d"></div><div class="d">1</div><div class="d has">2</div><div class="d has">3</div><div class="d has">4</div>
+            <div class="d has">5</div><div class="d has">6</div><div class="d has">7</div><div class="d has">8</div><div class="d has">9</div><div class="d has">10</div><div class="d has">11</div>
+            <div class="d has">12</div><div class="d has">13</div><div class="d has">14</div><div class="d has">15</div><div class="d has">16</div><div class="d today has">17</div><div class="d has">18</div>
+            <div class="d has">19</div><div class="d has">20</div><div class="d has">21</div><div class="d has">22</div><div class="d has">23</div><div class="d has">24</div><div class="d has">25</div>
+            <div class="d has">26</div><div class="d has">27</div><div class="d has">28</div><div class="d has">29</div><div class="d has">30</div><div class="d has">31</div><div class="d"></div>
+          </div>
+          <div class="sub" style="margin-top:10px">点任意日期查看当天更新 · 数据 3 分钟前</div>
+        </div>
+        <div class="sec"><div class="sh"><span class="t">时间线</span></div><div class="sb"><div class="sub">今天 · 把《胆大党》标为看到第 6 集</div></div></div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi on"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+  </div>
+
+  <div class="unit">
+    <h2>改后</h2>
+    <div class="note">顶部新增两张卡：今天更新（含落后提示）与接下来七天。数据全部来自本地已有放送数据，<b>不发新请求</b>。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">收藏统计</span><span class="sp"></span><span class="tb">↻</span></div>
+        <div class="today">
+          <div class="h"><span class="n">今晚看什么</span><span class="c">4 部更新 · 2 部在追</span></div>
+          <div class="l">10 月 17 日 周五 · 放送数据 3 分钟前</div>
+          <div class="evi"><span class="tm">21:30</span><span class="cv cv-kusuri" style="width:26px;height:36px;border-radius:5px"></span><span class="grow"><div class="nm">药屋少女的呢喃</div><div class="ep">第 14 集 · 已看到 13</div></span><span class="pill on">看</span></div>
+          <div class="evi"><span class="tm">23:00</span><span class="cv cv-dan" style="width:26px;height:36px;border-radius:5px"></span><span class="grow"><div class="nm">胆大党 第二季</div><div class="ep">第 6 集 · 已看到 5</div></span><span class="pill on">看</span></div>
+          <div class="evi"><span class="tm">24:00</span><span class="cv cv-mahou" style="width:26px;height:36px;border-radius:5px"></span><span class="grow"><div class="nm">魔法使的新娘</div><div class="ep">第 22 集 · 未开始</div></span><span class="pill">追</span></div>
+          <div class="behind"><span>⚠</span><span class="grow">另有 2 部落后 3 集以上</span><span class="a" style="color:var(--warn)">查看 ›</span></div>
+        </div>
+        <div class="week">
+          <div class="wd on"><div class="w">今天</div><div class="d">17</div><div class="c cv-kusuri"></div><div class="n">4 部</div></div>
+          <div class="wd"><div class="w">周六</div><div class="d">18</div><div class="c cv-frieren"></div><div class="n">2 部</div></div>
+          <div class="wd"><div class="w">周日</div><div class="d">19</div><div class="c cv-plain"></div><div class="n">1 部</div></div>
+          <div class="wd"><div class="w">周一</div><div class="d">20</div><div class="c cv-dan"></div><div class="n">3 部</div></div>
+          <div class="wd"><div class="w">周二</div><div class="d">21</div><div class="c cv-mahou"></div><div class="n">2 部</div></div>
+          <div class="wd"><div class="w">周三</div><div class="d">22</div><div class="c cv-plain"></div><div class="n">—</div></div>
+          <div class="wd"><div class="w">周四</div><div class="d">23</div><div class="c cv-frieren"></div><div class="n">1 部</div></div>
+        </div>
+        <div class="card tight">
+          <div class="calhead"><span class="m">2026 年 10 月</span><span class="sp"></span><span class="pill">月</span><span class="pill">周</span></div>
+          <div class="wk"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="cal">
+            <div class="d"></div><div class="d"></div><div class="d"></div><div class="d">1</div><div class="d has">2</div><div class="d has">3</div><div class="d has">4</div>
+            <div class="d has">5</div><div class="d has">6</div><div class="d has">7</div><div class="d has">8</div><div class="d has">9</div><div class="d has">10</div><div class="d has">11</div>
+            <div class="d has">12</div><div class="d has">13</div><div class="d has">14</div><div class="d has">15</div><div class="d has">16</div><div class="d today has">17</div><div class="d has">18</div>
+            <div class="d has">19</div><div class="d has">20</div><div class="d has">21</div><div class="d has">22</div><div class="d has">23</div><div class="d has">24</div><div class="d has">25</div>
+            <div class="d has">26</div><div class="d has">27</div><div class="d has">28</div><div class="d has">29</div><div class="d has">30</div><div class="d has">31</div><div class="d"></div>
+          </div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:56px;left:8px">1</div>
+      <div class="badge" style="top:236px;left:8px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi on"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend">
+      <b>①「今晚看什么」卡</b>：标题行 = 今天更新总数 + 其中在追数；每行「时刻 · 封面 · 作品 · 第 N 集 · 已看到 M」，右侧一个「看」按钮直接跳单集页。排序键 = 放送时刻（无时刻的排最后）。卡底一行落后提示，点进去是筛好的列表。<br>
+      <b>②「接下来七天」条</b>：7 列，每列「周几 / 日期 / 封面 / 更新数」；今天高亮。无更新显示「—」而不是 0。<br>
+      两张卡都在原有日历之上；日历本身、下方的时间线与图表全部保持原样。
+    </div>
+  </div>
+</div>
+
+<!-- ========== S2 收藏健康度 ========== -->
+<div class="sect" id="s2">
+  <div class="unit">
+    <h2>改后 · 收藏健康度</h2>
+    <div class="note">放在「收藏概览」之后、状态分布之前。四个数字各是一个入口，点进去就是已经筛好的作品库，不用自己再设条件。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">收藏统计</span><span class="sp"></span><span class="tb">↻</span></div>
+        <div class="card tight">
+          <div class="ch"><span class="t">收藏概览</span><span class="sp"></span><span class="a">全部</span></div>
+          <div class="kpis">
+            <div class="kpi"><div class="v">412</div><div class="k">作品</div></div>
+            <div class="kpi"><div class="v">7.8</div><div class="k">均分</div></div>
+            <div class="kpi"><div class="v">63%</div><div class="k">完成率</div></div>
+            <div class="kpi"><div class="v">1,284</div><div class="k">小时</div></div>
+          </div>
+        </div>
+        <div class="card tight" style="border-color:rgba(240,179,107,.18)">
+          <div class="ch"><span class="t">待整理</span><span class="sp"></span><span class="a" style="color:var(--warn)">4 类 · 37 项</span></div>
+          <div class="ck"><span class="st bad">!</span><span class="grow">在看但 90 天没动</span><span class="rst">12 部 ›</span></div>
+          <div class="ck"><span class="st bad">!</span><span class="grow">看过但没评分</span><span class="rst">18 部 ›</span></div>
+          <div class="ck"><span class="st bad">!</span><span class="grow">收藏但没有个人标签</span><span class="rst">6 部 ›</span></div>
+          <div class="ck"><span class="st skip">·</span><span class="grow">空分区</span><span class="rst">1 个 ›</span></div>
+          <div class="sub" style="margin-top:8px">点任意一行 → 作品库并自动套用该筛选；整理完这一行自动消失。</div>
+        </div>
+        <div class="card tight">
+          <div class="ch"><span class="t">状态分布</span></div>
+          <div class="row" style="gap:6px;margin-top:4px">
+            <div style="height:6px;border-radius:3px;background:var(--acc);flex:5"></div>
+            <div style="height:6px;border-radius:3px;background:#8fb6d9;flex:3"></div>
+            <div style="height:6px;border-radius:3px;background:#f0b36b;flex:1.4"></div>
+            <div style="height:6px;border-radius:3px;background:#e28383;flex:.6"></div>
+          </div>
+          <div class="sub" style="margin-top:8px">看过 · 在看 · 搁置 · 抛弃</div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:186px;left:8px">1</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi on"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend">
+      <b>① 健康度卡</b>：四类问题各有计数与入口。判定条件写进代码注释与单测：<code>在看 ∩ 90 天未更新</code>、<code>看过 ∩ 无评分</code>、<code>无标签</code>、<code>分区成员为 0</code>。<br>
+      整卡只在「有可整理项」时出现；全部清零后收起并给一次静态确认（不弹窗）。
+    </div>
+  </div>
+</div>
+
+<!-- ========== S3 对比文案 + 口径 ========== -->
+<div class="sect" id="s3">
+  <div class="unit">
+    <h2>改后 · 一句话对比</h2>
+    <div class="note">月度趋势图下方多一行文案，由纯函数生成；数据不足时降级（例如「上月数据不足，暂不比较」）。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">收藏统计</span></div>
+        <div class="card">
+          <div class="ch"><span class="t">月度趋势</span><span class="sp"></span><span class="pill on">全部类型</span></div>
+          <div class="row" style="align-items:flex-end;gap:7px;height:96px;margin-top:6px">
+            <div style="flex:1;height:34px;border-radius:5px 5px 0 0;background:rgba(165,214,167,.35)"></div>
+            <div style="flex:1;height:52px;border-radius:5px 5px 0 0;background:rgba(165,214,167,.45)"></div>
+            <div style="flex:1;height:41px;border-radius:5px 5px 0 0;background:rgba(165,214,167,.4)"></div>
+            <div style="flex:1;height:68px;border-radius:5px 5px 0 0;background:rgba(165,214,167,.6)"></div>
+            <div style="flex:1;height:57px;border-radius:5px 5px 0 0;background:rgba(165,214,167,.55)"></div>
+            <div style="flex:1;height:92px;border-radius:5px 5px 0 0;background:var(--acc)"></div>
+          </div>
+          <div class="row" style="justify-content:space-between;font-size:9px;color:var(--dim2);margin-top:5px"><span>5月</span><span>6月</span><span>7月</span><span>8月</span><span>9月</span><span style="color:var(--acc)">10月</span></div>
+          <div class="sub" style="margin-top:9px;color:#cfe8d2">比上月多看了 <b style="color:var(--acc)">7 部</b> · 评分从 7.6 涨到 7.8</div>
+        </div>
+        <div class="card tight">
+          <div class="ch"><span class="t">收藏概览</span></div>
+          <div class="kpis">
+            <div class="kpi"><div class="v">412</div><div class="k">作品</div></div>
+            <div class="kpi"><div class="v">63%</div><div class="k">完成率 <span style="font-size:10px;color:var(--dim2)">?</span></div></div>
+          </div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:150px;left:8px">1</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi on"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>① 对比文案</b>：纯函数输入「本月/上月计数 + 均分」，输出一句话；数据不足、上月为 0、类型过滤后为空都有专门降级文案，逐条单测。</div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 口径说明</h2>
+    <div class="note">完成率旁的点按「?」弹出小卡，解释分母含不含「抛弃」。不再让人猜。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">收藏统计</span></div>
+        <div class="card tight" style="opacity:.35">
+          <div class="ch"><span class="t">收藏概览</span></div>
+          <div class="kpis"><div class="kpi"><div class="v">412</div><div class="k">作品</div></div><div class="kpi"><div class="v">63%</div><div class="k">完成率</div></div></div>
+        </div>
+        <div class="card" style="border-color:rgba(165,214,167,.32);background:rgba(30,38,32,.9)">
+          <div class="ch"><span class="t">完成率怎么算</span><span class="sp"></span><span class="a">关闭</span></div>
+          <div class="sub" style="font-size:11.5px;line-height:1.9;color:#cfd8cf">
+            分母 = <b>看过 + 在看 + 搁置 + 抛弃</b>（即「已开始」的全部）<br>
+            分子 = <b>看过</b><br>
+            不含「想看」；单集进度 100% 但状态仍为「在看」计为未完成。<br>
+            <span class="dim2" style="font-size:10px">这条口径会写进代码注释与单测；产品若改口径，这里同步改。</span>
+          </div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi on"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== S4 日历 ========== -->
+<div class="sect" id="s4">
+  <div class="unit">
+    <h2>改后 · 日历区块（仍在统计页内）</h2>
+    <div class="note">日历不新增页面、不新增 Tab。只是在原有区块里加：导出按钮、停播/延期角标、时区口径说明。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">收藏统计</span><span class="sp"></span><span class="tb">↻</span></div>
+        <div class="card tight">
+          <div class="calhead"><span class="m">2026 年 10 月</span><span class="sp"></span><span class="btn ghost" style="padding:5px 10px;font-size:10.5px">导出日历</span><span class="pill">月</span><span class="pill">周</span></div>
+          <div class="wk"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="cal">
+            <div class="d"></div><div class="d"></div><div class="d"></div><div class="d">1</div><div class="d has">2</div><div class="d has">3</div><div class="d has">4</div>
+            <div class="d has">5</div><div class="d has">6</div><div class="d stop">7</div><div class="d has">8</div><div class="d has">9</div><div class="d has">10</div><div class="d has">11</div>
+            <div class="d has">12</div><div class="d has">13</div><div class="d delay">14</div><div class="d has">15</div><div class="d has">16</div><div class="d today has">17</div><div class="d has">18</div>
+            <div class="d has">19</div><div class="d has">20</div><div class="d has">21</div><div class="d has">22</div><div class="d has">23</div><div class="d has">24</div><div class="d has">25</div>
+            <div class="d has">26</div><div class="d has">27</div><div class="d has">28</div><div class="d has">29</div><div class="d has">30</div><div class="d has">31</div><div class="d"></div>
+          </div>
+          <div class="sub" style="margin-top:10px">· 表示当天有放送 <span style="color:var(--warn)">停</span> 停播周 <span style="color:#e28383">延</span> 延期</div>
+          <div class="sub" style="margin-top:4px;font-size:10px">时刻已按 Asia/Shanghai 换算 · 导出文件同样使用该时区</div>
+        </div>
+        <div class="card tight">
+          <div class="ch"><span class="t">10 月 14 日</span><span class="sp"></span><span class="pill on">全部</span></div>
+          <div class="evi"><span class="tm">22:00</span><span class="cv cv-frieren" style="width:24px;height:33px;border-radius:5px"></span><span class="grow"><div class="nm">葬送的芙莉莲 第二季</div><div class="ep">第 3 集 · 延期至 10/21</div></span><span class="delta down" style="font-size:9px">延</span></div>
+          <div class="evi"><span class="tm">—</span><span class="cv cv-plain" style="width:24px;height:33px;border-radius:5px"></span><span class="grow"><div class="nm">某长篇连载</div><div class="ep">本周停播</div></span><span class="delta flat" style="font-size:9px">停</span></div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:56px;left:196px">1</div>
+      <div class="badge" style="top:196px;left:120px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi on"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend">
+      <b>① 导出日历</b>：点开选择范围（本月 / 本季 / 在追全部）→ 生成 <code>.ics</code> → 系统分享；规则用 <code>COUNT</code> 不用 <code>UNTIL</code>，时刻按 Asia/Shanghai 并内联时区定义。<br>
+      <b>② 停播 / 延期</b>：放送数据缺失的一天标「停」；<code>airdate</code> 与预估不符的标「延」并在当日条目标注新日期。两者都不再被当成正常更新导出。
+    </div>
+  </div>
+</div>
+
+<!-- ========== S5 标题 logo ========== -->
+<div class="sect" id="s5">
+  <div class="unit">
+    <h2>现状 · 文字标题</h2>
+    <div class="note">详情页首屏：封面 + 一行黑体标题 + 原名。TMDb 的 logo 数据其实已经拿到了，但没用。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">作品详情</span><span class="sp"></span><span class="tb">↗</span></div>
+        <div class="hero">
+          <div class="cv cv-frieren pst"></div>
+          <div class="grow">
+            <div class="ttl-text">葬送的芙莉莲<br>第二季</div>
+            <div class="orig">葬送のフリーレン 第2期 · TV · 2026</div>
+            <div class="tagrow"><span class="tag">奇幻</span><span class="tag">公路</span><span class="tag">续作</span></div>
+            <div class="row" style="margin-top:10px;gap:6px"><span class="btn" style="padding:5px 10px">在看</span><span class="btn ghost" style="padding:5px 10px">评分 8.5</span></div>
+          </div>
+        </div>
+        <div class="sec"><div class="sh"><span class="t">我的评分</span></div></div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi on"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 作品原版 logo</h2>
+    <div class="note">标题区换成作品 logo（按语言与区域挑选）；没有 logo、加载失败、或判定看不清时，自动回退成文字。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">作品详情</span><span class="sp"></span><span class="tb">↗</span></div>
+        <div class="hero">
+          <div class="cv cv-frieren pst"></div>
+          <div class="grow">
+            <div class="logo-box">
+              <div class="logo-word">葬送のフリーレン<small>第 2 期</small></div>
+            </div>
+            <div class="orig">葬送的芙莉莲 第二季 · TV · 2026</div>
+            <div class="tagrow"><span class="tag">奇幻</span><span class="tag">公路</span><span class="tag">续作</span></div>
+            <div class="row" style="margin-top:10px;gap:6px"><span class="btn" style="padding:5px 10px">在看</span><span class="btn ghost" style="padding:5px 10px">评分 8.5</span></div>
+          </div>
+        </div>
+        <div class="sec"><div class="sh"><span class="t">我的评分</span></div></div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:86px;left:8px">1</div>
+      <div class="badge sm" style="top:44px;left:110px">2</div>
+      <div class="nav"><div class="navi on"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend">
+      <b>① 尺寸框</b>：面积恒定 —— 宽高比越宽，高度越矮；上限「2 倍标题行高」与「不超过原文字标题宽度」，避免长 logo 把封面挤走。<br>
+      <b>② 对比度兜底</b>：logo 压在模糊封面墙上时，先尝试把黑白灰翻色；仍看不清就显示文字。第一版不做柔光与局部检测。<br>
+      占位高度 = logo 框高：加载中与失败都不会让页面跳一下。
+    </div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 设置项</h2>
+    <div class="note">默认关闭。开启后也默认「只在看不清时显示文字」——即尽量用 logo，但保证可读。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">外观 · 详情页</span></div>
+        <div class="sgroup">
+          <div class="sitem"><span class="ic">Aa</span><span class="grow"><div class="nm">标题显示</div><div class="ds">用作品原版 logo 替代文字标题</div></span><span class="val">关</span><span class="chv">›</span></div>
+        </div>
+        <div class="card" style="border-color:rgba(165,214,167,.3)">
+          <div class="ch"><span class="t">标题显示方式</span></div>
+          <div class="row" style="padding:9px 0"><span style="font-size:12px;flex:1">关（只用文字）</span><span class="pill">已选</span></div>
+          <div class="row" style="padding:9px 0;border-top:1px solid var(--line)"><span style="font-size:12px;flex:1">始终用 logo</span><span class="pill"></span></div>
+          <div class="row" style="padding:9px 0;border-top:1px solid var(--line)"><span style="font-size:12px;flex:1">看不清时显示文字 <span class="dim2">· 推荐</span></span><span class="pill"></span></div>
+          <div class="sub" style="margin-top:6px">关掉时完全不请求 logo，不增加任何流量。</div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== S6 区块折叠 + 分享 ========== -->
+<div class="sect" id="s6">
+  <div class="unit">
+    <h2>改后 · 区块折叠</h2>
+    <div class="note">外部信息源本来就已进入「详情页部件」列表，只差一个收起动作。折叠状态按条目记忆。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">作品详情</span><span class="sp"></span><span class="tb">↗</span></div>
+        <div class="sec">
+          <div class="sh"><span class="t">Steam</span><span class="pill" style="font-size:9px">¥ 128</span><span class="sp"></span><span class="chev">⌄</span></div>
+          <div class="sb"><div class="sub">当前在线 3,214 · 好评率 94% · 开发商 FromSoftware</div></div>
+        </div>
+        <div class="sec collapsed">
+          <div class="sh"><span class="t">VNDB</span><span class="sp"></span><span class="chev">⌄</span></div>
+        </div>
+        <div class="sec collapsed">
+          <div class="sh"><span class="t">AniList</span><span class="sp"></span><span class="chev">⌄</span></div>
+        </div>
+        <div class="sec">
+          <div class="sh"><span class="t">分享</span><span class="sp"></span><span class="pill">3 种</span></div>
+          <div class="sb row" style="gap:6px">
+            <span class="btn ghost" style="font-size:10.5px">经典分享卡</span>
+            <span class="btn ghost" style="font-size:10.5px">评分对照卡</span>
+            <span class="btn ghost" style="font-size:10.5px">纯文字</span>
+          </div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:118px;left:130px">1</div>
+      <div class="badge" style="top:250px;left:24px">2</div>
+      <div class="nav"><div class="navi on"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend">
+      <b>① 折叠</b>：点标题行整行收起/展开；折叠后只剩标题与右侧一个关键数字（价格 / 评分）。状态按 <code>subjectId + sectionId</code> 记在 DataStore，换条目不复用。<br>
+      <b>② 分享入口</b>：从单一「分享卡」扩成三种，其中「评分对照卡」只在有社区分时出现。
+    </div>
+  </div>
+</div>
+
+<!-- ========== S7 榜单箭头 ========== -->
+<div class="sect" id="s7">
+  <div class="unit">
+    <h2>现状 · 文字描述</h2>
+    <div class="note">榜单排名只有当前名次，看不出最近是涨还是跌。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">历史排名</span><span class="sp"></span><span class="tb">⌕</span></div>
+        <div class="card tight">
+          <div class="rank"><span class="no top">1</span><span class="cv cv-frieren"></span><span class="grow"><div class="nm">葬送的芙莉莲 第二季</div><div class="mm">★ 8.6 · 3.1 万人评分</div></span></div>
+          <div class="rank"><span class="no">2</span><span class="cv cv-kusuri"></span><span class="grow"><div class="nm">药屋少女的呢喃</div><div class="mm">★ 8.4 · 2.2 万人评分</div></span></div>
+          <div class="rank"><span class="no">3</span><span class="cv cv-dan"></span><span class="grow"><div class="nm">胆大党 第二季</div><div class="mm">★ 8.2 · 1.4 万人评分</div></span></div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi on"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 主题色箭头 + 数字</h2>
+    <div class="note">不写「上升 12 位」这种文字。涨用主题色向上箭头，跌用向下箭头，持平不显示。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">历史排名</span><span class="sp"></span><span class="tb">⌕</span></div>
+        <div class="card tight">
+          <div class="rank"><span class="no top">1</span><span class="cv cv-frieren"></span><span class="grow"><div class="nm">葬送的芙莉莲 第二季</div><div class="mm">★ 8.6 · 3.1 万人评分</div></span><span class="delta up">▲ 12</span></div>
+          <div class="rank"><span class="no">2</span><span class="cv cv-kusuri"></span><span class="grow"><div class="nm">药屋少女的呢喃</div><div class="mm">★ 8.4 · 2.2 万人评分</div></span><span class="delta down">▼ 4</span></div>
+          <div class="rank"><span class="no">3</span><span class="cv cv-dan"></span><span class="grow"><div class="nm">胆大党 第二季</div><div class="mm">★ 8.2 · 1.4 万人评分</div></span><span class="delta flat">—</span></div>
+        </div>
+        <div class="sub" style="padding:0 16px">与上周同一时刻相比 · 数据每周一更新</div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:104px;left:290px">1</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi on"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend">
+      <b>① 箭头徽标</b>：颜色取自主题色（涨 = 主题色实底，跌 = 柔和红实底，持平 = 灰底一条横线）；数字为绝对位次变化，只显示 1–99，超过显示 <code>99+</code>。<br>
+      位置在行尾、与评分同一行右侧；排序后不用跳转就能看出趋势。首次安装没有上周快照时整列不显示（不显示「新」）。
+    </div>
+  </div>
+</div>
+
+<!-- ========== S9 设置一览 + 搜索 ========== -->
+<div class="sect" id="s9">
+  <div class="unit">
+    <h2>改后 · 设置新增入口</h2>
+    <div class="note">五个新入口都归到既有分组里，不新增顶级分类：数据体检 / 本地快照 进「同步与备份」，图片占用 进「外观」，检查更新 进「关于」。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">设置</span><span class="sp"></span><span class="tb">⌕</span></div>
+        <div class="sgroup">
+          <div class="sitem"><span class="ic">◐</span><span class="grow"><div class="nm">外观</div><div class="ds">主题 · 壁纸 · 玻璃 · 图标</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">▤</span><span class="grow"><div class="nm">收藏与展示</div><div class="ds">排序 · 卡片 · 启动页</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">⌕</span><span class="grow"><div class="nm">搜索</div><div class="ds">R18 · 建议</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">☁</span><span class="grow"><div class="nm">数据源与账号</div><div class="ds">Bangumi · Steam · 权威评分</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">⇄</span><span class="grow"><div class="nm">同步与备份</div><div class="ds">WebDAV · 备份 · 体检 · 快照</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">◔</span><span class="grow"><div class="nm">刷新诊断</div><div class="ds">数据源新鲜度与失败原因</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">ⓘ</span><span class="grow"><div class="nm">关于</div><div class="ds">v1.2.0 · 许可 · 检查更新</div></span><span class="chv">›</span></div>
+        </div>
+        <div class="card tight">
+          <div class="ch"><span class="t">新增（示意）</span></div>
+          <div class="sub">· 同步与备份 → 数据体检 / 本地快照<br>· 外观 → 图片占用与清理（玻璃效果显示「自动」）<br>· 关于 → 检查更新</div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:264px;left:8px">1</div>
+      <div class="badge sm" style="top:400px;left:8px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 设置项搜索：点右上角放大镜进入。<br><b>②</b> 新入口不改变现有分类结构，只是「同步与备份」里多两行。</div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 设置搜索</h2>
+    <div class="note">本地过滤，不联网。匹配项高亮关键词，直接跳到对应二级页并定位到那一行。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">搜索设置</span><span class="sp"></span><span class="tb">✕</span></div>
+        <div class="searchbar"><span>⌕</span><b>玻璃</b><span style="flex:1"></span><span style="font-size:10px;color:var(--acc2)">3 项</span></div>
+        <div class="sgroup">
+          <div class="sitem"><span class="ic">◍</span><span class="grow"><div class="nm"><span class="hl">玻璃</span>效果强度</div><div class="ds">外观 · 全效果 / 降低 / 关闭</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">▢</span><span class="grow"><div class="nm">卡片<span class="hl">玻璃</span></div><div class="ds">外观 · 收藏卡片是否使用玻璃材质</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">◎</span><span class="grow"><div class="nm"><span class="hl">玻璃</span>实时性能回退</div><div class="ds">外观 · 掉帧时自动降级</div></span><span class="chv">›</span></div>
+        </div>
+        <div class="sub" style="padding:4px 16px">匹配范围：设置项标题 + 说明文字 + 分组名；不搜取值。</div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== S10 数据体检 ========== -->
+<div class="sect" id="s10">
+  <div class="unit">
+    <h2>改后 · 数据体检</h2>
+    <div class="note">8 项只读检查（默认不含外网探测），逐项给结果；有问题的项可一键修，修前自动落快照。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">数据体检</span><span class="sp"></span><span class="tb">↻</span></div>
+        <div class="today" style="background:linear-gradient(150deg,rgba(240,179,107,.16),rgba(26,26,30,.72) 45%);border-color:rgba(240,179,107,.25)">
+          <div class="h"><span class="n">7 项检查</span><span class="c" style="color:var(--warn)">2 项发现</span></div>
+          <div class="l">上次体检 2 分钟前 · 只读检查，不改数据</div>
+          <div class="row" style="gap:6px;margin-top:6px"><span class="btn warn">修复 2 项</span><span class="btn ghost">导出报告</span></div>
+        </div>
+        <div class="card tight">
+          <div class="ck"><span class="st ok">✓</span><span class="grow">条目唯一性（无重复作品）</span><span class="rst">412 条正常</span></div>
+          <div class="ck"><span class="st bad">!</span><span class="grow">外部绑定孤儿行</span><span class="rst">3 条可清</span></div>
+          <div class="ck"><span class="st bad">!</span><span class="grow">分区成员指向已删条目</span><span class="rst">1 条可清</span></div>
+          <div class="ck"><span class="st ok">✓</span><span class="grow">评分越界（0–10）</span><span class="rst">正常</span></div>
+          <div class="ck"><span class="st ok">✓</span><span class="grow">剧集序号断裂</span><span class="rst">正常</span></div>
+          <div class="ck"><span class="st skip">–</span><span class="grow">详情缓存体积</span><span class="rst">86 MB（阈值 200）</span></div>
+          <div class="ck"><span class="st skip">–</span><span class="grow">封面链接可用性</span><span class="rst">未开启（需联网）</span></div>
+          <div class="ck"><span class="st skip">–</span><span class="grow">备份可恢复性（演练）</span><span class="rst">未运行</span></div>
+        </div>
+        <div class="card tight">
+          <div class="ch"><span class="t">修复预览</span></div>
+          <div class="sub">将删除 4 条孤儿记录（3 条绑定 + 1 条分区成员）。不删除任何作品、不修改评分与进度。<br>修复前会自动创建快照「体检前 21:02」。</div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:56px;left:8px">1</div>
+      <div class="badge" style="top:300px;left:8px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 摘要区先给结论，再列明细；不可修复的项标「–」并说明原因。<br><b>②</b> 修复前必须预览「会删什么/不会动什么」，且自动快照；不提供「全部静默修复」。</div>
+  </div>
+</div>
+
+<!-- ========== S11 本地快照 ========== -->
+<div class="sect" id="s11">
+  <div class="unit">
+    <h2>改后 · 本地快照</h2>
+    <div class="note">同步 / 导入 / 批量操作前自动存一份；保留「最近 5 份 + 每日 7 份」，按内容 hash 去重。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">本地快照</span><span class="sp"></span><span class="tb">＋</span></div>
+        <div class="card tight">
+          <div class="ch"><span class="t">最近 5 份</span><span class="sp"></span><span class="a">共 12.4 MB</span></div>
+          <div class="row" style="padding:9px 0"><span class="grow"><div class="nm" style="font-size:12px">同步前 · 21:02</div><div class="ds">412 作品 · 1,284 集 · 3 分区</div></span><span class="btn ghost" style="padding:5px 9px;font-size:10px">恢复</span></div>
+          <div class="row" style="padding:9px 0;border-top:1px solid var(--line)"><span class="grow"><div class="nm" style="font-size:12px">导出前 · 19:40</div><div class="ds">412 作品 · 1,281 集</div></span><span class="btn ghost" style="padding:5px 9px;font-size:10px">恢复</span></div>
+          <div class="row" style="padding:9px 0;border-top:1px solid var(--line)"><span class="grow"><div class="nm" style="font-size:12px">导入 B 站收藏前 · 昨天 22:15</div><div class="ds">398 作品 · 1,190 集</div></span><span class="btn ghost" style="padding:5px 9px;font-size:10px">恢复</span></div>
+          <div class="row" style="padding:9px 0;border-top:1px solid var(--line)"><span class="grow"><div class="nm" style="font-size:12px">每日 · 昨天 04:00</div><div class="ds">412 作品 · 1,275 集</div></span><span class="btn ghost" style="padding:5px 9px;font-size:10px">恢复</span></div>
+          <div class="row" style="padding:9px 0;border-top:1px solid var(--line)"><span class="grow"><div class="nm" style="font-size:12px">每日 · 前天 04:00</div><div class="ds">410 作品</div></span><span class="btn ghost" style="padding:5px 9px;font-size:10px">恢复</span></div>
+        </div>
+        <div class="card tight" style="border-color:rgba(165,214,167,.28)">
+          <div class="ch"><span class="t">恢复预览</span></div>
+          <div class="sub">回到「同步前 · 21:02」将：<br>· 更新 <b style="color:var(--acc)">3</b> 条收藏（评分 / 进度）<br>· 新增 <b style="color:var(--acc)">0</b> 条<br>· 删除 <b style="color:#e28383">1</b> 条（之后导入的）<br><br>恢复前会再存一份当前状态，可以来回切。</div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:110px;left:8px">1</div>
+      <div class="badge" style="top:396px;left:8px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 每条快照显示条目数与体积；删除只按保留策略自动发生，也可手动删单份。<br><b>②</b> 恢复先给 diff（改 N / 增 N / 删 N），确认后才写入；恢复动作本身也先存一份快照。</div>
+  </div>
+</div>
+
+<!-- ========== S12 同步演练 ========== -->
+<div class="sect" id="s12">
+  <div class="unit">
+    <h2>改后 · 同步差异（可勾选方向）</h2>
+    <div class="note">每一条差异都能选「保留本地 / 采用远端」，默认按现有冲突优先级预选，可以逐条改。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">同步预览</span><span class="sp"></span><span class="tb">✕</span></div>
+        <div class="tabs"><span class="tab on">差异 3</span><span class="tab">待确认 1</span><span class="tab">仅远端 8</span><span class="tab">日志</span><span class="tab">演练</span></div>
+        <div class="card tight">
+          <div class="row" style="gap:10px;align-items:flex-start;"><span class="cv cv-kusuri" style="width:30px;height:42px;border-radius:6px"></span><div class="grow"><div class="nm" style="font-size:12px">药屋少女的呢喃</div><div class="ds">评分不一致</div><div class="row" style="justify-content:space-between;margin-top:5px"><span class="row" style="gap:6px"><span class="pill">本地 9.0</span><span class="pill">远端 8.5</span></span><span class="dir"><span class="o on">本地</span><span class="o">远端</span></span></div></div></div>
+          <div class="row" style="gap:10px;align-items:flex-start;padding-top:10px;margin-top:10px;border-top:1px solid var(--line)"><span class="cv cv-dan" style="width:30px;height:42px;border-radius:6px"></span><div class="grow"><div class="nm" style="font-size:12px">胆大党 第二季</div><div class="ds">进度不一致</div><div class="row" style="justify-content:space-between;margin-top:5px"><span class="row" style="gap:6px"><span class="pill">本地 第 6 集</span><span class="pill">远端 第 5 集</span></span><span class="dir"><span class="o on">本地</span><span class="o">远端</span></span></div></div></div>
+          <div class="row" style="gap:10px;align-items:flex-start;padding-top:10px;margin-top:10px;border-top:1px solid var(--line)"><span class="cv cv-mahou" style="width:30px;height:42px;border-radius:6px"></span><div class="grow"><div class="nm" style="font-size:12px">魔法使的新娘</div><div class="ds">短评不一致（默认不同步）</div><div class="row" style="justify-content:space-between;margin-top:5px"><span class="row" style="gap:6px"><span class="pill">本地 有</span><span class="pill">远端 无</span></span><span class="dir"><span class="o">本地</span><span class="o on">跳过</span></span></div></div></div>
+        </div>
+        <div class="card tight">
+          <div class="row" style="gap:6px"><span class="btn ghost grow" style="text-align:center">全选本地</span><span class="btn ghost grow" style="text-align:center">全选远端</span><span class="btn grow" style="text-align:center">演练一次</span></div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:118px;left:250px">1</div>
+      <div class="badge sm" style="top:86px;left:20px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 方向选择器是三态：本地 / 远端 / 跳过；短评默认「跳过」。<br><b>②</b> 页签带计数，点哪个看哪类。</div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 演练结果</h2>
+    <div class="note">演练不写任何数据，只把将要发出的请求逐条列出，可复制 / 导出 JSON。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">演练结果</span><span class="sp"></span><span class="tb">⤓</span></div>
+        <div class="tabs"><span class="tab">差异 3</span><span class="tab">待确认 1</span><span class="tab">仅远端 8</span><span class="tab">日志</span><span class="tab on">演练</span></div>
+        <div class="card tight">
+          <div class="ch"><span class="t">将发出 2 个请求</span><span class="sp"></span><span class="pill on">未写入</span></div>
+          <div class="req"><b>POST</b> /v0/users/-/collections/<span class="k">302</span><br>{ rate: 9, status: 3 }<br><br><b>POST</b> /v0/users/-/collections/<span class="k">441</span>/episodes<br>{ type: 0, ep: 6, status: 2 }</div>
+          <div class="sub" style="margin-top:9px">静态检查：✓ 字段合法 ✓ 未超出 2 个/秒 ✓ 无 NSFW 冲突</div>
+          <div class="row" style="gap:6px;margin-top:10px"><span class="btn ghost grow" style="text-align:center">复制</span><span class="btn ghost grow" style="text-align:center">导出 JSON</span></div>
+        </div>
+        <div class="card tight">
+          <div class="ch"><span class="t">执行</span></div>
+          <div class="sub">写入间隔 1.2 秒，预计 3 秒完成。执行前会创建本地快照；失败项保留在「待补交」列表。</div>
+          <div class="row" style="margin-top:10px"><span class="btn grow" style="text-align:center">确认执行</span></div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:120px;left:8px">1</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 请求列表里的每条都可展开看表单字段；「未写入」是常驻标记，避免误以为已经同步。</div>
+  </div>
+</div>
+
+<!-- ========== S13 图片占用 ========== -->
+<div class="sect" id="s13">
+  <div class="unit">
+    <h2>改后 · 图片占用与清理</h2>
+    <div class="note">把「为什么占 2.1GB」摊开成四类，每类可单独清；壁纸单独一类，因为最大且最不常变。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">图片占用</span><span class="sp"></span><span class="tb">↻</span></div>
+        <div class="card tight">
+          <div class="ch"><span class="t">共约 2.1 GB</span><span class="sp"></span><span class="a">上限 3 GB</span></div>
+          <div class="use"><span style="font-size:11px;width:44px">剧照</span><span class="bar"><i style="width:62%"></i></span><span class="sz">1.2 GB</span></div>
+          <div class="use"><span style="font-size:11px;width:44px">壁纸</span><span class="bar"><i style="width:34%"></i></span><span class="sz">700 MB</span></div>
+          <div class="use"><span style="font-size:11px;width:44px">封面</span><span class="bar"><i style="width:9%"></i></span><span class="sz">180 MB</span></div>
+          <div class="use"><span style="font-size:11px;width:44px">头像等</span><span class="bar"><i style="width:4%"></i></span><span class="sz">72 MB</span></div>
+        </div>
+        <div class="sgroup">
+          <div class="sitem"><span class="ic">▢</span><span class="grow"><div class="nm">清理 30 天未访问的剧照</div><div class="ds">预计释放 410 MB · 不影响收藏与进度</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">◐</span><span class="grow"><div class="nm">重新压缩壁纸</div><div class="ds">按当前屏幕宽度重新解码 · 预计释放 260 MB</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">▤</span><span class="grow"><div class="nm">按类别查看</div><div class="ds">逐条目列出占用最大的 20 个</div></span><span class="chv">›</span></div>
+        </div>
+        <div class="card tight"><div class="sub">清理只删缓存文件，下次打开会重新下载。<b>不会</b>删除你上传的壁纸原图与主题包。</div></div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:56px;left:8px">1</div>
+      <div class="badge" style="top:250px;left:8px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 体积为抽样估算，界面统一带「约」；上限到了按最近最少使用淘汰。<br><b>②</b> 每项清理前显示「预计释放」与「不会影响什么」。</div>
+  </div>
+</div>
+
+<!-- ========== S14 关于 · 检查更新 ========== -->
+<div class="sect" id="s14">
+  <div class="unit">
+    <h2>改后 · 关于页与检查更新</h2>
+    <div class="note">版本行可点检查；有新版本时顶部一条横幅，带更新日志与「忽略此版本」。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">关于</span></div>
+        <div class="card" style="border-color:rgba(165,214,167,.3);background:linear-gradient(150deg,rgba(165,214,167,.12),rgba(26,26,30,.7) 50%)">
+          <div class="ch"><span class="t">有新版本 1.3.0</span><span class="sp"></span><span class="a">忽略</span></div>
+          <div class="sub" style="font-size:11px;line-height:1.8">· 统计页新增「今晚看什么」<br>· 详情页标题支持作品 logo<br>· 修复：换时区后放送时间差 1 小时<br>· 修复：卷进度不随备份同步</div>
+          <div class="row" style="gap:6px;margin-top:10px"><span class="btn grow" style="text-align:center">去下载（浏览器）</span><span class="btn ghost" style="text-align:center">查看全部</span></div>
+        </div>
+        <div class="sgroup">
+          <div class="sitem"><span class="ic">◈</span><span class="grow"><div class="nm">Niriko</div><div class="ds">com.otakup.niriko</div></span><span class="val">v1.2.0</span></div>
+          <div class="sitem"><span class="ic">↻</span><span class="grow"><div class="nm">检查更新</div><div class="ds">上次检查 10 分钟前</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">§</span><span class="grow"><div class="nm">开源许可</div><div class="ds">第三方组件清单</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">✉</span><span class="grow"><div class="nm">反馈</div><div class="ds">复制诊断信息并打开 GitHub Issues</div></span><span class="chv">›</span></div>
+        </div>
+        <div class="card tight"><div class="sub">v1.2.1 只做检查与跳转：点「去下载」用系统浏览器打开 Releases 页面；应用内不下载、不安装，因此不需要安装权限（完整自更新留待以后）。</div></div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="top:56px;left:8px">1</div>
+      <div class="badge sm" style="top:262px;left:8px">2</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 更新横幅只出现在「关于」页，不在首页弹窗；可「忽略此版本」，下次版本号变化再出现。<br><b>②</b> 「检查更新」这一行在检查中显示转圈、失败显示原因与重试。</div>
+  </div>
+</div>
+
+<!-- ========== S16 分享三卡 ========== -->
+<p style="width:100%;text-align:center;color:#8a8a90;font-size:12px;margin-top:8px" id="s16">分享 · 三种本地生成的海报（不经过服务器）</p>
+<div class="sect">
+  <div class="unit">
+    <h2>分区海报</h2>
+    <div class="note">3 列 × 4 行，多页；页眉是分区名 + 数量 + 均分，页脚是应用名。</div>
+    <div class="poster">
+      <div class="ph">2026 秋 · 在追</div>
+      <div class="ps">12 部 · 均分 8.2 · 10/17 生成</div>
+      <div class="p3">
+        <div class="cv cv-frieren"></div><div class="cv cv-kusuri"></div><div class="cv cv-dan"></div>
+        <div class="cv cv-mahou"></div><div class="cv cv-plain"></div><div class="cv cv-frieren"></div>
+        <div class="cv cv-kusuri"></div><div class="cv cv-dan"></div><div class="cv cv-plain"></div>
+        <div class="cv cv-mahou"></div><div class="cv cv-frieren"></div><div class="cv cv-kusuri"></div>
+      </div>
+      <div class="pf"><span class="dot"></span>Niriko · 第 1 / 1 页</div>
+    </div>
+    <div class="legend"><b>①</b> 每页 12 部；最后一页不足时居中，不留破洞。<br><b>②</b> 封面缺失时用首字色块占位，不空格。</div>
+  </div>
+  <div class="unit">
+    <h2>周报卡</h2>
+    <div class="note">每周日晚生成；只讲四件事：更新、看掉、追完、最期待。空周不生成。</div>
+    <div class="poster">
+      <div class="ph">本周追番</div>
+      <div class="ps">10/13 – 10/19 · 第 42 周</div>
+      <div class="kpis" style="margin-top:12px;grid-template-columns:repeat(2,1fr)">
+        <div class="kpi"><div class="v">9</div><div class="k">部更新</div></div>
+        <div class="kpi"><div class="v">23</div><div class="k">集看完</div></div>
+        <div class="kpi"><div class="v">2</div><div class="k">部追完</div></div>
+        <div class="kpi"><div class="v">4.1h</div><div class="k">观看时长</div></div>
+      </div>
+      <div class="row" style="gap:8px;margin-top:14px;align-items:center">
+        <div class="cv cv-kusuri" style="width:44px;height:62px"></div>
+        <div class="grow"><div style="font-size:10px;color:var(--dim2)">本周最期待</div><div style="font-size:12px;font-weight:700">药屋少女的呢喃</div><div style="font-size:9px;color:var(--dim)">第 14 集 · 今晚 21:30</div></div>
+      </div>
+      <div class="pf"><span class="dot"></span>Niriko 周报</div>
+    </div>
+    <div class="legend"><b>①</b> 生成时机：周日晚 20:00 后首次打开统计页；生成后当天不再重复。<br><b>②</b> 依赖「接下来七天」的同一份聚合数据。</div>
+  </div>
+  <div class="unit">
+    <h2>评分对照卡</h2>
+    <div class="note">一条刻度上放两个点：我 vs 全站；下面一句话结论。</div>
+    <div class="poster">
+      <div class="ph">我的评分 vs 全站</div>
+      <div class="ps">葬送的芙莉莲 第二季</div>
+      <div style="margin-top:24px;position:relative;height:78px"><div style="position:absolute;left:0;right:0;top:34px;height:4px;border-radius:2px;background:linear-gradient(90deg,#e28383,#f0b36b,#a5d6a7)"></div><div style="position:absolute;left:72%;top:26px;width:2px;height:20px;background:rgba(255,255,255,.45)"></div><div style="position:absolute;left:72%;top:50px;transform:translateX(-50%);font-size:8.5px;color:var(--dim);white-space:nowrap">全站 7.2</div><div style="position:absolute;left:90%;top:22px;width:3px;height:28px;background:var(--acc);border-radius:2px"></div><div style="position:absolute;left:90%;top:2px;transform:translateX(-50%);font-size:9.5px;color:var(--acc);font-weight:800;white-space:nowrap">我 9.0</div></div>
+      <div style="margin-top:12px;font-size:11px;color:#cfe8d2">你比全站平均高 <b style="color:var(--acc)">1.8</b> 分</div>
+      <div class="sub" style="font-size:9px;margin-top:3px">全站只有 4% 的人给 9 分</div>
+      <div class="pf"><span class="dot"></span>Niriko · 我的评分</div>
+    </div>
+    <div class="legend"><b>①</b> 没有社区分时整卡不出现入口（不画空刻度）。<br><b>②</b> 文案由纯函数生成，随数据降级。</div>
+  </div>
+</div>
+
+<!-- ========== S17 英文 / 报错 ========== -->
+<div class="sect" id="s17">
+  <div class="unit">
+    <h2>改后 · 英文界面</h2>
+    <div class="note">系统语言为英文时整界面切英文；作品标题等来自 Bangumi 的内容不翻译。</div>
+    <div class="phone en">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">Settings</span><span class="sp"></span><span class="tb">⌕</span></div>
+        <div class="sgroup">
+          <div class="sitem"><span class="ic">◐</span><span class="grow"><div class="nm">Appearance</div><div class="ds">Theme · wallpaper · glass · icons</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">▤</span><span class="grow"><div class="nm">Library &amp; display</div><div class="ds">Sorting · cards · splash</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">☁</span><span class="grow"><div class="nm">Sources &amp; accounts</div><div class="ds">Bangumi · Steam · ratings</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">⇄</span><span class="grow"><div class="nm">Sync &amp; backup</div><div class="ds">WebDAV · backup · doctor · snapshots</div></span><span class="chv">›</span></div>
+          <div class="sitem"><span class="ic">ⓘ</span><span class="grow"><div class="nm">About</div><div class="ds">v1.2.0 · licenses · check for updates</div></span><span class="chv">›</span></div>
+        </div>
+        <div class="card tight"><div class="sub">Only UI strings are translated. Titles and synopses from Bangumi stay in their original language.</div></div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>Library</div><div class="navi"><span class="g">◐</span>Discover</div><div class="navi"><span class="g">◔</span>Stats</div><div class="navi on"><span class="g">⚙</span>Settings</div></div>
+    </div>
+  </div>
+
+  <div class="unit">
+    <h2>改后 · 报错可复制</h2>
+    <div class="note">出错时底部弹一张小卡：一句人话 + 可展开的技术细节 + 「复制诊断信息」。</div>
+    <div class="phone">
+      <div class="wp"></div><div class="wp scrim"></div>
+      <div class="scroll">
+        <div class="top"><span class="ttl">刷新诊断</span></div>
+        <div class="card tight" style="opacity:.4"><div class="ch"><span class="t">数据源新鲜度</span></div><div class="sub">Bangumi · 3 分钟前</div></div>
+        <div class="card" style="position:absolute;left:12px;right:12px;bottom:82px;border-color:rgba(226,131,131,.3)">
+          <div class="ch"><span class="t" style="color:#f0a5a5">同步没有完成</span><span class="sp"></span><span class="a">关闭</span></div>
+          <div class="sub" style="font-size:11.5px;line-height:1.8">远端返回 401（登录已过期）。本地数据没有变动，可以重新登录后再同步。</div>
+          <div class="req" style="margin-top:9px">WebDAV PUT /niriko/sync.json<br>HTTP 401 · 18 ms · 2026-10-17 21:02:44<br>build 1.2.0 (3) · android 34</div>
+          <div class="row" style="gap:6px;margin-top:10px"><span class="btn grow" style="text-align:center">复制诊断信息</span><span class="btn ghost grow" style="text-align:center">重试</span></div>
+        </div>
+        <div style="height:90px"></div>
+      </div>
+      <div class="badge" style="bottom:250px;left:8px">1</div>
+      <div class="nav"><div class="navi"><span class="g">▤</span>作品库</div><div class="navi"><span class="g">◐</span>发现</div><div class="navi"><span class="g">◔</span>统计</div><div class="navi on"><span class="g">⚙</span>设置</div></div>
+    </div>
+    <div class="legend"><b>①</b> 一句人话在前，技术细节折叠在后；「复制诊断信息」把版本、时间、请求与错误码拼成一段可粘贴的文本。</div>
+  </div>
+</div>
+
+<div class="idx" style="margin-top:20px">
+  <h1 style="font-size:14px">标注说明</h1>
+  <p style="margin-bottom:0">圆形编号 = 该屏的关键改动点，对应每台手机下方的说明。绿色 = 保持现状；所有卡片均为「玻璃材质 + 深色」的近似，实际以 Jetpack Compose 渲染为准。原型只为对齐布局与信息层级，不代表最终像素。</p>
+</div>
+
+</body>
+</html>

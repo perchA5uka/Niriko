@@ -10,11 +10,11 @@ import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
 import com.otakup.niriko.data.settings.AppSettings
 import com.otakup.niriko.data.settings.SettingsDataStore
 import com.otakup.niriko.data.settings.ThemeMode
+import com.otakup.niriko.data.sync.SyncFailureKind
 import com.otakup.niriko.data.sync.SyncManager
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncManager
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncResult
-import com.otakup.niriko.plugin.DataSourcePlugin
 import com.otakup.niriko.plugin.PluginManager
 import com.otakup.niriko.data.sync.SyncResult
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +42,20 @@ class SettingsViewModel(
     private val refreshCoordinator: RefreshCoordinator? = null,
     /** 预加载的设置（开屏期间同步读取，避免冷启动首帧主题闪烁）。 */
     initialSettings: AppSettings? = null,
+    /**
+     * C-1 体检用的只读计数（由 NavHost 用 DAO 构造后注入）。
+     *
+     * 可空默认：既有的工厂调用点 / 预览 / 单测都不必改；
+     * null 时体检会跳过计数类检查，而不是伪造 0。
+     */
+    private val collectionCountsProvider: com.otakup.niriko.data.diagnose.CollectionCountsProvider? = null,
 ) : ViewModel() {
+
+    /** C-1：读取体检计数；失败返回 null（体检页显示「读取失败」，不假装干净）。 */
+    suspend fun loadCollectionCounts(): com.otakup.niriko.data.diagnose.CollectionCounts? =
+        collectionCountsProvider?.let { provider ->
+            runCatching { provider.load() }.getOrNull()
+        }
 
     /**
      * 自动同步的新鲜度/退避状态。
@@ -83,18 +96,15 @@ class SettingsViewModel(
             initialValue = initialSettings ?: AppSettings(),
         )
 
-    /** 所有已注册插件（按优先级排序）。 */
-    val plugins: List<DataSourcePlugin>
-        get() = pluginManager?.plugins ?: emptyList()
-
-    /** 第一个插件（主数据源）ID。 */
-    val primaryPluginId: String?
-        get() = pluginManager?.primary?.id
-
     // ===== 外观 =====
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { dataStore.setThemeMode(mode) }
+    }
+
+    /** C · 13.1：标题 logo 三档（off / always / text_when_unclear）。 */
+    fun setTitleLogoMode(mode: String) {
+        viewModelScope.launch { dataStore.setTitleLogoMode(mode) }
     }
 
     fun setDynamicColor(enabled: Boolean) {
@@ -199,6 +209,11 @@ class SettingsViewModel(
         viewModelScope.launch { dataStore.setGlassEffect(level) }
     }
 
+    /** 10.1：AUTO = 按设备能力自动降档；MANUAL = 只听用户档位。 */
+    fun setGlassAutoTier(mode: String) {
+        viewModelScope.launch { dataStore.setGlassAutoTier(mode) }
+    }
+
     fun setCustomIconMode(mode: String) {
         viewModelScope.launch { dataStore.setCustomIconMode(mode) }
     }
@@ -243,14 +258,6 @@ class SettingsViewModel(
     }
 
     // ===== 数据源 =====
-
-    fun setActiveDataSourceId(id: String) {
-        viewModelScope.launch {
-            if (pluginManager?.moveToTop(id) == true) {
-                dataStore.setActiveDataSourceId(id)
-            }
-        }
-    }
 
     /** 切换 Bangumi 接口端点（官方站 / 国内反代）：持久化 + 立即生效（动态拦截器重写请求）。 */
     fun setBangumiEndpoint(e: BangumiEndpoint) {
@@ -342,6 +349,15 @@ class SettingsViewModel(
     private val _syncResult = MutableStateFlow<SyncResult?>(null)
     val syncResult: StateFlow<SyncResult?> = _syncResult.asStateFlow()
 
+    /**
+     * 412 冲突弹窗内容（A-D4）。非 null 时设置页弹「先合并 / 覆盖云端 / 取消」。
+     *
+     * 改造前 `_syncResult` 没有任何 UI 收集，412 检测对了用户也看不到；
+     * 这里把冲突单独做成状态，避免和普通失败混在 Snackbar 里被自动清掉。
+     */
+    private val _syncConflict = MutableStateFlow<String?>(null)
+    val syncConflict: StateFlow<String?> = _syncConflict.asStateFlow()
+
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
@@ -361,16 +377,67 @@ class SettingsViewModel(
         viewModelScope.launch { dataStore.setWebDavAutoSync(enabled) }
     }
 
-    fun uploadToWebDav() {
+    fun uploadToWebDav() = runWebDavOperation(upload = true)
+
+    fun downloadFromWebDav() = runWebDavOperation(upload = false)
+
+    /**
+     * 冲突弹窗「先合并（推荐）」：下载合并 → 再上传合并结果。
+     * 合并语义与自动同步一致（字段级 LWW / 进度 MAX / 私密并集）。
+     */
+    fun mergeAndUploadWebDav() {
         viewModelScope.launch {
             _isSyncing.value = true
+            _syncConflict.value = null
             try {
                 val s = settings.value
                 val r = withContext(Dispatchers.IO) {
-                    syncManager?.upload(s.webDavUrl, s.webDavUsername, s.webDavPassword)
-                        ?: SyncResult(success = false, message = "同步管理器未初始化")
+                    val manager = syncManager
+                        ?: return@withContext SyncResult(success = false, message = "同步管理器未初始化")
+                    val merged = manager.download(s.webDavUrl, s.webDavUsername, s.webDavPassword)
+                    if (!merged.success) {
+                        merged
+                    } else {
+                        manager.upload(s.webDavUrl, s.webDavUsername, s.webDavPassword)
+                    }
                 }
-                _syncResult.value = r
+                applySyncResult(r)
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+
+    /** 冲突弹窗「覆盖云端」：忽略 If-Match 再 PUT 一次。**只有用户显式点击**才会走到这里。 */
+    fun overwriteWebDav() = runWebDavOperation(upload = true, forceOverwrite = true)
+
+    fun dismissSyncConflict() {
+        _syncConflict.value = null
+    }
+
+    fun clearSyncResult() {
+        _syncResult.value = null
+    }
+
+    private fun runWebDavOperation(upload: Boolean, forceOverwrite: Boolean = false) {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            _syncConflict.value = null
+            try {
+                val s = settings.value
+                val r = withContext(Dispatchers.IO) {
+                    val manager = syncManager
+                        ?: return@withContext SyncResult(success = false, message = "同步管理器未初始化")
+                    if (upload) {
+                        manager.upload(
+                            s.webDavUrl, s.webDavUsername, s.webDavPassword,
+                            forceOverwrite = forceOverwrite,
+                        )
+                    } else {
+                        manager.download(s.webDavUrl, s.webDavUsername, s.webDavPassword)
+                    }
+                }
+                applySyncResult(r)
             } finally {
                 // 任何路径（含 DataStore 读失败）都重置同步状态，避免卡在加载中
                 _isSyncing.value = false
@@ -378,24 +445,12 @@ class SettingsViewModel(
         }
     }
 
-    fun downloadFromWebDav() {
-        viewModelScope.launch {
-            _isSyncing.value = true
-            try {
-                val s = settings.value
-                val r = withContext(Dispatchers.IO) {
-                    syncManager?.download(s.webDavUrl, s.webDavUsername, s.webDavPassword)
-                        ?: SyncResult(success = false, message = "同步管理器未初始化")
-                }
-                _syncResult.value = r
-            } finally {
-                _isSyncing.value = false
-            }
+    private fun applySyncResult(result: SyncResult) {
+        _syncResult.value = result
+        // 412 需要三选一，不能只弹一条会自动消失的 Snackbar
+        if (!result.success && result.failure == SyncFailureKind.CONFLICT) {
+            _syncConflict.value = result.message.ifBlank { "云端在你上次同步后已更新" }
         }
-    }
-
-    fun clearSyncResult() {
-        _syncResult.value = null
     }
 
     // ===== Bangumi 账号同步 =====
@@ -622,13 +677,14 @@ class SettingsViewModelFactory(
     private val refreshCoordinator: RefreshCoordinator? = null,
     /** 预加载的设置（开屏期间同步读取，避免冷启动首帧主题闪烁）。 */
     private val initialSettings: AppSettings? = null,
+    private val collectionCountsProvider: com.otakup.niriko.data.diagnose.CollectionCountsProvider? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
             return SettingsViewModel(
                 dataStore, pluginManager, syncManager, bangumiSyncManager,
-                refreshCoordinator, initialSettings,
+                refreshCoordinator, initialSettings, collectionCountsProvider,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

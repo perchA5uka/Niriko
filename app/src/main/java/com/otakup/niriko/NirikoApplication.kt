@@ -41,6 +41,7 @@ import com.otakup.niriko.data.repository.EpisodeRatingRepository
 import com.otakup.niriko.data.repository.ManualAwardRepository
 import com.otakup.niriko.data.repository.TmdbRepository
 import com.otakup.niriko.data.settings.SettingsDataStore
+import com.otakup.niriko.data.sync.SyncBaselineStore
 import com.otakup.niriko.data.sync.SyncManager
 import com.otakup.niriko.data.sync.WebDavClient
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncManager
@@ -74,6 +75,8 @@ class NirikoApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // C-3：快照运行时只装一次（同步/导入前的后悔药；失败不影响启动）
+        com.otakup.niriko.data.snapshot.SnapshotRuntime.install(this)
         // 启动时恢复网络端点，并在设置变更时实时生效（在任何 API 请求前）：
         // - Bangumi 官方站 / 国内反代
         // - TMDb 端点与密钥（国区 api.themoviedb.org 与 image.tmdb.org 均不可直连，需镜像）
@@ -429,7 +432,9 @@ class NirikoApplication : Application() {
     /** 链式调度器 — 所有数据源请求经过此对象转发到对应插件。 */
     val dataSourceChain: DataSourceChain by lazy {
         DataSourceChain(
-            plugins = pluginManager.plugins,
+            // D7：live provider —— 每次调度都读当前插件顺序，运行期注册/调整即时生效，
+            // 不再把 pluginManager.plugins 的快照固定在链构造那一刻。
+            pluginProvider = { pluginManager.plugins },
             subjectDao = database.subjectDao(),
             gameDataSourceRegistry = gameDataSourceRegistry,
             writeGateway = subjectWriteGateway,
@@ -622,11 +627,15 @@ class NirikoApplication : Application() {
 
     val webDavClient: WebDavClient by lazy { WebDavClient() }
 
+    /** 同步基线（A-D4）：远端 ETag / Last-Modified，存独立 DataStore（不进 Room）。 */
+    val syncBaselineStore: SyncBaselineStore by lazy { SyncBaselineStore(this) }
+
     val syncManager: SyncManager by lazy {
         SyncManager(
             database = database,
             webDavClient = webDavClient,
             coverOverrideStore = coverOverrideStore,
+            syncBaselineStore = syncBaselineStore,
         )
     }
 

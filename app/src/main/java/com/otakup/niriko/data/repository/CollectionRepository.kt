@@ -27,8 +27,18 @@ class CollectionRepository(
 
     suspend fun add(collection: CollectionEntity): Long = collectionDao.insert(collection)
 
+    /**
+     * 更新收藏。
+     *
+     * A-D6：`updateTime` 统一在这里 bump —— 状态、评分、私密标记、备注等任何已持久化
+     * 字段的变化都算「最近修改」。改造前只有详情页的调用点自己写 now，长按改状态
+     * （CollectionViewModel.updateStatus）与批量改状态（batchUpdateStatus）都不写：
+     * 列表默认按 updateTime 排序，改完状态条目不动；WebDAV 的 LWW 也会因此误判新旧。
+     *
+     * 放在仓库层是为了一处覆盖所有调用点，避免下个新入口再忘记。
+     */
     suspend fun update(collection: CollectionEntity): Boolean =
-        collectionDao.update(collection) > 0
+        collectionDao.update(collection.bumpUpdateTime(System.currentTimeMillis())) > 0
 
     suspend fun delete(collection: CollectionEntity): Boolean =
         collectionDao.delete(collection) > 0
@@ -44,4 +54,16 @@ class CollectionRepository(
 
     fun observeByKeyword(keyword: String): Flow<List<CollectionWithSubject>> =
         collectionDao.observeByKeyword(keyword).catch { emit(emptyList()) }
+}
+
+/**
+ * 写入前刷新修改时间（A-D6）。
+ *
+ * 取 `maxOf(now, updateTime)`：设备时钟回拨或短时间连续写入时时间戳不倒退，
+ * 否则「最近修改」排序会跳，WebDAV 的 LWW 也可能把新写入判成旧数据。
+ * 纯函数，便于 JVM 单测。
+ */
+internal fun CollectionEntity.bumpUpdateTime(now: Long): CollectionEntity {
+    val bumped = maxOf(now, updateTime)
+    return if (bumped == updateTime) this else copy(updateTime = bumped)
 }

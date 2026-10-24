@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets
  * 从 `openid.claimed_id`（形如 `https://steamcommunity.com/openid/id/<steamid64>`）
  * 提取 SteamID64。登录本身无需 API key（key 仅用于后续 GetOwnedGames 拉库）。
  *
- * 本客户端只做 URL 构造与回跳解析（纯函数）；网络/WebView 交互由调用方负责。
+ * 本客户端只做 URL 构造、回跳判定与失败分类（纯函数）；网络/WebView 交互由调用方负责。
  */
 object SteamOpenIdClient {
 
@@ -42,6 +42,42 @@ object SteamOpenIdClient {
     /** 完整 return_to URL：https://localhost/steam-auth。 */
     const val RETURN_TO_URL = "$RETURN_TO_SCHEME://$RETURN_TO_HOST$RETURN_TO_PATH"
 
+    /**
+     * WebView 使用的桌面版 Chrome UA。
+     *
+     * 为什么必须显式设置：WebView 默认 UA 里带 `; wv` 标记，Steam 前置的 Akamai 边缘节点
+     * 会把它当成「非浏览器客户端」直接拦成 Access Denied（errors.edgesuite.net），首跳即失败。
+     * 为什么不用移动 UA：OpenID 登录页是桌面布局，移动 UA 会触发另一套风控，且页面会被压窄。
+     */
+    const val DESKTOP_USER_AGENT =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/120.0.0.0 Safari/537.36"
+
+    /**
+     * 是否为 OpenID 回跳 URL（WebView 拦截判据，纯函数）。
+     *
+     * 为什么精确到 scheme/host/path 而不是 startsWith 前缀：旧实现用前缀匹配，
+     * `/steam-authX` 这类相邻路径也会被当成回跳；而 scheme/host 大小写敏感又会漏掉
+     * 少数内核规范化后的 `HTTPS://LOCALHOST/...`。
+     * 只接受 http/https：自定义 scheme 会被 Steam 以 "Invalid return protocol" 拒掉。
+     */
+    fun isCallbackUrl(url: String): Boolean {
+        val trimmed = url.trim()
+        if (trimmed.isEmpty()) return false
+        val uri = try {
+            java.net.URI(trimmed)
+        } catch (_: Exception) {
+            return false
+        }
+        val scheme = uri.scheme?.lowercase() ?: return false
+        if (scheme != RETURN_TO_SCHEME && scheme != "http") return false
+        if (!RETURN_TO_HOST.equals(uri.host, ignoreCase = true)) return false
+        return when (uri.path) {
+            RETURN_TO_PATH, "$RETURN_TO_PATH/" -> true
+            else -> false
+        }
+    }
+
     /** claimed_id 前缀（提取 SteamID64 用）。 */
     private const val CLAIMED_ID_PREFIX = "https://steamcommunity.com/openid/id/"
 
@@ -65,6 +101,50 @@ object SteamOpenIdClient {
         return OPENID_ENDPOINT + "?" + params.entries.joinToString("&") { (k, v) ->
             "$k=${java.net.URLEncoder.encode(v, StandardCharsets.UTF_8.name())}"
         }
+    }
+
+    /**
+     * WebView `onReceivedHttpError` 是否该接管：只看主框架、只看 4xx/5xx。
+     * 子框架（统计图/广告）出错不该把整个登录页顶掉。
+     */
+    fun isMainFrameHttpError(isForMainFrame: Boolean, statusCode: Int): Boolean =
+        isForMainFrame && statusCode >= 400
+
+    /** HTTP 错误的可见文案（纯函数；UI 只负责把它渲染成 HTML）。 */
+    data class HttpErrorPage(
+        val statusCode: Int,
+        val title: String,
+        val detail: String,
+        /** 是否建议改用手动 SteamID64（403 与 5xx 的共同出路）。 */
+        val suggestManualSteamId: Boolean,
+    )
+
+    /**
+     * 4xx/5xx 对应的错误文案；statusCode < 400 返回 null（不是错误）。
+     *
+     * 403 单独成文案：拦掉请求的是 Akamai 边缘节点，返回的是它自己的 Access Denied 页，
+     * 用户看到的是英文报错且**不是账号问题**——他最该知道的是「可以改用手动 SteamID64」。
+     */
+    fun httpErrorPage(statusCode: Int): HttpErrorPage? = when {
+        statusCode < 400 -> null
+        statusCode == 403 -> HttpErrorPage(
+            statusCode = statusCode,
+            title = "Steam 拒绝了本次访问（403）",
+            detail = "多为网络或风控拦截，不是账号问题。可改用下方「手动输入 SteamID64」继续。",
+            suggestManualSteamId = true,
+        )
+        statusCode in 500..599 -> HttpErrorPage(
+            statusCode = statusCode,
+            title = "Steam 服务暂时不可用（$statusCode）",
+            detail = "稍后重试，或改用下方「手动输入 SteamID64」。",
+            suggestManualSteamId = true,
+        )
+        else -> HttpErrorPage(
+            statusCode = statusCode,
+            title = "Steam 登录页加载失败（$statusCode）",
+            detail = "可改用下方「手动输入 SteamID64」继续。",
+            suggestManualSteamId = true,
+        )
     }
 
     /** OpenID 回跳参数（解析后的键值映射）。 */

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.otakup.niriko.data.calculator.StatsCalculator
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
@@ -47,6 +48,7 @@ import com.otakup.niriko.ui.theme.chartTypeColor
 import com.otakup.niriko.util.TitleResolver
 import com.otakup.niriko.util.AiringStatus
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
+import com.otakup.niriko.data.onair.AirTime
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -131,6 +133,7 @@ fun CalendarDaySheet(
                         onClick = { onSubjectClick(subject.subjectId) },
                         episodeNumber = estimateEpisode(date, subject),
                         episodes = episodesBySubject[subject.subjectId].orEmpty(),
+                        date = date,
                     )
                 }
             }
@@ -149,6 +152,7 @@ fun CalendarDaySheet(
                         onClick = { onSubjectClick(subject.subjectId) },
                         episodeNumber = estimateEpisode(date, subject),
                         episodes = episodesBySubject[subject.subjectId].orEmpty(),
+                        date = date,
                     )
                 }
             }
@@ -264,10 +268,21 @@ private fun BroadcastEventItem(
     onClick: () -> Unit,
     episodeNumber: Int? = null,
     episodes: List<EpisodeInfo> = emptyList(),
+    /** 该行所在日期：放送时刻换算到设备时区后可能跨日，需要它来判定"次日/前一日"。 */
+    date: LocalDate,
 ) {
     val titleInfo = TitleResolver.resolve(subject.titleCN, subject.title)
     val interactionSource = remember(subject.subjectId) { MutableInteractionSource() }
     val airState = StatsCalculator.computeEpisodeAirState(episodes, subject.totalEpisodes)
+    // 4.10：延期 / 停播角标由真实集日期缺口推断（纯函数，和日历格同一套规则）
+    val adjustment = remember(episodes, date, subject.totalEpisodes) {
+        val dates = mainEpisodeDates(episodes)
+        airingAdjustFor(
+            date = date,
+            episodeDates = dates,
+            complete = isEpisodeDataComplete(subject.totalEpisodes, dates),
+        )
+    }
 
     val statusLabel = when (AiringStatus.getPhase(subject)) {
         AiringStatus.AiringPhase.UPCOMING -> "即将开播"
@@ -332,10 +347,10 @@ private fun BroadcastEventItem(
                             Spacer(Modifier.width(6.dp))
                         }
                     }
-                    // 阶段 A：精确放送时刻
-                    subject.airTimeMinutes?.let { m ->
+                    // 阶段 A：精确放送时刻；A-D2 起按设备时区显示（跨日带「次日/前一日」）
+                    AirTime.of(subject)?.let { airTime ->
                         Text(
-                            text = "%02d:%02d 放送".format(m / 60, m % 60),
+                            text = airTime.displayText(date) + " 放送",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -359,6 +374,27 @@ private fun BroadcastEventItem(
                     Spacer(Modifier.width(6.dp))
                     SubjectSecondaryInfo(subject = subject, episodes = episodes)
                 }
+                // 4.10：角标说明行（延期 X 天 / 停播原定某日未播）
+                adjustment?.let { adjust ->
+                    Text(
+                        text = adjust.detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 9.sp,
+                        color = if (adjust.kind == AiringAdjustKind.DELAYED) DelayColor else HiatusColor,
+                        modifier = Modifier.padding(top = 1.dp),
+                    )
+                }
+            }
+
+            // 4.10：停播 / 延期角标（行尾一个字，颜色与日历格一致）
+            adjustment?.let { adjust ->
+                Text(
+                    text = adjust.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (adjust.kind == AiringAdjustKind.DELAYED) DelayColor else HiatusColor,
+                    modifier = Modifier.padding(end = 6.dp),
+                )
             }
 
             // 状态标签

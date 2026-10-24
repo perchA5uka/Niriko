@@ -39,13 +39,45 @@ private const val TAG = "DataSourceChain"
  * - 全部方法均有异常保护，单个插件故障不影响整体
  */
 class DataSourceChain(
-    private val plugins: List<DataSourcePlugin>,
+    /**
+     * D7：插件**按需读取**的入口，而不是构造时的快照。
+     *
+     * 传 `{ pluginManager.plugins }` 即 live：插件顺序在运行期变化（注册 / 调整优先级）时，
+     * 下一次调度读到的就是新顺序，不需要重建链、也不需要重启进程。传 `{ listOf(...) }`
+     * 即固定列表（测试与固定列表用法）。
+     */
+    private val pluginProvider: () -> List<DataSourcePlugin>,
     private val subjectDao: SubjectDao,
     /** 通用游戏数据源注册表（补充查询通道）。非空时 getDetail 对 game 源条目尝试元数据刷新。 */
     private val gameDataSourceRegistry: GameDataSourceRegistry? = null,
     /** subjects 写入网关（批量单事务 + 内容 diff）。未注入时退化为直写 DAO。 */
     private val writeGateway: SubjectWriteGateway? = null,
 ) : SubjectRemoteDataSource {
+
+    /**
+     * 兼容旧调用：静态列表 → 固定 provider（快照语义，与改造前完全一致）。
+     *
+     * 生产路径已改用 [pluginProvider]（见 NirikoApplication）；保留这个重载是为了
+     * 现有单测与「一次性离线构造」的用法不必改成 lambda。
+     */
+    constructor(
+        plugins: List<DataSourcePlugin>,
+        subjectDao: SubjectDao,
+        gameDataSourceRegistry: GameDataSourceRegistry? = null,
+        writeGateway: SubjectWriteGateway? = null,
+    ) : this({ plugins }, subjectDao, gameDataSourceRegistry, writeGateway)
+
+    /**
+     * 当前插件顺序的 live 视图。
+     *
+     * 单个链路方法内的顺序稳定：`for (plugin in plugins)` 的迭代对象是**一次**读取的结果；
+     * 需要拼接多段顺序的地方（见 getInfoBox）会先取一次快照再过滤。
+     * 两次调度之间能看到运行期顺序变化 —— 这正是 D7 要的语义。
+     * 每次读取都会复制一次 PluginManager 的内部列表（toList），这是有意的：
+     * 避免调度过程中插件被注册导致并发修改。
+     */
+    private val plugins: List<DataSourcePlugin>
+        get() = pluginProvider()
 
     /** 落库前补齐拼音搜索键（阶段 D）。 */
     private fun withSearchKey(s: SubjectEntity): SubjectEntity =
@@ -309,7 +341,9 @@ class DataSourceChain(
     override suspend fun getInfoBox(subjectId: Long): List<InfoBoxEntry> {
         // 优先指定源（Bangumi），否则顺序尝试
         val sourceId = subjectDao.getById(subjectId)?.sourceId
-        val ordered = sourceId?.let { id -> plugins.filter { it.id == id } + plugins.filter { it.id != id } } ?: plugins
+        // 单次快照：拼接「指定源在前 + 其余在后」时不能分两次读供应商（D7 之后 plugins 是 live 的）
+        val all = plugins
+        val ordered = sourceId?.let { id -> all.filter { it.id == id } + all.filter { it.id != id } } ?: all
         for (plugin in ordered) {
             try {
                 val box = plugin.dataSource.getInfoBox(subjectId)

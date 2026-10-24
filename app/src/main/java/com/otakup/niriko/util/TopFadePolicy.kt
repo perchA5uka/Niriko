@@ -17,8 +17,11 @@ object TopFadePolicy {
     /** 渐隐带高度（dp）：滚动到这么远时顶部渐隐完全展开。 */
     const val FADE_DISTANCE_DP = 24f
 
-    /** Edge-to-edge feeds fade from window y=0, with no opaque toolbar-height plateau. */
-    const val WINDOW_MASK_HIDDEN_DP = 0f
+    /** 悬浮控件行高（dp）：顶栏上的搜索按钮 / 分区选择器 / 详情页头部都是这个高度。 */
+    const val FLOATING_CONTROL_ROW_DP = 56f
+
+    /** 悬浮控件行与窗口顶之间的间隙（dp）：四页的顶栏都是 `windowTopInset + 8.dp`。 */
+    const val FLOATING_CONTROL_TOP_GAP_DP = 8f
 
     /** 渐隐起点透明度（刚到顶时）：不为 0，否则顶部控件与内容会「贴死」看不出层次。 */
     const val MIN_ALPHA = 0.35f
@@ -71,4 +74,54 @@ object TopFadePolicy {
     /** 首项索引非 0 时的「已滚很远」判据：此时渐隐应当保持最亮（不要因为 offset 归零而突然变淡）。 */
     fun scrollOffsetFor(firstVisibleItemIndex: Int, firstVisibleItemOffsetPx: Int): Float =
         if (firstVisibleItemIndex > 0) Float.MAX_VALUE / 4f else firstVisibleItemOffsetPx.toFloat()
+
+    // ===== 顶部渐隐边界与内容避让 =====
+    // 遮罩起点：窗口原点（0.dp，三处调用点直接传字面量）；内容避让：feedTopPaddingDp。
+
+    /**
+     * **已不再是遮罩起点**（v1.2.1 真机反馈的裁决）。
+     *
+     * 渐隐的上边界回到「窗口原点 / 屏幕顶部（含状态栏区域）」：三处 `topContentAlphaMask` 都传
+     * `hiddenHeight = 0.dp`，与 v1.2.0 的发现页一致。本函数是曾经的「inset + 控件行高」实心台，
+     * 现在只剩详情页在过渡期引用（由另一张卡迁移），迁完即可删除。
+     *
+     * 内容避让（列表顶部内距）请用 [feedTopPaddingDp] —— 两者不是一回事：
+     * 遮罩起点在屏幕顶部，内容仍要从悬浮控件下方开始，否则第一项会被按钮盖住。
+     */
+    fun windowMaskHiddenDp(windowTopInsetDp: Float): Float =
+        windowTopInsetDp.coerceAtLeast(0f) + FLOATING_CONTROL_ROW_DP
+
+    /**
+     * 内容列表 / 网格的顶部内距（dp）。
+     *
+     * 与各页原先手写的 `windowTopInset + searchContentPaddingDp(56f)` **数学等价**，
+     * 只是把同一条算式收进一处，便于以后统一调（B1 的「只搬运不改语义」）。
+     */
+    fun feedTopPaddingDp(windowTopInsetDp: Float): Float =
+        windowTopInsetDp.coerceAtLeast(0f) + searchContentPaddingDp(FLOATING_CONTROL_ROW_DP)
+
+    /**
+     * 搜索表面展开后，内容区的顶部让位（dp）：内容不能钻进展开卡片下面（B3）。
+     *
+     * - `collapsed`：只有 56dp 工具栏（与 [feedTopPaddingDp] 同值，展开前的原值）；
+     * - `immersiveCollapsed`：沉浸搜索但未编辑 / 未展开筛选行，卡片只有 68dp；
+     * - 其余：完整菜单高度（默认 200dp）。
+     *
+     * 卡片本身从 `inset + 8.dp` 开始（见 SearchToolbar 的 top padding），所以让位值 =
+     * inset + 8 + 卡片高。
+     */
+    fun searchExpandedTopInsetDp(
+        windowTopInsetDp: Float,
+        menuHeightDp: Float,
+        collapsedHeightDp: Float,
+        collapsed: Boolean,
+        immersiveCollapsed: Boolean,
+    ): Float {
+        val inset = windowTopInsetDp.coerceAtLeast(0f)
+        return when {
+            collapsed -> inset + searchContentPaddingDp(FLOATING_CONTROL_ROW_DP)
+            immersiveCollapsed -> inset + FLOATING_CONTROL_TOP_GAP_DP + collapsedHeightDp.coerceAtLeast(0f)
+            else -> inset + FLOATING_CONTROL_TOP_GAP_DP + menuHeightDp.coerceAtLeast(0f)
+        }
+    }
 }

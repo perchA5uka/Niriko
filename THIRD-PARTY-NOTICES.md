@@ -42,6 +42,18 @@ Niriko 本体以 **MIT License** 发布（见 [`LICENSE`](LICENSE)）。下面�
   说明：该实现不是上游源码的逐字拷贝，而是按公开的 corner-smoothing 几何公式
   （cubic 过渡段 + 圆弧段拼接）独立重写，以便不引入新依赖并可在 JVM 单测中验证几何不变量；
   几何公式与来源见该文件头部注释。
+- `app/src/main/java/com/kyant/shapes/` —— 内置
+  [Kyant0/Shapes](https://github.com/Kyant0/Shapes) **1.2.1** 的 11 个源码文件
+  （连续曲率圆角 / Capsule / Rectangle / UnevenRoundedRectangle 等），
+  **Apache License 2.0**（<https://www.apache.org/licenses/LICENSE-2.0>）。
+  说明：上游以 Kotlin 2.4.10 / Compose 1.12 构建，与本工程 Kotlin 2.3.10 的
+  二进制元数据不兼容，故**不引 Maven 依赖、改为内置源码**；
+  内置时**未修改任何 API**，只在每个文件顶部加了一行 provenance 注释。
+  B6 起玻璃开关（`GlassToggle`）与进度条（`GlassProgressBar`）复用其中的 `Capsule`；
+  `RoundedRectangle(style = Continuous)` 留给后续表面批次（B7b–B7e）使用。
+  另：`kyant0:backdrop` 通过 `implementation` 传递引入的 `shapes-android:1.2.0` AAR 已在
+  `app/build.gradle.kts` 中排除（否则与内置源码同包名同类名，dex 阶段会 duplicate class）；
+  排除前已核对内置的 11 个文件与 1.2.0 源码逐字相同，且 backdrop 只用到 `RoundedRectangularShape`。
 
 ## 数据来源
 

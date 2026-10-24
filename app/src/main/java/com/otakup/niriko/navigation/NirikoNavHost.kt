@@ -7,14 +7,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.data.settings.AppSettings
 import com.otakup.niriko.ui.animation.NavEntryReturnedEffect
 import com.otakup.niriko.ui.animation.SubjectReturnGlow
 import com.kyant.backdrop.Backdrop
@@ -70,6 +75,18 @@ import com.otakup.niriko.viewmodel.SubjectSearchViewModelFactory
 
 /** 顶层页面路由：HorizontalPager 承载（见 [MainPager]）。 */
 const val MAIN_ROUTE = "main"
+
+/**
+ * X3：设置页「首帧种子」的共享通道。
+ *
+ * 窄屏设置二级页由 [NirikoNavHost] 里的工厂直接传种子；宽屏两栏右列
+ * （SettingsScreen → SettingsExpandedScreen → AdaptiveSettingsPane.settingsViewModel()）
+ * 不走 NavHost 路由，够不到 NavHost 的局部变量，因此用这个 CompositionLocal 共享**同一个**
+ * StateFlow。消费方读 .current?.value：null（预览 / 测试直接组合）时回退到 AppSettings()，
+ * 与改造前行为一致。
+ */
+internal val LocalSettingsSeed: ProvidableCompositionLocal<StateFlow<AppSettings>?> =
+    compositionLocalOf { null }
 
 private val subjectCoverSourceRoutes = setOf(
     MAIN_ROUTE, "subject_search", "subject_detail/{subjectId}",
@@ -133,6 +150,25 @@ fun NirikoNavHost(
     modifier: Modifier = Modifier,
 ) {
     val navigationContext = LocalContext.current
+    /**
+     * X3：设置二级页的「首帧种子」。
+     *
+     * 每个设置二级页都自建 SettingsViewModel，而它的 settings 是
+     * stateIn(..., initialValue = initialSettings ?: AppSettings())。不传种子时首帧是默认值
+     * （nsfwEnabled = false 等），DataStore 的真实值随后到达 → M3 Switch 会把 thumb 从
+     * false 播一次位移动画，这就是「进设置页 R18 开关自己动一下」。
+     *
+     * 这里取的是 **Activity 作用域**那个实例（MainActivity 在 setContent 之前同步读过
+     * DataStore，并用真实设置初始化了它）的 settings。它是 StateFlow：即使 WhileSubscribed
+     * 还没收到 DataStore 首帧，.value 也已经是真实设置，所以下面每个二级页的 VM 种子在首帧
+     * 就是当前值（不是「延迟显示」，也没有任何首帧跳过动画的特判）。
+     *
+     * 若本 NavHost 被直接组合（预览 / 测试）而没有该实例，viewModel() 会按传入工厂新建一个，
+     * .value 退化为 AppSettings()，行为与改造前一致（不会崩）。
+     */
+    val rootSettings = viewModel<SettingsViewModel>(
+        factory = SettingsViewModelFactory(navigationContext.nirikoApp.settingsDataStore),
+    ).settings
     val posterNavigationScope = rememberCoroutineScope()
     val openSubject: (Long) -> Unit = { id ->
         posterNavigationScope.launch {
@@ -179,20 +215,23 @@ fun NirikoNavHost(
         },
     ) {
         composable(MAIN_ROUTE) {
-            MainPager(
-                pagerState = pagerState,
-                navController = navController,
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = this@composable,
-                backdrop = backdrop,
-                windowLayout = windowLayout,
-                onDestinationSelected = onDestinationSelected,
-                onTabReselected = onTabReselected,
-                tabReselectEventId = tabReselectEventId,
-                tabReselect = tabReselect,
-                contentTopInset = contentTopInset,
-                modifier = Modifier,
-            )
+            // X3：宽屏设置两栏右列复用同一份首帧种子（见 LocalSettingsSeed 的注释）
+            CompositionLocalProvider(LocalSettingsSeed provides rootSettings) {
+                MainPager(
+                    pagerState = pagerState,
+                    navController = navController,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = this@composable,
+                    backdrop = backdrop,
+                    windowLayout = windowLayout,
+                    onDestinationSelected = onDestinationSelected,
+                    onTabReselected = onTabReselected,
+                    tabReselectEventId = tabReselectEventId,
+                    tabReselect = tabReselect,
+                    contentTopInset = contentTopInset,
+                    modifier = Modifier,
+                )
+            }
         }
         composable(
             "subject_search",
@@ -425,6 +464,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
@@ -445,6 +486,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
@@ -464,6 +507,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
@@ -482,6 +527,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
@@ -500,6 +547,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
@@ -518,6 +567,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
@@ -538,6 +589,8 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
                     ),
             )
             val backupVm = viewModel<BackupViewModel>(
@@ -560,6 +613,18 @@ fun NirikoNavHost(
                 factory = SettingsViewModelFactory(
                         app.settingsDataStore, app.pluginManager, app.syncManager,
                         app.bangumiSyncManager, app.refreshCoordinator,
+                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                        initialSettings = rootSettings.value,
+                        // C-1 数据体检：只读计数由宿主用 DAO 构造后注入（ViewModel 不 new DAO）
+                        collectionCountsProvider = com.otakup.niriko.data.diagnose.CollectionCountsProvider {
+                            val dao = app.database.collectionDao()
+                            com.otakup.niriko.data.diagnose.CollectionCounts(
+                                total = dao.countAll(),
+                                withoutProgress = dao.countWithoutProgress(),
+                                withoutRating = dao.countWithoutRating(),
+                                registeredSources = app.pluginManager.plugins.size,
+                            )
+                        },
                     ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {

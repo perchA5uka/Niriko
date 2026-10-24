@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.LocalOffer
@@ -30,6 +31,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.settings.SettingsSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import kotlinx.coroutines.launch
@@ -44,6 +46,8 @@ fun SharePreviewSheet(
     host: ShareBitmapHost,
     data: ShareCardData,
     onDismiss: () -> Unit,
+    /** 批次 C · 8.6：有数据时多给一个「评分对照卡」出口；null = 不显示。 */
+    ratingComparison: RatingComparisonCardData? = null,
 ) {
     val scope = rememberCoroutineScope()
     // R6（FlexibleBottomSheet 借鉴）：保留中间档位 —— 半展开 = 「预览」档，上滑 = 「自定义」档。
@@ -73,7 +77,31 @@ fun SharePreviewSheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    fun doShareRating() {
+        val card = ratingComparison ?: return
+        scope.launch {
+            sharing = true
+            val bmp = ShareCardVariants.renderRating(context, host, card)
+            val text = buildString {
+                append("《${data.primaryTitle}》评分对照")
+                card.mine?.let { append(" · 我 ").append("%.1f".format(it)) }
+                card.community?.let { append(" · 社区 ").append("%.1f".format(it)) }
+                append("\n\n——— 来自 Niriko")
+            }
+            val uri = ShareFlow.saveAndGetUri(context, bmp, "rating_" + System.currentTimeMillis() + ".png")
+            context.startActivity(ShareFlow.buildChooser(ShareFlow.buildShareIntent(uri, text), "分享到"))
+            sharing = false
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        // B7e：与 NirikoNonModalSheet 同源顶角（Sheet 24dp）；M3 默认是 28dp
+        shape = RoundedCornerShape(topStart = NirikoShapes.Sheet, topEnd = NirikoShapes.Sheet),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -140,6 +168,12 @@ fun SharePreviewSheet(
                     )
                 },
             ))
+            if (ratingComparison != null) {
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { doShareRating() }, enabled = !sharing, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (sharing) "生成中…" else "分享「评分对照卡」")
+                }
+            }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("取消") }

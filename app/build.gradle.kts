@@ -27,8 +27,8 @@ android {
         applicationId = "com.otakup.niriko"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -125,7 +125,16 @@ dependencies {
     // Route A：接入官方库。1.0.6 匹配 Kotlin 2.3.10 + Compose 1.10.3 + AGP 8.x；
     // 2.0.1 需 AGP 9.1 / Compose 1.12，当前工程不兼容（阶段 1 先做静态卡三件套）。
     // 上游最新即 2.0.1（需 Compose 1.12），当前不可升级；升级前必须先升 Compose/AGP。
-    implementation("io.github.kyant0:backdrop:1.0.6")
+    //
+    // 排除 kyant0:shapes 的**传递运行时依赖**：B6 起把 Shapes 1.2.1 源码内置到
+    // app/src/main/java/com/kyant/shapes/（上游用 Kotlin 2.4.10/Compose 1.12 构建，直接引 AAR
+    // 会踩 Kotlin metadata 不兼容）。两者包名/类名完全相同，若同时进 dex 会
+    // "Duplicate class com.kyant.shapes.Capsule"，因此只保留内置源码这一份。
+    // 兼容性已核对：内置的 11 个文件与 shapes 1.2.0 源码逐字相同（backdrop 1.0.6 依赖的就是 1.2.0），
+    // 且 backdrop 只用到其中的 RoundedRectangularShape（effects/Lens.kt）。
+    implementation("io.github.kyant0:backdrop:1.0.6") {
+        exclude(group = "io.github.kyant0", module = "shapes-android")
+    }
 
     // Room
     implementation(libs.androidx.room.runtime)

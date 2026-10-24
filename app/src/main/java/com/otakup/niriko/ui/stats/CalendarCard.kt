@@ -1,5 +1,7 @@
 package com.otakup.niriko.ui.stats
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,8 +31,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +46,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -79,7 +86,20 @@ import com.otakup.niriko.data.model.stats.CalendarMode
 import com.otakup.niriko.data.model.stats.BroadcastMonthState
 import com.otakup.niriko.data.model.stats.BroadcastMonthStatus
 import com.otakup.niriko.ui.components.appleGlassCard
+import androidx.core.content.FileProvider
+import com.otakup.niriko.data.export.IcsAirEvent
+import com.otakup.niriko.data.export.IcsExportScope
+import com.otakup.niriko.data.export.IcsExporter
+import com.otakup.niriko.data.export.buildIcsSubjectEvents
+import com.otakup.niriko.data.model.EpisodeInfo
+import java.io.File
+import java.time.Instant
 import java.time.LocalDate
+import com.otakup.niriko.nirikoApp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import kotlinx.datetime.DayOfWeek as KDayOfWeek
@@ -97,6 +117,10 @@ import kotlinx.datetime.toKotlinYearMonth as kToKotlinYearMonth
 /** 放送标记颜色（金色菱形 ◆）。 */
 private val BroadcastColor = Color(0xFFFDD835)
 private val ReleaseColor = Color(0xFF66BB6A)
+
+/** 停播角标颜色（灰）与延期角标颜色（橙，对应 4.10 的「橙色小三角」）。 */
+internal val HiatusColor = Color(0xFF90A4AE)
+internal val DelayColor = Color(0xFFFB8C00)
 
 private val weekdayLabels = listOf("日", "一", "二", "三", "四", "五", "六")
 private val dotSize = 4.dp
@@ -135,6 +159,63 @@ fun CalendarCard(
     gestureLock: MutableState<Boolean>? = null,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val exportScope = rememberCoroutineScope()
+    val monthStart = remember(anchorDate) { YearMonth.from(anchorDate).atDay(1) }
+    val monthEnd = remember(anchorDate) { YearMonth.from(anchorDate).atEndOfMonth() }
+    val monthSubjects = remember(dayEvents) {
+        dayEvents.values.flatMap { it.broadcastSubjects }.distinctBy { it.subjectId }
+    }
+    // 4.7/4.10：停播/延期要真实集日期才能推断，而 CalendarCard 的入参只有日事件。
+    // 这里按「本月出现过的放送作品」读一次 Room（只读、仅 IO 一次/月），不引入新的数据流，
+    // 也不改 StatsScreen 的调用点（另一轨正在改它）。
+    var monthEpisodeDates by remember { mutableStateOf<Map<Long, List<LocalDate>>>(emptyMap()) }
+    LaunchedEffect(monthSubjects.map { it.subjectId }) {
+        if (monthSubjects.isEmpty()) {
+            monthEpisodeDates = emptyMap()
+            return@LaunchedEffect
+        }
+        monthEpisodeDates = withContext(Dispatchers.IO) {
+            // runCatching：预览 / 非 App context 下取不到仓库时退化为"无集数据"（不显示角标），不能崩。
+            runCatching {
+                val dao = context.nirikoApp.database.episodeDao()
+                monthSubjects.associate { subject ->
+                    subject.subjectId to mainEpisodeDatesFromAirdates(
+                        dao.getMainEpisodes(subject.subjectId).map { it.airdate },
+                    )
+                }
+            }.getOrDefault(emptyMap())
+        }
+    }
+    val airingAdjusts = remember(monthSubjects, monthEpisodeDates, monthStart, monthEnd) {
+        mergeAiringAdjusts(monthSubjects, monthEpisodeDates, monthStart, monthEnd)
+    }
+
+    // 4.8：导出弹窗（范围 / 计数 / 忙碌态）
+    var showExportDialog by remember { mutableStateOf(false) }
+    var exportRange by remember { mutableStateOf(IcsExportScope.THIS_MONTH) }
+    var exportSummary by remember { mutableStateOf<IcsExportSummary?>(null) }
+    var exportBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(showExportDialog, exportRange, monthEpisodeDates) {
+        if (!showExportDialog) return@LaunchedEffect
+        exportBusy = true
+        exportSummary = null
+        val events = buildIcsExport(
+            context = context,
+            scope = exportRange,
+            monthStart = monthStart,
+            monthEnd = monthEnd,
+            monthSubjects = monthSubjects,
+            monthEpisodeDates = monthEpisodeDates,
+        )
+        exportSummary = IcsExportSummary(
+            subjects = events.map { it.subjectId }.distinct().size,
+            events = events.size,
+            estimated = IcsExporter.estimatedCount(events),
+        )
+        exportBusy = false
+    }
+
     Box(
         modifier = modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.medium),
     ) {
@@ -173,6 +254,7 @@ fun CalendarCard(
                     MonthGrid(
                         anchorDate = anchorDate,
                         dayEvents = dayEvents,
+                        airingAdjusts = airingAdjusts,
                         onDayClick = onDayClick,
                         onAnchorDateChange = onAnchorDateChange,
                         modifier = gridModifier,
@@ -181,6 +263,7 @@ fun CalendarCard(
                     WeekGrid(
                         anchorDate = anchorDate,
                         dayEvents = dayEvents,
+                        airingAdjusts = airingAdjusts,
                         onDayClick = onDayClick,
                         onAnchorDateChange = onAnchorDateChange,
                         modifier = gridModifier,
@@ -197,6 +280,44 @@ fun CalendarCard(
                     message = broadcastError ?: broadcastMonthState?.let(::broadcastMonthMessage),
                     lastUpdatedAt = broadcastMonthState?.lastSuccessAt ?: broadcastLastUpdatedAt,
                     onRefresh = onRefreshBroadcast,
+                )
+                // 4.8：导出放送日历（.ics）—— 现算现导出，不落库
+                IcsExportEntry(
+                    enabled = !exportBusy,
+                    onOpen = { showExportDialog = true },
+                )
+            }
+            if (showExportDialog) {
+                IcsExportDialog(
+                    range = exportRange,
+                    onRangeChange = { exportRange = it },
+                    summary = exportSummary,
+                    busy = exportBusy,
+                    onDismiss = { if (!exportBusy) showExportDialog = false },
+                    onConfirm = {
+                        exportScope.launch {
+                            exportBusy = true
+                            val events = buildIcsExport(
+                                context = context,
+                                scope = exportRange,
+                                monthStart = monthStart,
+                                monthEnd = monthEnd,
+                                monthSubjects = monthSubjects,
+                                monthEpisodeDates = monthEpisodeDates,
+                            )
+                            val body = IcsExporter.build(events, Instant.now())
+                            runCatching { shareIcsCalendar(context, body) }
+                                .onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        "导出失败：" + (it.message ?: "未知错误"),
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            exportBusy = false
+                            showExportDialog = false
+                        }
+                    },
                 )
             }
         }
@@ -477,6 +598,87 @@ private fun BroadcastStatusHint(
     }
 }
 
+
+/** 4.8：导出入口（放在放送状态行下方，与「刷新」同一区）。 */
+@Composable
+private fun IcsExportEntry(enabled: Boolean, onOpen: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "放送日历导出 .ics",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clickable(enabled = enabled, onClick = onOpen),
+        )
+    }
+}
+
+/** 4.8 导出确认：范围（本月 / 本季 / 在追全部）+ 预览计数（其中多少条是预估）。 */
+@Composable
+private fun IcsExportDialog(
+    range: IcsExportScope,
+    onRangeChange: (IcsExportScope) -> Unit,
+    summary: IcsExportSummary?,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出放送日历（.ics）") },
+        text = {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IcsExportScope.entries.forEach { scope ->
+                        FilterChip(
+                            selected = range == scope,
+                            onClick = { if (!busy) onRangeChange(scope) },
+                            label = { Text(scope.label, style = MaterialTheme.typography.labelMedium) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                if (busy) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text("正在统计…", style = MaterialTheme.typography.labelSmall)
+                    }
+                } else {
+                    val s = summary
+                    Text(
+                        text = if (s == null) "范围确定后显示将导出的数量"
+                        else "将导出 ${s.subjects} 部 / ${s.events} 个事件（其中 ${s.estimated} 个为预估）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "导入手机日历时，同一作品会按 UID 覆盖更新而不是重复；预估事件按每周一集生成。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !busy && (summary?.events ?: 0) > 0) { Text("导出") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
+}
+
 // ==================== 标题 + 翻页箭头 ====================
 
 /**
@@ -557,6 +759,7 @@ private val maxDayCellSize = 56.dp
 private fun MonthGrid(
     anchorDate: LocalDate,
     dayEvents: Map<LocalDate, CalendarDayEvents>,
+    airingAdjusts: Map<LocalDate, List<AiringAdjust>> = emptyMap(),
     onDayClick: (LocalDate) -> Unit,
     onAnchorDateChange: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
@@ -608,6 +811,7 @@ private fun MonthGrid(
                 CalendarDayCell(
                     date = date,
                     events = dayEvents[date],
+                    airingAdjusts = airingAdjusts[date].orEmpty(),
                     onClick = { onDayClick(date) },
                     modifier = Modifier.fillMaxWidth().aspectRatio(1f),
                 )
@@ -628,6 +832,7 @@ private fun MonthGrid(
 private fun WeekGrid(
     anchorDate: LocalDate,
     dayEvents: Map<LocalDate, CalendarDayEvents>,
+    airingAdjusts: Map<LocalDate, List<AiringAdjust>> = emptyMap(),
     onDayClick: (LocalDate) -> Unit,
     onAnchorDateChange: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
@@ -670,6 +875,7 @@ private fun WeekGrid(
             CalendarDayCell(
                 date = date,
                 events = dayEvents[date],
+                airingAdjusts = airingAdjusts[date].orEmpty(),
                 onClick = { onDayClick(date) },
                 modifier = Modifier.fillMaxWidth().aspectRatio(1f),
             )
@@ -722,6 +928,8 @@ private fun YearMonth.toKotlinYearMonth(): KYearMonth = kToKotlinYearMonth()
 private fun CalendarDayCell(
     date: LocalDate,
     events: CalendarDayEvents?,
+    /** 4.7/4.10：停播 / 延期角标（来自真实集日期缺口，见 airingAdjustFor）。 */
+    airingAdjusts: List<AiringAdjust> = emptyList(),
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -798,6 +1006,18 @@ private fun CalendarDayCell(
             if (hasEvents) {
                 DotsRow(events = events!!)
             }
+        }
+
+        // 停播 / 延期角标（右上角一个字）：停 = 灰色，延 = 橙色（4.10）
+        airingAdjusts.firstOrNull()?.let { adjust ->
+            Text(
+                text = adjust.label,
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (adjust.kind == AiringAdjustKind.DELAYED) DelayColor else HiatusColor,
+                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
+            )
         }
 
         // 今天标记
@@ -991,6 +1211,201 @@ private fun ReleaseMarker(size: Dp) {
         }
         drawPath(path, color = ReleaseColor)
     }
+}
+
+// ==================== 停播 / 延期（4.7 / 4.10） ====================
+
+/** 停播判据：正常周更 7 天；连续两集间隔 > 10 天才算停播，避免 ±1 天误差被误判。 */
+internal const val HIATUS_GAP_DAYS = 10L
+
+/** 角标类型：格子上只放一个字（停 / 延），完整说明留给日详情面板。 */
+internal enum class AiringAdjustKind { HIATUS, DELAYED }
+
+/** 一条停播/延期角标。 */
+internal data class AiringAdjust(
+    val kind: AiringAdjustKind,
+    val label: String,
+    val detail: String,
+)
+
+/** 本篇（type == 0、sort > 0）且有 airdate 的集日期，升序去重。 */
+internal fun mainEpisodeDates(episodes: List<EpisodeInfo>): List<LocalDate> = episodes
+    .filter { it.type == 0 && it.sort > 0 }
+    .mapNotNull { ep -> ep.airdate?.let(::parseIsoDate) }
+    .distinct().sorted()
+
+/** Room 侧（EpisodeEntity）的集日期：DAO 已按 type == 0 过滤，这里只解析 + 去重。 */
+internal fun mainEpisodeDatesFromAirdates(airdates: List<String?>): List<LocalDate> =
+    airdates.mapNotNull { it?.let(::parseIsoDate) }.distinct().sorted()
+
+private fun parseIsoDate(raw: String): LocalDate? = runCatching { LocalDate.parse(raw) }.getOrNull()
+
+/**
+ * 集数据是否完整到可以推断停播/延期：必须覆盖声明集数。
+ * 4.7 的硬约束 —— 缺集与停播无法区分，只在 complete 时启用缺口判定，否则会把「没拉到」误报成停播。
+ */
+internal fun isEpisodeDataComplete(totalEpisodes: Int?, episodeDates: List<LocalDate>): Boolean =
+    totalEpisodes != null && totalEpisodes > 0 && episodeDates.size >= totalEpisodes
+
+/**
+ * 某一天的角标（纯函数，4.7 / 4.10）：
+ *
+ * - 当天是真实集日期，且比「首集 + N 周」晚 → **延期**（延 N 天）；
+ * - 当天不是集日期，但正好是每周放送日、且落在 > 10 天的两集缺口里 → **停播**。
+ *
+ * 集数据不足两集时一律不判定 —— 没有数据不猜（与 4.7「完全没有 episodes 时不估算提醒」一致）。
+ */
+internal fun airingAdjustFor(
+    date: LocalDate,
+    episodeDates: List<LocalDate>,
+    /** 集数据是否覆盖声明集数；false 时一律不判定（没数据不猜）。 */
+    complete: Boolean = true,
+): AiringAdjust? {
+    if (!complete) return null
+    if (episodeDates.size < 2) return null
+    val first = episodeDates.first()
+    val index = episodeDates.indexOf(date)
+    if (index >= 0) {
+        val expected = first.plusWeeks(index.toLong())
+        val days = ChronoUnit.DAYS.between(expected, date)
+        if (days <= 0) return null
+        return AiringAdjust(
+            kind = AiringAdjustKind.DELAYED,
+            label = "延",
+            detail = "延期 $days 天（原定 ${expected.monthValue}月${expected.dayOfMonth}日）",
+        )
+    }
+    if (!date.isAfter(first)) return null
+    if (ChronoUnit.DAYS.between(first, date) % 7L != 0L) return null
+    // 缺口内的每周放送日：从「停播后的第一个本该更新的日子」到「恢复那集」之前（含首尾的哪一边都要对：
+    // 紧邻停播周的那一天正好是 from + 1 周，所以用 !isBefore 而不是 isAfter）。
+    val inGap = episodeDates.zipWithNext().any { (from, to) ->
+        ChronoUnit.DAYS.between(from, to) > HIATUS_GAP_DAYS &&
+            !date.isBefore(from.plusWeeks(1)) && date.isBefore(to)
+    }
+    if (!inGap) return null
+    return AiringAdjust(
+        kind = AiringAdjustKind.HIATUS,
+        label = "停",
+        detail = "停播：原定 ${date.monthValue}月${date.dayOfMonth}日未播",
+    )
+}
+
+/** 一部作品在 [monthStart]..[monthEnd] 内的角标（逐日跑纯规则）。 */
+internal fun airingAdjustsForRange(
+    episodeDates: List<LocalDate>,
+    monthStart: LocalDate,
+    monthEnd: LocalDate,
+    complete: Boolean = true,
+): Map<LocalDate, AiringAdjust> {
+    if (!complete || episodeDates.size < 2) return emptyMap()
+    val out = linkedMapOf<LocalDate, AiringAdjust>()
+    var date = monthStart
+    while (!date.isAfter(monthEnd)) {
+        airingAdjustFor(date, episodeDates, complete)?.let { out[date] = it }
+        date = date.plusDays(1)
+    }
+    return out
+}
+
+/**
+ * 多部作品的角标合并成「日期 → 角标列表」（格子显示第一条）。
+ *
+ * 只有**集数据完整**（覆盖声明集数）的作品参与：残缺数据只能证明「没拉到」，不能证明「停播」。
+ */
+internal fun mergeAiringAdjusts(
+    subjects: List<SubjectEntity>,
+    episodeDatesBySubject: Map<Long, List<LocalDate>>,
+    monthStart: LocalDate,
+    monthEnd: LocalDate,
+): Map<LocalDate, List<AiringAdjust>> {
+    if (subjects.isEmpty() || episodeDatesBySubject.isEmpty()) return emptyMap()
+    val out = linkedMapOf<LocalDate, MutableList<AiringAdjust>>()
+    subjects.forEach { subject ->
+        val dates = episodeDatesBySubject[subject.subjectId].orEmpty()
+        airingAdjustsForRange(
+            episodeDates = dates,
+            monthStart = monthStart,
+            monthEnd = monthEnd,
+            complete = isEpisodeDataComplete(subject.totalEpisodes, dates),
+        ).forEach { (date, adjust) ->
+            out.getOrPut(date) { mutableListOf() }.add(adjust)
+        }
+    }
+    return out
+}
+
+// ==================== .ics 导出（4.8） ====================
+
+/** 导出前的计数预览：范围会写进确认弹窗（"12 部 / 138 个事件（其中 41 个预估）"）。 */
+internal data class IcsExportSummary(val subjects: Int, val events: Int, val estimated: Int)
+
+/** 计算某个范围要导出的事件（IO 线程里读 Room；上限 200 部，避免长尾拖慢）。 */
+internal suspend fun buildIcsExport(
+    context: android.content.Context,
+    scope: IcsExportScope,
+    monthStart: LocalDate,
+    monthEnd: LocalDate,
+    monthSubjects: List<SubjectEntity>,
+    monthEpisodeDates: Map<Long, List<LocalDate>>,
+    today: LocalDate = LocalDate.now(),
+): List<IcsAirEvent> = withContext(Dispatchers.IO) {
+    val app = context.applicationContext as? com.otakup.niriko.NirikoApplication
+        ?: return@withContext emptyList()
+    if (scope == IcsExportScope.THIS_MONTH) {
+        return@withContext monthSubjects.flatMap { subject ->
+            buildIcsSubjectEvents(
+                subject = subject,
+                episodeDates = monthEpisodeDates[subject.subjectId].orEmpty(),
+                from = monthStart,
+                to = monthEnd,
+                sequence = 0,
+            )
+        }
+    }
+    val collections = app.database.collectionDao().observeAllWithSubject().first()
+    val from = today
+    val to = IcsExporter.windowEnd(today)
+    val episodeDao = app.database.episodeDao()
+    // Sequence.flatMap 的 lambda 不是 suspend，不能在里面读 Room；改成普通循环（上限 200 部）。
+    val out = mutableListOf<IcsAirEvent>()
+    var taken = 0
+    for (item in collections) {
+        if (taken >= 200) break
+        val status = item.collection.status
+        if (status != WatchStatus.WATCHING && status != WatchStatus.PLAN_TO_WATCH) continue
+        if (item.collection.isPrivate) continue
+        if (scope == IcsExportScope.THIS_SEASON) {
+            val firstAir = item.subject.airDate?.let(::parseIsoDate) ?: continue
+            if (!IcsExporter.isCurrentSeason(firstAir, today)) continue
+        }
+        val dates = episodeDao.getMainEpisodes(item.subject.subjectId)
+            .map { it.airdate }
+            .let(::mainEpisodeDatesFromAirdates)
+        out += buildIcsSubjectEvents(
+            subject = item.subject,
+            episodeDates = dates,
+            from = from,
+            to = to,
+            sequence = IcsExporter.sequenceOf(item.collection.updateTime),
+        )
+        taken++
+    }
+    out
+}
+
+/** 把 .ics 写进 cache/share/ 并经 FileProvider 分享（不申请存储权限）。 */
+internal fun shareIcsCalendar(context: android.content.Context, body: String) {
+    val dir = File(context.cacheDir, "share").apply { mkdirs() }
+    val file = File(dir, "niriko-airing-${LocalDate.now().toString().replace("-", "")}.ics")
+    file.writeText(body, Charsets.UTF_8)
+    val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/calendar"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(send, "导出放送日历"))
 }
 
 // ==================== 预览 ====================

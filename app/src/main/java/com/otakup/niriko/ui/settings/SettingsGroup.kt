@@ -51,21 +51,18 @@ import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 // ==================== 分组／行度量（对齐 Kazumi SplitListGroup） ====================
 
-/** 组两端的大圆角（Kazumi tonalCardRadius 24 的视觉量级；与站内玻璃卡片一致的 20dp）。 */
-private val GroupOuterRadius = 20.dp
+/** 组两端的大圆角：走 [NirikoShapes.Card]（20dp，与收敛前逐字相等，B7b 零视觉变化）。 */
+private val GroupOuterRadius: Dp = NirikoShapes.Card
 
-/** 组内行的相邻小圆角。 */
-private val RowInnerRadius = 4.dp
+/** 组内行的相邻小圆角：走 [NirikoShapes.RowInner] 令牌（4dp，B7a 建）。 */
+private val RowInnerRadius: Dp = NirikoShapes.RowInner
 
 /** 行间距。 */
 private val RowGap = 4.dp
-
-/** 按压圆角 morph 时长（与 Kazumi splitListMotionDuration 一致）。 */
-
-/** 按压圆角 morph 曲线：easeInOutCubic（与 Kazumi splitListMotionCurve 一致）。 */
 
 /** 行底：在玻璃分组容器上叠一层低透明度 tonal 面，按压 morph 才可见。 */
 private val RowContainerAlpha = 0.55f
@@ -91,7 +88,8 @@ fun rememberRowInteractionSource(): MutableInteractionSource {
  * Kazumi 风格 M3 分组列表（SettingsSplitGroup）：
  * - 组容器仍是 Niriko 的 appleGlassCard 玻璃卡（取舍 ④B），圆角 20dp；
  * - 组内行间距 4dp、行小圆角 4dp；首行上／末行下为组外大圆角；
- * - 行被按下时该行圆角 morph 到 20dp（250ms easeInOutCubic；系统关闭动画时瞬时），
+ * - 行被按下时该行圆角 morph 到组外圆角（[NirikoShapes.Card] 20dp；二级页为
+ *   [NirikoShapes.Sheet] 24dp），规格走 [NirikoMotionSpecs.spatialDefault]，系统关闭动画时瞬时，
  *   以此替代分割线给出按压反馈；
  * - 行底为低透明度 surfaceContainerLow，间隔露出玻璃。
  */
@@ -99,10 +97,12 @@ fun rememberRowInteractionSource(): MutableInteractionSource {
 fun SettingsSplitGroup(
     modifier: Modifier = Modifier,
     content: List<@Composable () -> Unit>,
+    /** 组两端大圆角；设置主页 / 宽屏左列保持默认（[NirikoShapes.Card]），二级页见 [SettingsPageSplitGroup]。 */
+    outerRadius: Dp = GroupOuterRadius,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Box(
-            modifier = Modifier.fillMaxWidth().appleGlassCard(shape = RoundedCornerShape(GroupOuterRadius)),
+            modifier = Modifier.fillMaxWidth().appleGlassCard(shape = RoundedCornerShape(outerRadius)),
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -118,9 +118,9 @@ fun SettingsSplitGroup(
                     } else {
                         snap()
                     }
-                    val topTarget = if (pressed || index == 0) GroupOuterRadius else RowInnerRadius
+                    val topTarget = if (pressed || index == 0) outerRadius else RowInnerRadius
                     val bottomTarget =
-                        if (pressed || index == content.lastIndex) GroupOuterRadius else RowInnerRadius
+                        if (pressed || index == content.lastIndex) outerRadius else RowInnerRadius
                     val topRadius by animateDpAsState(topTarget, morph, label = "settingsRowTopRadius")
                     val bottomRadius by animateDpAsState(bottomTarget, morph, label = "settingsRowBottomRadius")
                     CompositionLocalProvider(LocalRowInteractionSource provides interactionSource) {
@@ -141,6 +141,23 @@ fun SettingsSplitGroup(
             }
         }
     }
+}
+
+/**
+ * 二级页分组卡片：外圆角固定 [NirikoShapes.Sheet]（24dp）。
+ *
+ * 独立入口是为了让「哪些页已统一到 24dp」可 grep：未换的页仍调 [SettingsSplitGroup]（20dp）。
+ */
+@Composable
+fun SettingsPageSplitGroup(
+    modifier: Modifier = Modifier,
+    content: List<@Composable () -> Unit>,
+) {
+    SettingsSplitGroup(
+        modifier = modifier,
+        content = content,
+        outerRadius = NirikoShapes.Sheet,
+    )
 }
 
 /**

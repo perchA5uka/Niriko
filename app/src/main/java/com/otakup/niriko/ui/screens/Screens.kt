@@ -38,6 +38,7 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Collections
@@ -75,10 +76,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -100,6 +103,7 @@ import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.ui.adaptive.NirikoGridColumns
 import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
+import com.otakup.niriko.ui.bottombar.LibraryControlsState
 import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.ui.components.searchGlassSurface
 import com.otakup.niriko.ui.components.SkeletonSubjectCard
@@ -179,6 +183,10 @@ fun TopLevelPageIndicator(
 @Composable
 fun LibraryScreen(
     viewModel: CollectionViewModel,
+    /** B8：与 pager 外层的悬浮顶栏共享的 UI 状态（由 MainPager rememberSaveable 持有）。 */
+    controls: LibraryControlsState,
+    /** B8：搜索态由 MainPager 提升，顶栏与页面共用同一个实例。 */
+    searchVm: SearchViewModel,
     ambientActive: Boolean = false,
     onNavigateToSearch: () -> Unit = {},
     onSubjectClick: (Long) -> Unit = {},
@@ -215,6 +223,8 @@ fun LibraryScreen(
         LibraryScreenContent(
             state = state,
             statusCounts = statusCounts,
+            controls = controls,
+            searchVm = searchVm,
             windowTopInset = windowTopInset,
             ambientActive = ambientActive,
             personCollections = personCollections,
@@ -255,6 +265,10 @@ fun LibraryScreen(
 private fun LibraryScreenContent(
     state: CollectionListUiState,
     statusCounts: Map<WatchStatus, Int> = emptyMap(),
+    /** B8：与顶栏共享的状态（写穿透到同一份 state）。 */
+    controls: LibraryControlsState,
+    /** B8：搜索态（由 MainPager 提升）。 */
+    searchVm: SearchViewModel,
     windowTopInset: Dp = 0.dp,
     ambientActive: Boolean = false,
     personCollections: List<com.otakup.niriko.data.local.entity.PersonCollectionEntity>,
@@ -291,21 +305,18 @@ private fun LibraryScreenContent(
         com.otakup.niriko.navigation.TabReselectSignal.None,
     modifier: Modifier = Modifier,
 ) {
-    var showSortMenu by remember { mutableStateOf(false) }
-    var showViewMenu by remember { mutableStateOf(false) }
-    // 收藏页视图样式（阶段 A：列表 / 海报网格 / 画廊大卡），保存跨旋转
-    var viewStyle by rememberSaveable { mutableStateOf(LibraryViewStyle.GRID) }
-    // 阶段 H：多选批量操作
-    var multiSelect by remember { mutableStateOf(false) }
-    // 批量删除二次确认（计划 B2-2）
-    var showDeleteConfirm by remember { mutableStateOf(false) }
-    var selectedIds by remember { mutableStateOf(setOf<Long>()) }
-    fun toggleSelect(id: Long) {
-        selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
-    }
-    var showTagFilters by remember { mutableStateOf(false) }
-    var showBatchActions by remember { mutableStateOf(false) }
-    val searchVm = rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
+    // B8：这些状态已提升到 LibraryControlsState（顶栏搬到了 pager 外层，必须共用同一份）。
+    // 用 `by controls.xxxState` 委托：读写写法与改造前一致，写穿透到同一个 state，
+    // 因此内容层业务零改动；toggleSelect 也委托到 holder（内容与顶栏同一套选中集）。
+    var showSortMenu by controls.showSortMenuState
+    var showViewMenu by controls.showViewMenuState
+    var viewStyle by controls.viewStyleState
+    var multiSelect by controls.multiSelectState
+    var showDeleteConfirm by controls.showDeleteConfirmState
+    var selectedIds by controls.selectedIdsState
+    fun toggleSelect(id: Long) = controls.toggleSelect(id)
+    var showTagFilters by controls.showTagFiltersState
+    var showBatchActions by controls.showBatchActionsState
     val gestureLock = com.otakup.niriko.navigation.LocalSearchGestureLock.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -321,11 +332,29 @@ private fun LibraryScreenContent(
     // 批量加入分区弹层（多选状态下的「加入分区」）
     var showBatchFolderPicker by remember { mutableStateOf(false) }
     var batchFolderName by remember { mutableStateOf("") }
-    var showCreateFolder by remember { mutableStateOf(false) }
-    var folderMenuTarget by remember { mutableStateOf<com.otakup.niriko.data.model.collection.LibraryFolderSummary?>(null) }
-    var renameFolderTarget by remember { mutableStateOf<com.otakup.niriko.data.model.collection.LibraryFolderSummary?>(null) }
-    var deleteFolderTarget by remember { mutableStateOf<com.otakup.niriko.data.model.collection.LibraryFolderSummary?>(null) }
-    var newFolderName by remember { mutableStateOf("") }
+    // 分区对话框同样由 holder 持有：顶栏里的 FolderNavBar 要能打开这些对话框
+    var showCreateFolder by controls.showCreateFolderState
+    var folderMenuTarget by controls.folderMenuTargetState
+    var renameFolderTarget by controls.renameFolderTargetState
+    var deleteFolderTarget by controls.deleteFolderTargetState
+    var newFolderName by controls.newFolderNameState
+    // 批次 C · 8.5：分区海报入口。数据 = 当前筛选结果（选中分区时就是该分区）+ 分区名。
+    val posterContext = androidx.compose.ui.platform.LocalContext.current
+    val posterScope = rememberCoroutineScope()
+    val shareFolderPoster: () -> Unit = {
+        val folderId = state.filter.folderId
+        val folderName = folders.firstOrNull { it.id == folderId }?.name ?: "我的作品库"
+        val coverUrls = state.items.mapNotNull { it.subject.coverUrl }
+        val total = state.items.size
+        posterScope.launch {
+            com.otakup.niriko.ui.share.SharePosterExport.shareFolderPoster(
+                context = posterContext,
+                folderName = folderName,
+                coverUrls = coverUrls,
+                totalCount = total,
+            )
+        }
+    }
     // B2 窗口尺寸类别：海报网格列数按宽度档位取 3 / 4 / 6。
     // COMPACT 绑定现状的 3 列（手机端回归零变化是硬要求）。
     val windowLayout = currentNirikoWindowLayout()
@@ -390,10 +419,16 @@ private fun LibraryScreenContent(
     }
     Box(modifier = modifier.fillMaxSize()) {
         // Only the feed is masked; the existing header stays a sibling overlay.
-        Box(Modifier.fillMaxSize().layerBackdrop(libraryContentBackdrop).topContentAlphaMask(strength = { headerFadeAlpha }, hiddenHeight = 56.dp)) {
+        // 渐隐上边界 = **窗口原点（屏幕顶部，含状态栏区域）**，与 v1.2.0 发现页一致。
+        // 不再用 inset + 56dp 的「实心台」：那是内容避让量（headerTopPadding 仍在用它），不是遮罩起点。
+        Box(Modifier.fillMaxSize().layerBackdrop(libraryContentBackdrop).topContentAlphaMask(strength = { headerFadeAlpha }, hiddenHeight = 0.dp)) {
         // 列表 / 空状态 / 首屏加载骨架（B4）
         if (state.isLoading && state.items.isEmpty()) {
-            LibrarySkeleton(viewStyle = viewStyle)
+            // B2：骨架与正式列表共用同一顶部内距，加载首帧不再顶到状态栏、也不会被悬浮行压住。
+            LibrarySkeleton(
+                viewStyle = viewStyle,
+                topPadding = TopFadePolicy.feedTopPaddingDp(windowTopInset.value).dp,
+            )
         } else if (state.items.isEmpty() && !showPersons) {
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -476,6 +511,10 @@ private fun LibraryScreenContent(
                                 showStatusMenu = false
                                 folderPickerSubjectId = item.subject.subjectId
                             },
+                            onShareFolderPoster = {
+                                showStatusMenu = false
+                                shareFolderPoster()
+                            },
                         )
                     }
                 }
@@ -533,6 +572,10 @@ private fun LibraryScreenContent(
                                     showStatusMenu = false
                                     folderPickerSubjectId = item.subject.subjectId
                                 },
+                                onShareFolderPoster = {
+                                    showStatusMenu = false
+                                    shareFolderPoster()
+                                },
                             )
                         }
                     }
@@ -566,95 +609,8 @@ private fun LibraryScreenContent(
             }
         }
         }
-        Box(Modifier.align(Alignment.TopStart).fillMaxWidth()
-            .padding(top = windowTopInset + 8.dp).height(56.dp).zIndex(10f)) {
-            if (searchVm.phase == SearchPhase.COLLAPSED) {
-                FolderNavBar(
-                    folders = folders,
-                    selectedFolderId = state.filter.folderId,
-                    onSelectFolder = onSelectFolder,
-                    onCreateFolder = { newFolderName = ""; showCreateFolder = true },
-                    onFolderLongPress = { folder -> folderMenuTarget = folder },
-                    modifier = Modifier.align(Alignment.TopStart).fillMaxWidth()
-                        .padding(start = 16.dp, end = 88.dp),
-                )
-            }
-            Box(Modifier.align(Alignment.TopEnd).height(56.dp).padding(end = 16.dp),
-                contentAlignment = Alignment.TopEnd) {
-                IosStyleSearchComponent(
-                    viewModel = searchVm,
-                    onModeSelected = {},
-                    onTypeSelected = {},
-                    onQueryChanged = { searchVm.syncQuery(it); onQueryChanged(it) },
-                    onSearchSubmit = { focusManager.clearFocus(); keyboard?.hide() },
-                    onGestureLockChange = { gestureLock.value = it },
-                    placeholder = "搜索收藏…",
-                    filterTitle = "收藏状态",
-                    tools = {
-                        Box {
-                            SearchToolButton("排序：" + state.filter.sort.label, { showSortMenu = true }) {
-                                Icon(Icons.Default.FilterList, "排序：" + state.filter.sort.label)
-                            }
-                            DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false },
-                                modifier = Modifier.searchGlassSurface(RoundedCornerShape(20.dp)),
-                                containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                                shadowElevation = 0.dp,
-                            ) {
-                                SortOrder.entries.forEach { sort ->
-                                    DropdownMenuItem(
-                                        text = { Text(sort.label) },
-                                        leadingIcon = { if (state.filter.sort == sort) Icon(Icons.Default.Check, "已选中") },
-                                        onClick = { onSortChange(sort); showSortMenu = false },
-                                    )
-                                }
-                            }
-                        }
-                        SearchToolButton("个人标签筛选", { showTagFilters = true }) {
-                            Icon(Icons.Default.Label, "个人标签筛选")
-                        }
-                        SearchToolButton(if (multiSelect) "退出多选" else "多选管理", { multiSelect = !multiSelect; if (!multiSelect) selectedIds = emptySet() }) {
-                            Icon(Icons.Default.Check, if (multiSelect) "退出多选" else "多选管理",
-                                tint = if (multiSelect) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (multiSelect) {
-                            SearchToolButton("批量管理：已选 " + selectedIds.size, { showBatchActions = true }) {
-                                Icon(Icons.Default.Collections, "批量管理：已选 " + selectedIds.size)
-                            }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        Box {
-                            SearchToolButton("切换视图：" + viewStyle.label, { showViewMenu = true }) {
-                                Icon(when (viewStyle) {
-                                    LibraryViewStyle.GRID -> Icons.Filled.Apps
-                                    LibraryViewStyle.GALLERY -> Icons.Filled.Collections
-                                    LibraryViewStyle.LIST -> Icons.Filled.List
-                                }, "切换视图：" + viewStyle.label)
-                            }
-                            DropdownMenu(
-                                expanded = showViewMenu,
-                                onDismissRequest = { showViewMenu = false },
-                                modifier = Modifier.searchGlassSurface(RoundedCornerShape(20.dp)),
-                                containerColor = androidx.compose.ui.graphics.Color.Transparent,
-                                shadowElevation = 0.dp,
-                            ) {
-                                LibraryViewStyle.entries.forEach { style ->
-                                    DropdownMenuItem(
-                                        text = { Text(style.label) },
-                                        leadingIcon = { if (style == viewStyle) Icon(Icons.Default.Check, "已选中") },
-                                        onClick = { viewStyle = style; showViewMenu = false },
-                                    )
-                                }
-                            }
-                        }
-                    },
-                    filters = {
-                        LibraryStatusSearchRow(statusCounts, state.filter.status, onStatusFilter)
-                    },
-                )
-            }
-        }
+        // B8：顶栏（左分区胶囊 + 右搜索按钮）已搬到 pager 外层的 LibraryTopBar（ui/screens/LibraryTopBar.kt），
+        // 这里不再渲染 —— 翻页时按钮 x/y 不动，只有内容切换。
         if (showTagFilters) {
             AlertDialog(
                 onDismissRequest = { showTagFilters = false },
@@ -929,11 +885,13 @@ private fun LibraryScreenContent(
 @Composable
 private fun LibrarySkeleton(
     viewStyle: LibraryViewStyle,
+    /** 与正式列表相同的顶部内距（inset + 控件行 + 呼吸）；骨架因此不会顶到状态栏或被悬浮行盖住。 */
+    topPadding: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     when (viewStyle) {
         LibraryViewStyle.GRID -> Column(
-            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp),
+            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = topPadding + 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             repeat(2) {
@@ -949,14 +907,14 @@ private fun LibrarySkeleton(
         }
 
         LibraryViewStyle.LIST -> Column(
-            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp),
+            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = topPadding + 4.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             repeat(3) { SkeletonSubjectCard() }
         }
 
         LibraryViewStyle.GALLERY -> Column(
-            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp),
+            modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = topPadding + 4.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             repeat(2) {
@@ -996,6 +954,8 @@ private fun LibraryLongPressMenu(
      * F09：点「加入分区…」。null = 当前装配没有分区能力（入口不显示，而不是点了没反应）。
      */
     onAddToFolder: (() -> Unit)? = null,
+    /** 批次 C · 8.5：把一个分区渲染成多页海报并分享。null = 不显示入口。 */
+    onShareFolderPoster: (() -> Unit)? = null,
 ) {
     val snapshot = com.otakup.niriko.util.ProgressBumpPolicy.snapshot(
         type = subjectType,
@@ -1065,6 +1025,15 @@ private fun LibraryLongPressMenu(
                     Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 },
                 onClick = onAddToFolder,
+            )
+        }
+        if (onShareFolderPoster != null) {
+            DropdownMenuItem(
+                text = { Text("生成本分区海报") },
+                leadingIcon = {
+                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                },
+                onClick = onShareFolderPoster,
             )
         }
     }
@@ -1138,6 +1107,8 @@ private fun LibraryScreenPreview() {
     NirikoTheme {
         LibraryScreenContent(
             state = CollectionListUiState(),
+            controls = remember { LibraryControlsState() },
+            searchVm = remember { SearchViewModel() },
             personCollections = emptyList(),
             onQueryChanged = {},
             onStatusFilter = {},

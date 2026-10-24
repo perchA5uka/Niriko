@@ -1,7 +1,5 @@
 package com.otakup.niriko.navigation
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,16 +16,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
-import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.bottombar.LiquidBottomTabs
 import com.otakup.niriko.ui.bottombar.LiquidBottomTab
 import com.otakup.niriko.ui.common.bottomBarHideFraction
@@ -46,16 +48,21 @@ fun NirikoBottomBar(
     val scope = rememberCoroutineScope()
     // 稳定 lambda：避免重组时新实例触发 LiquidBottomTabs 内部 remember 重置。
     val selectedTabIndex = remember(pagerState) { { pagerState.targetPage } }
-    val hideFraction = bottomBarHideFraction()
-    val barAlpha by animateFloatAsState(
-        targetValue = 1f - hideFraction * 0.15f,
-        animationSpec = tween(durationMillis = 180, easing = AnimEasingDefault),
-        label = "bottomBarAlpha",
-    )
+    // B11-Step1：隐藏进度 0..1 由方向状态机驱动（MainActivity 单源动画）。
+    // 与改造前的 8dp + alpha 0.85 不同：这里完整滑出屏幕、alpha 归零，隐藏态自然不拦触摸
+    // （offset 改的是 placement，命中区跟着一起走 —— 不能用 translationY）。
+    val hideProgress = bottomBarHideFraction().coerceIn(0f, 1f)
+    val density = LocalDensity.current
+    var measuredHeightPx by remember { mutableIntStateOf(0) }
+    // 位移 = 实测高度 + 24dp 余量：保证胶囊与投影完全离开视口，不残留可点区域。
+    val shiftPx = measuredHeightPx + with(density) { 24.dp.toPx() }
+    val fullyHidden = hideProgress >= 0.999f
     Box(
         modifier = modifier
-            .offset { IntOffset(0, (8 * hideFraction).dp.toPx().roundToInt()) }
-            .graphicsLayer { alpha = barAlpha },
+            .offset { IntOffset(0, (hideProgress * shiftPx).roundToInt()) }
+            .onSizeChanged { measuredHeightPx = it.height }
+            .graphicsLayer { alpha = 1f - hideProgress }
+            .then(if (fullyHidden) Modifier.clearAndSetSemantics { } else Modifier),
         contentAlignment = Alignment.BottomCenter,
     ) {
         LiquidBottomTabs(

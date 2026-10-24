@@ -28,7 +28,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.time.LocalDate
 
 private const val TAG = "SyncManager"
-private const val SYNC_VERSION = 3
+
+/**
+ * 同步文件格式版本。
+ *
+ * v4（A-D3）：collections 增加 `watchedVolumes`（书籍/漫画卷进度）。
+ * 同步没有版本校验，旧版本客户端读新文件会忽略未知键（不会崩）；但旧客户端**回传**
+ * 时会把新键抹掉，靠「缺键不覆盖」的合并规则兜底。更新说明要求两台设备都升到 v1.2.1 再同步。
+ */
+private const val SYNC_VERSION = 4
 
 /**
  * 同步结果。 */
@@ -39,6 +47,8 @@ data class SyncResult(
     val downloaded: Boolean = false,
     val collectionsMerged: Int = 0,
     val workItemsMerged: Int = 0,
+    /** 失败种类（A-D5）：UI 按它给人话；成功时为 null。默认值保证旧调用点免改。 */
+    val failure: SyncFailureKind? = null,
 )
 
 /**
@@ -55,6 +65,8 @@ class SyncManager(
     private val webDavClient: WebDavClient,
     /** 封面覆盖（DataStore）：v3 起随同步走，计划 B4 · 4-8。 */
     private val coverOverrideStore: CoverOverrideStore? = null,
+    /** 同步基线（DataStore，A-D4）：远端 ETag / 修改时间，用于条件写入。 */
+    private val syncBaselineStore: SyncBaselineStore? = null,
 ) {
 
     private val json = Json {
@@ -81,14 +93,42 @@ class SyncManager(
 
     // ==================== 上传 ====================
 
-    /** 上传本地数据到 WebDAV。 */
-    suspend fun upload(baseUrl: String, user: String, pass: String): SyncResult =
-        queue.run { uploadLocked(baseUrl, user, pass) }
+    /**
+     * 上传本地数据到 WebDAV。
+     *
+     * @param forceOverwrite 用户显式选择的「覆盖云端」：忽略 `If-Match` 直接 PUT。
+     *        只允许由冲突弹窗里的一次点击触发，**绝不自动**。
+     */
+    suspend fun upload(
+        baseUrl: String,
+        user: String,
+        pass: String,
+        forceOverwrite: Boolean = false,
+    ): SyncResult = queue.run { uploadLocked(baseUrl, user, pass, forceOverwrite) }
 
-    private suspend fun uploadLocked(baseUrl: String, user: String, pass: String): SyncResult {
+    private suspend fun uploadLocked(
+        baseUrl: String,
+        user: String,
+        pass: String,
+        forceOverwrite: Boolean = false,
+        allowAutoMerge: Boolean = true,
+    ): SyncResult {
         try {
-            // 确保远程目录存在
-            webDavClient.mkcol("$baseUrl$REMOTE_DIR", user, pass)
+            // 确保远程目录存在。
+            // 改造前这里丢弃了 MKCOL 的返回值：目录建不出来（401/403/5xx）也会继续 PUT，
+            // 用户最后只看到笼统的「上传失败」，分不清是账号、权限还是服务端问题。
+            val ensured = webDavClient.mkcol("$baseUrl$REMOTE_DIR", user, pass)
+            if (ensured !is WebDavResult.Ok) {
+                val failure = ensured as? WebDavResult.Failure
+                val kind = failure?.kind ?: SyncFailureKind.NOT_FOUND
+                Log.e(TAG, "MKCOL failed: kind=$kind code=${failure?.code}")
+                val message = if (failure != null) {
+                    SyncFailureMessages.forMkcol(failure)
+                } else {
+                    "无法创建远程目录" + SyncFailureMessages.suffix(404)
+                }
+                return SyncResult(success = false, message = message, failure = kind)
+            }
 
             // 构建同步 JSON
             // 阶段 B：私密收藏不跟随 WebDAV 同步
@@ -113,17 +153,146 @@ class SyncManager(
                 coverOverrides = coverOverrides,
             )
             val content = json.encodeToString(JsonObject.serializer(), syncJson)
+            val fileUrl = "$baseUrl$REMOTE_FILE"
+            // C-3：上传会覆盖远端，落一份「这次要推上去的数据」当后悔药（失败只记日志）
+            com.otakup.niriko.data.snapshot.SnapshotRuntime.preflight(content, "sync-upload")
 
-            val ok = webDavClient.put("$baseUrl$REMOTE_FILE", content, user, pass)
-            if (ok) {
-                Log.i(TAG, "Upload success: ${collections.size} collections, ${workItems.size} workItems")
-                return SyncResult(success = true, uploaded = true, message = "上传成功")
+            // ===== A-D4：条件写入 =====
+            // 改造前是裸 PUT：不读远端、不带 If-Match，A 机上传会静默覆盖 B 机写入。
+            val baseline = if (forceOverwrite) null else runCatching { syncBaselineStore?.read() }.getOrNull()
+            var ifMatch: String? = null
+            var weakWarning: String? = null
+            if (!forceOverwrite && baseline != null) {
+                // HEAD 取远端当前 ETag / Last-Modified / 长度，和基线比
+                val head = webDavClient.exists(fileUrl, user, pass)
+                when (head) {
+                    is WebDavResult.Ok -> {
+                        val remoteMeta = head.value
+                        when (val decision = SyncConcurrencyPolicy.decide(baseline, remoteMeta, remoteMeta.etag != null)) {
+                            is SyncWriteDecision.Proceed -> ifMatch = decision.ifMatch
+                            is SyncWriteDecision.WarnThenProceed -> weakWarning = decision.reason
+                            is SyncWriteDecision.Overwrite -> Unit
+                            is SyncWriteDecision.Conflict -> {
+                                if (allowAutoMerge) {
+                                    // 自动重合并是**一次性**的：download 会按字段级规则合并并刷新基线，
+                                    // 然后 allowAutoMerge=false 重试；写成循环会让两台设备互相刷。
+                                    Log.w(
+                                        TAG,
+                                        "Upload conflict (HEAD): baseline=${decision.baselineEtag} remote=${decision.remoteEtag}",
+                                    )
+                                    val merged = downloadLocked(baseUrl, user, pass)
+                                    if (!merged.success) return merged
+                                    return uploadLocked(baseUrl, user, pass, forceOverwrite = false, allowAutoMerge = false)
+                                }
+                                return conflictResult()
+                            }
+                        }
+                    }
+                    is WebDavResult.NotFound -> Unit // 远端文件不存在：没有可冲突的对象
+                    is WebDavResult.Failure -> {
+                        // 部分服务器禁用 HEAD：基线有 ETag 时仍然发 If-Match，由服务器判定
+                        if (baseline.etag != null) ifMatch = baseline.etag else weakWarning = "该服务器不支持并发检测"
+                    }
+                }
+            } else if (forceOverwrite) {
+                Log.w(TAG, "Force overwrite: skip If-Match")
             }
-            return SyncResult(success = false, message = "上传失败")
+
+            return when (val written = webDavClient.put(fileUrl, content, user, pass, ifMatch)) {
+                is WebDavResult.Ok -> {
+                    // PUT 响应不总带 ETag：必要时 HEAD 补一次，否则下次只能弱校验
+                    val finalMeta = if (written.value.etag == null) {
+                        (webDavClient.exists(fileUrl, user, pass) as? WebDavResult.Ok)?.value ?: written.value
+                    } else {
+                        written.value
+                    }
+                    writeBaseline(fileUrl, finalMeta, content)
+                    Log.i(TAG, "Upload success: ${collections.size} collections, ${workItems.size} workItems")
+                    SyncResult(
+                        success = true,
+                        uploaded = true,
+                        message = buildUploadMessage(
+                            collections = collections.size,
+                            workItems = workItems.size,
+                            weakWarning = weakWarning,
+                            forceOverwrite = forceOverwrite,
+                        ),
+                    )
+                }
+                is WebDavResult.NotFound -> SyncResult(
+                    success = false,
+                    message = "上传失败：远程路径不存在" + SyncFailureMessages.suffix(404),
+                    failure = SyncFailureKind.NOT_FOUND,
+                )
+                is WebDavResult.Failure -> {
+                    if (written.kind == SyncFailureKind.CONFLICT && allowAutoMerge) {
+                        // 412：HEAD 之后远端又被改（或服务器拒绝 HEAD、由 If-Match 拦下）
+                        Log.w(TAG, "PUT conflict (412); auto merge once")
+                        val merged = downloadLocked(baseUrl, user, pass)
+                        if (!merged.success) return merged
+                        return uploadLocked(baseUrl, user, pass, forceOverwrite = false, allowAutoMerge = false)
+                    }
+                    Log.e(TAG, "PUT failed: kind=${written.kind} code=${written.code}")
+                    SyncResult(
+                        success = false,
+                        message = if (written.kind == SyncFailureKind.CONFLICT) {
+                            conflictResult().message
+                        } else {
+                            SyncFailureMessages.forFailure(written)
+                        },
+                        failure = written.kind,
+                    )
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Upload failed", e)
-            return SyncResult(success = false, message = "上传失败: ${e.message}")
+            // 异常走同一套分类，不再把类型信息丢给用户
+            val kind = SyncFailureClassifier.classifyException(e)
+            return SyncResult(
+                success = false,
+                message = SyncFailureMessages.forKind(kind),
+                failure = kind,
+            )
         }
+    }
+
+    /** 第二次仍冲突：把选择交给 UI（先合并 / 覆盖云端 / 取消）。 */
+    private fun conflictResult(): SyncResult = SyncResult(
+        success = false,
+        message = "云端在你上次同步后已更新，请选择「先合并」或「覆盖云端」",
+        failure = SyncFailureKind.CONFLICT,
+    )
+
+    private fun buildUploadMessage(
+        collections: Int,
+        workItems: Int,
+        weakWarning: String?,
+        forceOverwrite: Boolean,
+    ): String {
+        val base = "已上传 ${collections} 条收藏、${workItems} 个手工作品"
+        return when {
+            forceOverwrite -> "${base}（已忽略并发检查，覆盖云端）"
+            weakWarning != null -> "${base}（${weakWarning}）"
+            else -> base
+        }
+    }
+
+    /** 记录基线。失败只记日志：基线丢了最多退回裸 PUT，不能让上传本身失败。 */
+    private suspend fun writeBaseline(url: String, meta: RemoteMeta?, payload: String?) {
+        val store = syncBaselineStore ?: return
+        runCatching {
+            store.write(
+                SyncBaseline(
+                    url = url,
+                    etag = meta?.etag,
+                    lastModified = meta?.lastModified,
+                    length = meta?.length,
+                    payloadHash = payload?.let { SyncPayloadHash.sha256Hex(it) },
+                    syncTime = System.currentTimeMillis(),
+                    deviceId = store.deviceId(),
+                ),
+            )
+        }.onFailure { Log.w(TAG, "Baseline write failed", it) }
     }
 
     // ==================== 下载与合并 ====================
@@ -133,10 +302,28 @@ class SyncManager(
         queue.run { downloadLocked(baseUrl, user, pass) }
 
     private suspend fun downloadLocked(baseUrl: String, user: String, pass: String): SyncResult {
-        try {
-            val remoteJson = webDavClient.get("$baseUrl$REMOTE_FILE", user, pass)
-                ?: return SyncResult(success = true, message = "远程无同步数据")
+        // 先取远端内容：改造前 get 返回 null 时这里直接报「远程无同步数据」并 success=true，
+        // 于是 401 / 5xx / 超时全被当成「远端为空」——用户点下载就是「什么都没发生」。
+        val fileUrl = "$baseUrl$REMOTE_FILE"
+        val fetched = webDavClient.get(fileUrl, user, pass)
+        if (fetched !is WebDavResult.Ok) {
+            if (fetched is WebDavResult.NotFound) {
+                // 远端确实没有文件：基线写成空，下次上传按「新建」处理而不是条件写入
+                writeBaseline(fileUrl, null, null)
+                return SyncResult(success = true, message = "远程无同步数据")
+            }
+            val failure = fetched as WebDavResult.Failure
+            Log.e(TAG, "Download failed: kind=${failure.kind} code=${failure.code}")
+            return SyncResult(
+                success = false,
+                message = SyncFailureMessages.forFailure(failure),
+                failure = failure.kind,
+            )
+        }
+        val remoteContent = fetched.value
+        val remoteJson = remoteContent.body
 
+        try {
             val remoteRoot = json.parseToJsonElement(remoteJson).jsonObject
 
             // 解析远程数据
@@ -243,6 +430,9 @@ class SyncManager(
                 runCatching { coverStore.putAll(mergedCoverOverrides, clearFirst = true) }
             }
 
+            // A-D4：下载成功（含合并写库）后记录远端版本标识，供下次上传做条件写入
+            writeBaseline(fileUrl, remoteContent.meta, remoteContent.body)
+
             Log.i(TAG, "Download & merge success: " +
                     "collections=${mergedCollections.size}, workItems=${mergedWorkItems.size}, " +
                     "externalIds=${mergedExternalIds.size}, episodeRatings=${mergedEpisodeRatings.size}, " +
@@ -257,27 +447,27 @@ class SyncManager(
             )
         } catch (e: Exception) {
             Log.e(TAG, "Download failed", e)
-            return SyncResult(success = false, message = "下载失败: ${e.message}")
+            // 远端能取到但内容不是合法同步 JSON：单独归为 PARSE，不要把异常类名甩给用户
+            return SyncResult(
+                success = false,
+                message = SyncFailureMessages.forKind(SyncFailureKind.PARSE),
+                failure = SyncFailureKind.PARSE,
+            )
         }
     }
 
     // ==================== 合并逻辑 ====================
 
-    /** 收藏合并：按 subjectId 去重，保留 updateTime 较新的。 */
+    /**
+     * 收藏合并：按 subjectId 去重。
+     *
+     * 不再整行覆盖：先用 updateTime 选基准行，卷进度/集数取 MAX、私密标记取并集，
+     * 详见 [SyncMergePolicy.mergeCollections]（纯函数，有单测）。
+     */
     private fun mergeCollections(
         local: List<CollectionEntity>,
         remote: List<CollectionEntity>,
-    ): List<CollectionEntity> {
-        val map = mutableMapOf<Long, CollectionEntity>() // subjectId → entity
-        local.forEach { map[it.subjectId] = it }
-        remote.forEach { r ->
-            val existing = map[r.subjectId]
-            if (existing == null || r.updateTime > existing.updateTime) {
-                map[r.subjectId] = r
-            }
-        }
-        return map.values.toList()
-    }
+    ): List<CollectionEntity> = SyncMergePolicy.mergeCollections(local, remote)
 
     /** 手工作品合并：按 id 去重，保留 updateTime 较新的。 */
     private fun mergeWorkItems(
@@ -383,25 +573,8 @@ class SyncManager(
         put("createTime", JsonPrimitive(a.createTime))
     }
 
-    private fun collectionToJson(c: CollectionEntity): JsonObject = buildJsonObject {
-        put("id", JsonPrimitive(c.id))
-        put("subjectId", JsonPrimitive(c.subjectId))
-        put("status", JsonPrimitive(c.status.name))
-        c.watchedEpisodes?.let { put("watchedEpisodes", JsonPrimitive(it)) }
-        c.rating?.let { put("rating", JsonPrimitive(it.toDouble())) }
-        c.startDate?.let { put("startDate", JsonPrimitive(it.toString())) }
-        c.finishDate?.let { put("finishDate", JsonPrimitive(it.toString())) }
-        if (c.personalTags.isNotEmpty()) {
-            put("personalTags", buildJsonArray { c.personalTags.forEach { add(JsonPrimitive(it)) } })
-        }
-        c.personalImpression?.let { put("personalImpression", JsonPrimitive(it)) }
-        c.remark?.let { put("remark", JsonPrimitive(it)) }
-        if (c.watchedTrackIds.isNotEmpty()) {
-            put("watchedTrackIds", buildJsonArray { c.watchedTrackIds.forEach { add(JsonPrimitive(it)) } })
-        }
-        put("createTime", JsonPrimitive(c.createTime))
-        put("updateTime", JsonPrimitive(c.updateTime))
-    }
+    /** 收藏序列化（A-D3）：字段表与备份/解析共用 [CollectionCodec]。 */
+    private fun collectionToJson(c: CollectionEntity): JsonObject = CollectionCodec.toJson(c)
 
     private fun workItemToJson(w: WorkItem): JsonObject = buildJsonObject {
         put("id", JsonPrimitive(w.id))
@@ -427,29 +600,9 @@ class SyncManager(
         put("createTime", JsonPrimitive(h.createTime))
     }
 
-    private fun parseCollections(element: JsonElement?): List<CollectionEntity> {
-        val arr = element as? JsonArray ?: return emptyList()
-        return arr.mapNotNull { obj ->
-            val o = obj.jsonObject
-            try {
-                CollectionEntity(
-                    id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-                    subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null,
-                    status = WatchStatus.valueOf(o["status"]?.jsonPrimitive?.content ?: return@mapNotNull null),
-                    watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
-                    rating = o["rating"]?.jsonPrimitive?.content?.toFloatOrNull(),
-                    startDate = o["startDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
-                    finishDate = o["finishDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
-                    personalTags = parseStringList(o["personalTags"]),
-                    personalImpression = o["personalImpression"]?.jsonPrimitive?.content,
-                    remark = o["remark"]?.jsonPrimitive?.content,
-                    watchedTrackIds = parseLongList(o["watchedTrackIds"]),
-                    createTime = o["createTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
-                    updateTime = o["updateTime"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis(),
-                )
-            } catch (_: Exception) { null }
-        }
-    }
+    /** 收藏解析（A-D3）：缺键字段解析为 null，交给合并侧保留本地值。 */
+    private fun parseCollections(element: JsonElement?): List<CollectionEntity> =
+        CollectionCodec.parseList(element)
 
     private fun parseWorkItems(element: JsonElement?): List<WorkItem> {
         val arr = element as? JsonArray ?: return emptyList()

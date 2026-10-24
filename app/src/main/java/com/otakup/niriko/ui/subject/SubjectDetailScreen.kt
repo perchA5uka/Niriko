@@ -12,6 +12,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -25,12 +26,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +42,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
@@ -53,6 +57,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -123,7 +128,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import com.otakup.niriko.ui.common.FloatingControlsState
+import com.otakup.niriko.ui.bottombar.floatingBarRestoreOnBlankTap
+import com.otakup.niriko.ui.common.reportFloatingScrollTo
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import android.os.Build
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -145,6 +156,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.content.Context
 import android.net.Uri
 import com.otakup.niriko.data.local.entity.SubjectEntity
+import com.otakup.niriko.data.onair.AirTime
 import com.otakup.niriko.data.model.AniListRichDetail
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.local.entity.SteamGameEntity
@@ -204,11 +216,18 @@ import com.otakup.niriko.ui.theme.statusTone
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
+import com.otakup.niriko.ui.share.RatingComparisonCardData
 import com.otakup.niriko.ui.share.ShareFlow
+import androidx.compose.runtime.withFrameNanos
+import com.otakup.niriko.util.CollectionSavePolicy
+import com.otakup.niriko.util.DetailCollapseState
+import com.otakup.niriko.util.TitleLogoMode
+import com.otakup.niriko.util.TitleLogoPolicy
 import com.otakup.niriko.util.RichTextParser
 import com.otakup.niriko.util.TopFadePolicy
 import com.otakup.niriko.util.TitleResolver
 import com.otakup.niriko.util.PortalLauncher
+import com.otakup.niriko.util.VolumeProgressPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -304,21 +323,24 @@ fun SubjectDetailScreen(
     val completionPlayback = remember { CompletionCelebrationState() }
     val haptic = LocalHapticFeedback.current
 
-    // Snackbar 消息处理（保存反馈 + 自动返回）
-    // 注意：showSnackbar 是挂起等待 Snackbar 消失的，不能阻塞 onBack()，
-    // 否则保存后要等 3-4s 才返回（用户感知为“保存延迟”）。
+    // Snackbar 消息处理（保存反馈）
+    // 这里不再退页：保存成功后由编辑弹层自己收层（见下方 recordSavedEvents），
+    // 写库失败更要留在详情页让用户重试 —— 改造前靠字符串比较 "记录已保存" 就 onBack()，
+    // 于是「写库失败」也会退页并提示成功。
     val coroutineScope = rememberCoroutineScope()
     LaunchedEffect(state.snackbarMessage, completionPlayback.isActive) {
         val msg = state.snackbarMessage ?: return@LaunchedEffect
-        if (msg == "记录已保存") {
+        if (msg == CollectionSavePolicy.SAVED_MESSAGE) {
             // Saving must not dispose the editor window before its celebration finishes.
             if (completionPlayback.isActive) return@LaunchedEffect
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
-            onBack()
         } else {
             snackbarHostState.showSnackbar(msg)
         }
+        // 消息已消费：不清空的话，任何让消息重新参与组合的变化都会把同一条提示再弹一次
+        // （改造前用「保存即退页」掩盖了这个缺陷）。
+        viewModel.clearSnackbarMessage()
     }
 
     CompositionLocalProvider(LocalAmbientTilt provides ambient, LocalAmbientTiltDemand provides ambientDemand) {
@@ -336,6 +358,7 @@ fun SubjectDetailScreen(
         SubjectDetailContent(
             state = state,
             completionEvents = viewModel.completionEvents,
+            recordSavedEvents = viewModel.recordSavedEvents,
             // F14：进度写满的独立通道（剧集区块的波浪点亮）
             episodeCompletionEvents = viewModel.episodeCompletionEvents,
             completionPlayback = completionPlayback,
@@ -441,6 +464,8 @@ private fun SubjectDetailContent(
     completionEvents: Flow<Long>,
     /** F14：进度写满的独立通道（波浪点亮），与状态完成的全屏庆祝分开。 */
     episodeCompletionEvents: Flow<Long> = emptyFlow(),
+    /** A-X5：保存成功的一次性事件，编辑弹层据此「先收层、留在详情」。 */
+    recordSavedEvents: Flow<Unit> = emptyFlow(),
     completionPlayback: CompletionCelebrationState,
     onBack: () -> Unit,
     onRetry: () -> Unit = {},
@@ -506,6 +531,14 @@ private fun SubjectDetailContent(
         targetValue = if (bgEntered) 1f else 0f,
         animationSpec = tween(durationMillis = 350, easing = AnimEasingDefault),
         label = "bgAlpha",
+    )
+    // task-25：详情顶栏与收藏胶囊共用的显隐状态。滚动容器（SubjectDetailItemsColumn）
+    // 通过 reportFloatingScrollTo 直接派发原始 dy；这里只负责把 shown 变成一条 180ms 的连续进度。
+    val detailChrome = remember { FloatingControlsState() }
+    val detailHideProgress by animateFloatAsState(
+        targetValue = if (detailChrome.shown) 0f else 1f,
+        animationSpec = tween(durationMillis = 180),
+        label = "detailTopBarHide",
     )
     // 静态模糊 RenderEffect（一次性创建；API 31+ 生效，低版本退回 Modifier.blur）
     val canRenderEffect = Build.VERSION.SDK_INT >= 31
@@ -588,6 +621,9 @@ private fun SubjectDetailContent(
                     .height(headerHeight)
                     .statusBarsPadding()
                     .padding(horizontal = 4.dp)
+                    // task-25：详情顶栏随滚动向上退出（与收藏胶囊同源），隐藏后命中区一起移出
+                    .offset { IntOffset(0, -(detailHideProgress * (headerHeight + 8.dp).toPx()).roundToInt()) }
+                    .graphicsLayer { alpha = 1f - detailHideProgress }
                     .zIndex(1f),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -639,6 +675,14 @@ private fun SubjectDetailContent(
                     host = shareBitmapHost,
                     data = sharePreviewData!!,
                     onDismiss = { showSharePreview = false },
+                    // 批次 C · 8.6：评分对照卡 —— 数据已在本页（我的分/社区分/分布/百分位）。
+                    ratingComparison = RatingComparisonCardData(
+                        title = sharePreviewData!!.primaryTitle,
+                        mine = state.myRating,
+                        community = state.subject?.ratingScore,
+                        distribution = state.ratingDistribution,
+                        percentile = state.localPercentile,
+                    ),
                 )
             }
             when {
@@ -651,8 +695,10 @@ private fun SubjectDetailContent(
                 subject != null -> Box {
                     SubjectDetailBody(
                         subject = subject, state = state,
+                        detailChrome = detailChrome,
                         completionEvents = completionEvents,
                 episodeCompletionEvents = episodeCompletionEvents,
+                recordSavedEvents = recordSavedEvents,
                         completionPlayback = completionPlayback,
                         glassBackdrop = glassBackdrop,
                         topInset = headerHeight,
@@ -859,6 +905,8 @@ private fun SubjectDetailItemsColumn(
     onScrollSample: ((Int, Int) -> Unit)? = null,
     topInset: Dp = 0.dp,
     itemsBody: LazyListScope.(NirikoDetailPane?, Boolean) -> Unit,
+    /** task-25：把原始 dy 派发给详情页的显隐状态（null = 不参与显隐）。 */
+    floatingControls: FloatingControlsState? = null,
 ) {
     val entryState = com.otakup.niriko.navigation.LocalDetailNavigationState.current
     val paneKey = activePane?.name ?: "single"
@@ -898,9 +946,13 @@ private fun SubjectDetailItemsColumn(
         }
     }
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().then(
+            if (floatingControls != null) Modifier.reportFloatingScrollTo(floatingControls) else Modifier,
+        ),
         state = listState,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 16.dp, bottom = 16.dp),
+        // B10：底部留给悬浮的收藏胶囊（28dp 圆角 + 56dp 高 + 12dp 呼吸 + 导航栏 inset），
+        // 96dp 保证最后一项不会被胶囊压住；胶囊本身不在列表里，滚动不会带走它。
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 16.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         itemsBody(activePane, isScrolling)
@@ -911,10 +963,19 @@ private fun SubjectDetailItemsColumn(
  * B2b：把一个 item 归到某列。[activePane] 为 null（单栏）时全部渲染且保持原始顺序 ——
  * 这是手机端行为零变化的关键；两栏时只渲染该列自己的 item，故跨列相对顺序不再保留。
  */
+/** 批次 C · 6.15：一个区块的折叠描述（label/summary 供外壳渲染，状态由 DataStore 决定）。 */
+private data class SectionCollapse(
+    val label: String,
+    val summary: String?,
+    val collapsed: Boolean,
+    val onToggle: () -> Unit,
+)
+
 private fun LazyListScope.detailPaneItem(
     id: DetailSectionId,
     activePane: NirikoDetailPane?,
     hidden: Set<DetailSectionId>,
+    collapse: SectionCollapse? = null,
     content: @Composable LazyItemScope.() -> Unit,
 ) {
     // F06：被用户关掉的部件**完全不组合**（不是画成透明）——
@@ -922,7 +983,20 @@ private fun LazyListScope.detailPaneItem(
     // 核心部件在 DetailLayoutPolicy 里就不可隐藏，这里再兜一层。
     if (!DetailLayoutPolicy.isVisible(id, hidden)) return
     val pane = id.pane
-    if (activePane == null || activePane == pane) item(key = id.key, content = content)
+    if (activePane == null || activePane == pane) {
+        item(key = id.key) {
+            if (collapse == null) {
+                content()
+            } else {
+                CollapsibleSourceSection(
+                    label = collapse.label,
+                    summary = collapse.summary,
+                    collapsed = collapse.collapsed,
+                    onToggle = collapse.onToggle,
+                ) { content() }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalSharedTransitionApi::class)
@@ -930,9 +1004,13 @@ private fun LazyListScope.detailPaneItem(
 private fun SubjectDetailBody(
     subject: SubjectEntity,
     state: SubjectDetailUiState,
+    /** task-25：顶栏与收藏胶囊共用的显隐状态（由 [SubjectDetailContent] 持有，滚动容器直接派发）。 */
+    detailChrome: FloatingControlsState,
     completionEvents: Flow<Long> = emptyFlow(),
     /** F14：进度写满的独立通道（波浪点亮）。 */
     episodeCompletionEvents: Flow<Long> = emptyFlow(),
+    /** A-X5：保存成功的一次性事件（收层用）。 */
+    recordSavedEvents: Flow<Unit> = emptyFlow(),
     completionPlayback: CompletionCelebrationState = remember { CompletionCelebrationState() },
     glassBackdrop: Backdrop?,
     topInset: Dp = 0.dp,
@@ -973,6 +1051,58 @@ private fun SubjectDetailBody(
         .collectAsState(initial = com.otakup.niriko.data.settings.AppSettings())
     val hiddenSections = remember(detailSettings.detailHiddenSections) {
         DetailLayoutPolicy.hiddenFromEncoded(detailSettings.detailHiddenSections)
+    }
+    // 批次 C · 13.1：标题 logo（默认关）。选图是纯函数；到位前用同尺寸占位，标题不跳版。
+    val titleLogoMode = remember(detailSettings.titleLogoMode) {
+        TitleLogoMode.fromKey(detailSettings.titleLogoMode)
+    }
+    var titleLogo by remember(subject.subjectId, titleLogoMode) {
+        mutableStateOf<com.otakup.niriko.data.remote.tmdb.dto.TmdbImageDto?>(null)
+    }
+    var titleLogoResolved by remember(subject.subjectId, titleLogoMode) { mutableStateOf(false) }
+    var titleLogoContrastOk by remember(subject.subjectId, titleLogoMode) { mutableStateOf(true) }
+    LaunchedEffect(subject.subjectId, titleLogoMode) {
+        titleLogo = null
+        titleLogoResolved = false
+        titleLogoContrastOk = true
+        if (titleLogoMode == TitleLogoMode.OFF) return@LaunchedEffect
+        val picked = runCatching {
+            TitleLogoPolicy.pick(
+                logos = blurredCoverContext.nirikoApp.tmdbRepository.logoCandidates(subject),
+                uiLanguage = java.util.Locale.getDefault().language,
+            )
+        }.getOrNull()
+        titleLogo = picked
+        titleLogoResolved = true
+        val logoPath = picked?.filePath
+        if (logoPath != null) {
+            val logoBitmap = loadShareCover(
+                blurredCoverContext,
+                com.otakup.niriko.data.remote.tmdb.TmdbImageUrl.url(
+                    logoPath,
+                    com.otakup.niriko.data.remote.tmdb.TmdbImageUrl.POSTER_LARGE,
+                ),
+            )
+            val logoLuma = logoBitmap?.let { averageLuma(it) }
+            val bgLuma = blurredCover?.let { averageLuma(it) } ?: 0f
+            if (logoLuma != null) titleLogoContrastOk = TitleLogoPolicy.isContrastOk(logoLuma, bgLuma)
+        }
+    }
+    // 批次 C · 6.15：外部源区块折叠（按 subjectId + sectionId 存 DataStore）。
+    val collapsedSections = remember(detailSettings.detailCollapsedSections, subject.subjectId) {
+        DetailCollapseState.collapsedSections(detailSettings.detailCollapsedSections, subject.subjectId)
+    }
+    val detailBodyScope = rememberCoroutineScope()
+    val toggleSection: (String) -> Unit = { key ->
+        detailBodyScope.launch {
+            val store = blurredCoverContext.nirikoApp.settingsDataStore
+            val next = DetailCollapseState.toggle(
+                store.settings.first().detailCollapsedSections,
+                subject.subjectId,
+                key,
+            )
+            store.setDetailCollapsedSections(next)
+        }
     }
     // 本地编辑状态 — 使用 rememberSaveable 确保配置变更（如屏幕旋转）后状态不丢失
     // 游戏类型：watchedEpisodes 统一存分钟（Steam 导入分钟、详情页按小时输入）
@@ -1063,6 +1193,9 @@ private fun SubjectDetailBody(
     // F13：详情页顶部的**连续**渐隐。滚动样本来自身持有滚动状态的那一层（两栏时谁被滚动就跟着谁）；
     // 渐隐底色取 Scaffold 的容器色（background）—— 顶部栏与内容的底都是它。
     var detailScrollSample by remember { mutableStateOf(0 to 0) }
+    // task-25：显隐的 dy 由滚动容器直接派发（见 SubjectDetailItemsColumn 的 reportFloatingScrollTo），
+    // 不再从 detailScrollSample 换算 —— 后者在 firstVisibleItemIndex > 0 时会跳变，触发 jumpGuard 后
+    // 只有第一项能隐藏。detailScrollSample 继续只服务顶部的连续渐隐（F13）。
     val detailFadeDistancePx = with(LocalDensity.current) { TopFadePolicy.FADE_DISTANCE_DP.dp.toPx() }
     val detailFadeAlpha = TopFadePolicy.alphaFor(
         scrollOffsetPx = TopFadePolicy.scrollOffsetFor(detailScrollSample.first, detailScrollSample.second),
@@ -1172,12 +1305,44 @@ private fun SubjectDetailBody(
             detailPaneItem(DetailSectionId.TITLE, activePane, hiddenSections) {
             Spacer(Modifier.height(16.dp))
             val titleInfo = com.otakup.niriko.util.TitleResolver.resolve(subject.titleCN, subject.title)
-            Text(
-                text = titleInfo.primary,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            // 三档：关 / 始终 / 看不清时回退文字。加载中保留同尺寸占位（不跳版），失败回文字。
+            val showLogo = titleLogoMode != TitleLogoMode.OFF &&
+                (titleLogo != null || !titleLogoResolved) &&
+                !(titleLogoMode == TitleLogoMode.TEXT_WHEN_UNCLEAR && titleLogo != null && !titleLogoContrastOk)
+            if (showLogo) {
+                // 宽度 = 详情页海报（全宽封面）的 2/3，水平居中；高度只做护栏，加载中同尺寸占位。
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val box = TitleLogoPolicy.boxFor(
+                        widthDp = maxWidth.value * 2f / 3f,
+                        aspectRatio = titleLogo?.aspectRatio ?: 3.0,
+                    )
+                    Box(modifier = Modifier.width(box.widthDp.dp).height(box.heightDp.dp)) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(
+                                    com.otakup.niriko.data.remote.tmdb.TmdbImageUrl.url(
+                                        titleLogo?.filePath,
+                                        com.otakup.niriko.data.remote.tmdb.TmdbImageUrl.POSTER_LARGE,
+                                    ),
+                                )
+                                .build(),
+                            contentDescription = titleInfo.primary,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = titleInfo.primary,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             titleInfo.secondary?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
             Spacer(Modifier.height(16.dp))
 
@@ -1217,6 +1382,12 @@ private fun SubjectDetailBody(
             // === Steam 补充信息（仅游戏类型且已绑定 Steam 时显示） ===
             if (subject.type == SubjectType.GAME && state.steam != null) {
                 detailPaneItem(DetailSectionId.STEAM, activePane, hiddenSections) {
+                    CollapsibleSourceSection(
+                        label = "Steam",
+                        summary = state.achievements?.let { "成就 " + it.unlocked + "/" + it.total },
+                        collapsed = DetailSectionId.STEAM.key in collapsedSections,
+                        onToggle = { toggleSection(DetailSectionId.STEAM.key) },
+                    ) {
                     SteamInfoSection(
                         steam = state.steam,
                         achievements = state.achievements,
@@ -1228,6 +1399,7 @@ private fun SubjectDetailBody(
                         onUnbindSteam = onUnbindSteam,
                     )
                     Spacer(Modifier.height(24.dp))
+                    }
                 }
             }
                 }
@@ -1239,7 +1411,12 @@ private fun SubjectDetailBody(
             if (anilistHasData || subject.sourceKey == null) {
                 when {
                     state.anilistDetail != null || state.anilistRichDetail != null -> {
-                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "AniList",
+                summary = null,
+                collapsed = DetailSectionId.ANILIST.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.ANILIST.key) },
+            )) {
                             AniListInfoSection(
                                 detail = state.anilistDetail,
                                 rich = state.anilistRichDetail,
@@ -1253,7 +1430,12 @@ private fun SubjectDetailBody(
                         }
                     }
                     state.anilistBinding != null -> {
-                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "AniList",
+                summary = null,
+                collapsed = DetailSectionId.ANILIST.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.ANILIST.key) },
+            )) {
                             AniListBoundPendingSection(
                                 anilistId = state.anilistBinding.anilistId,
                                 backdrop = glassBackdrop,
@@ -1265,7 +1447,12 @@ private fun SubjectDetailBody(
                         }
                     }
                     else -> {
-                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                        detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "AniList",
+                summary = null,
+                collapsed = DetailSectionId.ANILIST.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.ANILIST.key) },
+            )) {
                             // 第 4 轮 D：改用统一绑定区块（原 AniListCandidateSection 的三段式 UI
                             // 与 VNDB/TMDb 各写一套，行为不一致且缺「粘贴 id」通路）。
                             // GameItem → MatchCandidate 的映射只用到展示字段，绑定仍走 bindAnilist(id)。
@@ -1312,7 +1499,12 @@ private fun SubjectDetailBody(
                 }
             } else if (subject.sourceId == "anilist") {
                 // AniList 兜底来源条目（sourceKey=anilist:...）：展示该条目落库时的 AniList 侧数据
-                detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections) {
+                detailPaneItem(DetailSectionId.ANILIST, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "AniList",
+                summary = null,
+                collapsed = DetailSectionId.ANILIST.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.ANILIST.key) },
+            )) {
                     AniListSourceInfoSection(
                         subject = subject,
                         backdrop = glassBackdrop,
@@ -1327,7 +1519,12 @@ private fun SubjectDetailBody(
             if (subject.type == SubjectType.GAME) {
                 when {
                     state.vndbDetail != null -> {
-                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections) {
+                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "VNDB",
+                summary = null,
+                collapsed = DetailSectionId.VNDB.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.VNDB.key) },
+            )) {
                             VndbInfoSection(
                                 detail = state.vndbDetail,
                                 relations = state.vndbRelations,
@@ -1340,7 +1537,12 @@ private fun SubjectDetailBody(
                         }
                     }
                     state.vndbBinding != null -> {
-                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections) {
+                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "VNDB",
+                summary = null,
+                collapsed = DetailSectionId.VNDB.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.VNDB.key) },
+            )) {
                             VndbBoundPendingSection(
                                 vndbId = state.vndbBinding.vndbId,
                                 backdrop = glassBackdrop,
@@ -1352,7 +1554,12 @@ private fun SubjectDetailBody(
                         }
                     }
                     else -> {
-                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections) {
+                        detailPaneItem(DetailSectionId.VNDB, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "VNDB",
+                summary = null,
+                collapsed = DetailSectionId.VNDB.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.VNDB.key) },
+            )) {
                             VndbCandidateSection(
                                 candidates = state.vndbCandidates,
                                 candidateReasons = state.vndbCandidateReasons,
@@ -1449,6 +1656,12 @@ private fun SubjectDetailBody(
                 DetailSectionId.EXTERNAL_RATING -> {
             // === 权威评分（多源；含 Fami通 / Billboard / Oricon 手动录入） ===
             detailPaneItem(DetailSectionId.EXTERNAL_RATING, activePane, hiddenSections) {
+                CollapsibleSourceSection(
+                    label = "权威评分",
+                    summary = state.externalRatings.size.let { if (it == 0) null else "$it 个来源" },
+                    collapsed = DetailSectionId.EXTERNAL_RATING.key in collapsedSections,
+                    onToggle = { toggleSection(DetailSectionId.EXTERNAL_RATING.key) },
+                ) {
                 ExternalRatingSection(
                     ratings = state.externalRatings.filter {
                         it.sourceId != com.otakup.niriko.data.remote.rating.ExternalRating.SOURCE_BANGUMI &&
@@ -1464,6 +1677,7 @@ private fun SubjectDetailBody(
                     isScrolling = isListScrolling,
                 )
                 Spacer(Modifier.height(20.dp))
+                }
             }
                 }
                 DetailSectionId.EXTENDED -> {
@@ -1657,7 +1871,12 @@ private fun SubjectDetailBody(
                 DetailSectionId.TMDB_BINDING -> {
             // === TMDb 绑定（保守匹配：只产候选，用户确认才写库） ===
             if (state.tmdbSupported) {
-                detailPaneItem(DetailSectionId.TMDB_BINDING, activePane, hiddenSections) {
+                detailPaneItem(DetailSectionId.TMDB_BINDING, activePane, hiddenSections, collapse = SectionCollapse(
+                label = "TMDb 绑定",
+                summary = null,
+                collapsed = DetailSectionId.TMDB_BINDING.key in collapsedSections,
+                onToggle = { toggleSection(DetailSectionId.TMDB_BINDING.key) },
+            )) {
                     TmdbBindingSection(
                         binding = state.tmdbBinding,
                         movieBinding = state.tmdbMovieBinding,
@@ -1684,24 +1903,11 @@ private fun SubjectDetailBody(
                 }
                 DetailSectionId.TRACKS -> Unit // Editing only; retain the persisted section key.
                 DetailSectionId.COLLECTION_BTN -> {
-            // === 收藏管理（Apple 风格：单主按钮，编辑控件收进 BottomSheet） ===
+            // B10：收藏入口已从「列表 item」移到窗口层悬浮胶囊（见下方 overlay）。
+            // 这里保留同一个 detailPaneItem 调用点、但内容为空 —— 顺序、隐藏、双栏归属
+            // 都还由 DetailSectionId 决定，动的是宿主不是语义。
             detailPaneItem(DetailSectionId.COLLECTION_BTN, activePane, hiddenSections) {
-                if (state.isInCollection) {
-                    DetailDock(
-                        backdrop = glassBackdrop,
-                        isScrolling = isListScrolling,
-                        statusLabel = state.currentStatus.label,
-                        ratingText = if (myRatingValue > 0) "%.1f 分".format(myRatingValue) else "未评分",
-                        progressText = if (!isGameType && parsedWatched != null && subject.totalEpisodes != null)
-                            "${parsedWatched}/${subject.totalEpisodes} 集" else null,
-                        onClick = { showCollectionSheet = true },
-                    )
-                } else {
-                    Button(onClick = onAddToCollection, enabled = !state.isUpdating, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (state.isUpdating) "添加中…" else "加入收藏")
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(0.dp))
             }
                 }
             }
@@ -1731,27 +1937,91 @@ private fun SubjectDetailBody(
         type = subject.type,
         userEnabled = detailSettings.crtModeEnabled,
     ) {
+    // B11-Step2：编辑层/弹层打开期间强制显示（胶囊要留在原位供保存后反馈）；
+    // Step3：点空白处恢复（Final-pass 观察，不消费事件，卡片点击/长按不受影响）。
+    LaunchedEffect(showCollectionSheet) { detailChrome.forceShown(showCollectionSheet) }
+    // B10：悬浮收藏胶囊与内容同处一个 Box —— 胶囊在窗口层，列表从它下面滚过。
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .floatingBarRestoreOnBlankTap { detailChrome.restore() },
+    ) {
     AdaptiveDetailScaffold(
-        modifier = Modifier.fillMaxSize().then(halftoneModifier).topContentAlphaMask(strength = { detailFadeAlpha }, hiddenHeight = TopFadePolicy.WINDOW_MASK_HIDDEN_DP.dp),
+        // B1：渐隐起点 = 窗口顶部 inset + 56dp（统一值）。注意 topInset 已含 56（statusTop+56），
+        // 直接再加 56 会变成 inset+112。
+        modifier = Modifier.fillMaxSize().then(halftoneModifier).topContentAlphaMask(
+            strength = { detailFadeAlpha },
+            // task-25：渐隐上边界改回窗口原点（与库页/发现页一致）。inset+56 会在顶部留一块固定遮盖，
+            // 用户反馈「最上面永远蒙一层」。0.dp = 遮罩从屏幕顶部/状态栏之上开始。
+            hiddenHeight = 0.dp,
+        ),
         single = { paneModifier ->
-            SubjectDetailItemsColumn(null, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody)
+            SubjectDetailItemsColumn(null, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody, detailChrome)
         },
         overview = { paneModifier ->
-            SubjectDetailItemsColumn(NirikoDetailPane.OVERVIEW, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody)
+            SubjectDetailItemsColumn(NirikoDetailPane.OVERVIEW, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody, detailChrome)
         },
         content = { paneModifier ->
-            SubjectDetailItemsColumn(NirikoDetailPane.CONTENT, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody)
+            SubjectDetailItemsColumn(NirikoDetailPane.CONTENT, paneModifier, { i, o -> detailScrollSample = i to o }, topInset, itemsBody, detailChrome)
         },
     )
+    // B10：两态共用的唯一外壳。visible 先常显；B11 的滚动显隐只改这一个入参，不改这里。
+    // isScrolling 传 false：胶囊相对窗口静止，不需要滚动期降级采样。
+    DetailCollectionAction(
+        state = detailCollectionActionState(state.isInCollection, state.isUpdating),
+        statusLabel = state.currentStatus.label,
+        ratingText = if (myRatingValue > 0) "%.1f 分".format(myRatingValue) else "未评分",
+        progressText = if (!isGameType && parsedWatched != null && subject.totalEpisodes != null)
+            "${parsedWatched}/${subject.totalEpisodes} 集" else null,
+        backdrop = glassBackdrop,
+        isScrolling = false,
+        // B11-Step2：向下滚退出、向上滚恢复；弹层打开时强制显示（见上方 LaunchedEffect）
+        visible = detailChrome.shown,
+        onClick = { if (state.isInCollection) showCollectionSheet = true else onAddToCollection() },
+        modifier = Modifier
+            // 左右各 16dp：与列表内容同边距；宽屏时在整屏居中（Box 的 BottomCenter）。
+            .fillMaxWidth()
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 16.dp)
+            .navigationBarsPadding()
+            .padding(bottom = 12.dp),
+    )
+    }
     }
     } // CompositionLocalProvider(LocalDetailCoverFallback)
 
     // ========== 收藏管理 BottomSheet（编辑控件全部收纳于此） ==========
     if (showCollectionSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        // 保存成功后**先收层、再留在详情页**：hide() 负责反向动画，等它播完才置 false，
+        // 避免弹层在动画中途被销毁后仍有代码读 sheetState。
+        // 触发源是 ViewModel 的一次性成功事件（不是 UiState 字段），失败时根本不会发。
+        LaunchedEffect(Unit) {
+            recordSavedEvents.collect {
+                // 保存事件与庆祝事件在同一帧到达：先让庆祝把自己标成 active 再判，
+                // 否则「进度写满」那次保存会在庆祝还没开始时就把弹层收掉。
+                withFrameNanos { }
+                if (completionPlayback.isActive) {
+                    // 庆祝播放期间只等不收，播完（isActive=false）再收层。
+                    snapshotFlow { completionPlayback.isActive }.first { !it }
+                }
+                runCatching { sheetState.hide() }
+                showCollectionSheet = false
+            }
+        }
         ModalBottomSheet(
             onDismissRequest = { showCollectionSheet = false },
             sheetState = sheetState,
+            // B9A：贴顶不再由内容高度决定 —— 铺满宽度、去掉把手与 M3 内建 inset，
+            // 顶部安全区交给内容自己的 statusBarsPadding，短内容也顶到窗口顶，
+            // 不会再悬在半空、上方露出一条 scrim。
+            // 动画仍是 M3 内建弹簧：material3 1.4.0 的 SheetState/ModalBottomSheet
+            // 都没有 animationSpec 参数，想要匀速只能换 Dialog（B9B），本轮明确不做。
+            sheetMaxWidth = Dp.Unspecified,
+            dragHandle = null,
+            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            shape = RoundedCornerShape(0.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
         ) {
             // ModalBottomSheet has its own window; draw feedback inside that window.
             CompletionCelebrationHost(
@@ -1955,41 +2225,148 @@ private fun DatePickerDialogComponent(
     }
 }
 
-/** 详情页底部收藏状态 dock：L2 玻璃胶囊（复用 GlassSectionCard 的 drawBackdrop 管线）。 */
+/** B10：收藏入口的图标语义（由 [detailCollectionActionState] 决定，UI 只做映射）。 */
+internal enum class DetailCollectionActionIcon { ADD, STAR }
+
+/**
+ * 收藏入口两态的展示模型（**纯函数**，JVM 可测）。
+ *
+ * 为什么抽出来：改造前未收藏走 M3 Button、已收藏走 DetailDock，两处各自判 isUpdating，
+ * 加一个「保存中」态要改两遍且容易漏。现在只有这一张真值表，UI 只是它的渲染器。
+ */
+internal data class DetailCollectionActionState(
+    val inCollection: Boolean,
+    val label: String,
+    val icon: DetailCollectionActionIcon,
+    val enabled: Boolean,
+)
+
+internal fun detailCollectionActionState(
+    inCollection: Boolean,
+    isUpdating: Boolean,
+): DetailCollectionActionState = when {
+    !inCollection && isUpdating ->
+        DetailCollectionActionState(inCollection = false, label = "添加中…", icon = DetailCollectionActionIcon.ADD, enabled = false)
+    !inCollection ->
+        DetailCollectionActionState(inCollection = false, label = "加入收藏", icon = DetailCollectionActionIcon.ADD, enabled = true)
+    isUpdating ->
+        DetailCollectionActionState(inCollection = true, label = "保存中…", icon = DetailCollectionActionIcon.STAR, enabled = false)
+    else ->
+        DetailCollectionActionState(inCollection = true, label = "已收藏", icon = DetailCollectionActionIcon.STAR, enabled = true)
+}
+
+/**
+ * B10：收藏入口的**唯一外壳** —— 未收藏 / 已收藏共用同一枚 28dp 玻璃胶囊。
+ *
+ * 它悬浮在窗口层（overlay）而不是列表 item，所以滚动不会把它带走；
+ * [visible] 是留给 B11（滚动显隐）的挂点：本轮默认常显，动画已就位，
+ * B11 只需在调用点把滚动方向的结果传进来，不必再改这个组件。
+ */
 @Composable
-private fun DetailDock(
-    backdrop: Backdrop?,
-    isScrolling: Boolean,
+private fun DetailCollectionAction(
+    state: DetailCollectionActionState,
     statusLabel: String,
     ratingText: String,
     progressText: String?,
+    backdrop: Backdrop?,
+    isScrolling: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    visible: Boolean = true,
 ) {
+    // 180ms 同进同出。本轮 visible 恒 true，动画不产生任何视觉变化；B11 才有位移。
+    val shown by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "detailCollectionAction",
+    )
+    // 位移用 offset（placement）：隐藏后命中区随之一同移出，不会留一层「看不见但能点」的胶囊。
+    val hiddenShiftPx = with(LocalDensity.current) { 96.dp.toPx() } * (1f - shown)
     GlassSectionCard(
         backdrop = backdrop,
         isScrolling = isScrolling,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .offset { IntOffset(0, hiddenShiftPx.roundToInt()) }
+            .graphicsLayer { alpha = shown },
         shape = RoundedCornerShape(28.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(vertical = 4.dp),
+                .heightIn(min = 56.dp)
+                .clickable(enabled = state.enabled, onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Star, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Icon(
+                imageVector = if (state.icon == DetailCollectionActionIcon.ADD) Icons.Filled.Add else Icons.Filled.Star,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+            )
             Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(statusLabel, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(ratingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            progressText?.let {
-                Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(end = 10.dp))
+            if (state.inCollection) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(statusLabel, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(ratingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                progressText?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(end = 10.dp))
+                }
+            } else {
+                Text(
+                    text = state.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
             }
             Text("›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/**
+ * 批次 C · 6.15：外部源区块的折叠外壳。
+ *
+ * 折叠时只画一行标题（48dp 高），内容**不组合** —— 沿用本页「隐藏的部件不组合」的约定，
+ * 因此折叠不会额外发请求，也不会占测量预算。
+ */
+@Composable
+private fun CollapsibleSourceSection(
+    label: String,
+    summary: String?,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .heightIn(min = 44.dp)
+            .clickable(onClick = onToggle),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.width(8.dp))
+        if (summary != null) {
+            Text(
+                summary,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        Text(
+            if (collapsed) "▸" else "▾",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (!collapsed) content()
 }
 
 /** 评分输入：10 星条 + 数字弹簧（P3 §6.5）。拖动/点击点亮，松手数字 1.15→1 弹回。 */
@@ -2074,6 +2451,11 @@ private fun CollectionEditSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            // B9A：撑满可用高度，让 sheet 高度 = 窗口高度而不是内容高度（贴顶的关键）。
+            .fillMaxHeight()
+            // 顶部/底部安全区由内容自己消费：宿主已把 contentWindowInsets 置零。
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
             .padding(bottom = 32.dp),
@@ -2130,8 +2512,8 @@ private fun CollectionEditSheet(
         )
         Spacer(Modifier.height(12.dp))
 
-        // 卷进度（书籍/漫画，阶段 B）
-        if (subject.type == SubjectType.MANGA || subject.type == SubjectType.BOOK) {
+        // 卷进度（书籍/漫画，阶段 B）：单本没有「卷」这个概念，判据统一在 VolumeProgressPolicy
+        if (VolumeProgressPolicy.showVolumeField(subject.type, subject.volumes)) {
             OutlinedTextField(value = watchedVolumesText, onValueChange = onWatchedVolumesChange,
                 modifier = Modifier.fillMaxWidth(), label = { Text("卷进度") }, singleLine = true,
             )
@@ -2268,7 +2650,14 @@ private fun SubjectMetaSection(subject: SubjectEntity) {
     val airParts = mutableListOf<String>()
     subject.airDate?.let { airParts.add(it) }
     subject.airWeekday?.let { wd -> airParts.add(weekdayName(wd)) }
-    subject.airTimeMinutes?.let { m -> airParts.add("%02d:%02d".format(m / 60, m % 60)) }
+    subject.airTimeMinutes?.let { m ->
+        // A-D2：airTimeZone 只写不读的收口 —— 有日期时按设备时区显示（跨日带「次日」），
+        // 日期缺失时退回源时刻文本，不猜日期。
+        val date = subject.airDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val text = AirTime.of(subject)?.let { air -> if (date != null) air.displayText(date) else air.formatSource() }
+            ?: "%02d:%02d".format(m / 60, m % 60)
+        airParts.add(text)
+    }
     if (airParts.isNotEmpty()) {
         Text(airParts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
@@ -2579,7 +2968,11 @@ private fun ProgressInputSection(
             }
         }
         SubjectType.BOOK, SubjectType.MANGA -> {
-            if (subject.series == false) { /* 单本不展示进度 */ } else {
+            // 单本判据统一在 VolumeProgressPolicy：series==false 是历史强判据，
+            // BOOK 卷数 ≤1 是同一件事的另一种表达，两处不再各写一套。
+            if (!VolumeProgressPolicy.showProgressSection(subject.type, subject.volumes, subject.series)) {
+                /* 单本不展示进度 */
+            } else {
                 // B11：这一块是「卷 / 话」二选一的入口，必须和真正存进去的字段一致。
                 // 改造前的错误链条：界面把 1..总卷 的格子标成「卷数」，点击却写进
                 // watchedEpisodes（话/集进度），而收藏页进度条又拿总话数当分母 ——
@@ -2632,6 +3025,7 @@ private fun SubjectDetailPreview() {
                 watchedEpisodes = 12, myRating = 9.5f, personalTags = listOf("芳文社", "音乐"), personalImpression = "好看！",
                 startDate = LocalDate.of(2022, 10, 8), finishDate = LocalDate.of(2022, 12, 24),
             ),
+            detailChrome = remember { FloatingControlsState() },
             glassBackdrop = null,
             onAddToCollection = {}, onUpdateStatus = {}, onRemoveFromCollection = {}, onSaveRecord = { _, _, _, _, _, _, _, _, _ -> },
         )
@@ -3859,6 +4253,34 @@ private suspend fun loadShareCover(context: Context, url: String?): Bitmap? {
             (result.drawable as? BitmapDrawable)?.bitmap
         }.getOrNull()
     }
+}
+
+/** 位图平均亮度（0..1，按 alpha 加权）：logo 多为透明底 PNG，透明像素不能当黑算。 */
+private fun averageLuma(bitmap: Bitmap): Float {
+    var rSum = 0.0; var gSum = 0.0; var bSum = 0.0; var weight = 0.0
+    val stepX = (bitmap.width / 32).coerceAtLeast(1)
+    val stepY = (bitmap.height / 32).coerceAtLeast(1)
+    var y = 0
+    while (y < bitmap.height) {
+        var x = 0
+        while (x < bitmap.width) {
+            val px = bitmap.getPixel(x, y)
+            val alpha = (px ushr 24 and 0xFF) / 255.0
+            if (alpha > 0.15) {
+                rSum += (px shr 16 and 0xFF) * alpha
+                gSum += (px shr 8 and 0xFF) * alpha
+                bSum += (px and 0xFF) * alpha
+                weight += alpha
+            }
+            x += stepX
+        }
+        y += stepY
+    }
+    if (weight <= 0.0) return 1f
+    val r = rSum / weight / 255.0
+    val g = gSum / weight / 255.0
+    val b = bSum / weight / 255.0
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b).toFloat()
 }
 
 /** 元信息行：「平台 · 集数/卷数 · 年份」（类型敏感，详情页 SubjectMetaSection 语义）。 */

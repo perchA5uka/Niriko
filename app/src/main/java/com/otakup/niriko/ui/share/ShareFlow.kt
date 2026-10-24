@@ -46,6 +46,15 @@ object ShareFlow {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
+    /** 多图分享（分区海报多页）：ACTION_SEND_MULTIPLE，每个 URI 都要授权读。 */
+    fun buildShareIntentMultiple(imageUris: List<Uri>, summaryText: String): Intent =
+        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "image/png"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(imageUris))
+            putExtra(Intent.EXTRA_TEXT, summaryText)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
     /** 带系统选择器的启动 Intent。 */
     fun buildChooser(shareIntent: Intent, chooserTitle: String = "分享到"): Intent =
         Intent.createChooser(shareIntent, chooserTitle)

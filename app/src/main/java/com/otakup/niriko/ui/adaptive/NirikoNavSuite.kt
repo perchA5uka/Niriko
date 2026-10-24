@@ -1,8 +1,6 @@
 package com.otakup.niriko.ui.adaptive
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -21,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -35,7 +34,6 @@ import com.kyant.backdrop.Backdrop
 import com.otakup.niriko.navigation.NirikoBottomBar
 import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.ui.animation.AnimDurationShort
-import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.bottombar.LiquidVerticalDock
@@ -96,18 +94,14 @@ private fun VerticalDockSlot(
     val scope = rememberCoroutineScope()
     // 稳定 lambda：避免重组时新实例触发 dock 内部 remember 重置（与 NirikoBottomBar 同款）
     val selectedTabIndex = remember(pagerState) { { pagerState.targetPage } }
-    val hideFraction = bottomBarHideFraction()
+    // B11-Step1：与手机端共用同一个隐藏进度（方向状态机给出），动画已在 MainActivity 单源完成。
+    // 宽屏裁决：不做完整滑出（dock 与内容起始 inset 绑定，完整滑出会重排），
+    // 只做「向左 24dp + alpha→0 + 隐藏态禁交互」。
+    val hideProgress = bottomBarHideFraction().coerceIn(0f, 1f)
     val motion = motionEnabled()
     val specs = NirikoMotionSpecs
-
-    // 收起/恢复：与手机端共用同一个 bottomBarHideFraction（滚动内容时收起）；
-    // 竖排把手机的「向下 8dp」改为「向左 24dp 滑出」，alpha 曲线保持一致。
-    val animatedAlpha by animateFloatAsState(
-        targetValue = 1f - hideFraction * 0.15f,
-        animationSpec = tween(durationMillis = 180, easing = AnimEasingDefault),
-        label = "verticalDockAlpha",
-    )
-    val dockAlpha = if (motion) animatedAlpha else 1f - hideFraction * 0.15f
+    val dockAlpha = 1f - hideProgress
+    val dockInteractive = hideProgress < 0.5f
 
     // 出现动画：切到宽屏（旋转 / 自由缩放）时淡入 + 轻微左移入场；reduceMotion 时跳过
     val appearance = remember { Animatable(0f) }
@@ -124,13 +118,15 @@ private fun VerticalDockSlot(
 
     Box(
         modifier = modifier
-            .offset { IntOffset(-(24f * hideFraction).dp.toPx().roundToInt(), 0) }
+            .offset { IntOffset(-(24f * hideProgress).dp.toPx().roundToInt(), 0) }
             .graphicsLayer {
                 alpha = dockAlpha * appearance.value
                 translationX = -16f.dp.toPx() * slideIn
             },
         contentAlignment = Alignment.CenterStart,
     ) {
+        // 隐藏过半即禁交互：宽屏只位移 24dp，必须显式关掉 tab 点击（命中区还在屏内）
+        CompositionLocalProvider(LocalLiquidBottomTabInteractive provides dockInteractive) {
         LiquidVerticalDock(
             selectedTabIndex = selectedTabIndex,
             onTabSelected = { page ->
@@ -179,6 +175,7 @@ private fun VerticalDockSlot(
                     )
                 }
             }
+        }
         }
     }
 }

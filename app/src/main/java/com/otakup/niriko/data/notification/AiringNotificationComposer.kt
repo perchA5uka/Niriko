@@ -1,10 +1,16 @@
 package com.otakup.niriko.data.notification
 
+import com.otakup.niriko.data.onair.AirTime
+import java.time.LocalDate
+import java.time.ZoneId
+
 /** 一条「今日放送」候选（Worker 收集后交给 [AiringNotificationComposer]）。 */
 data class AiringNotificationItem(
     val subjectId: Long,
     val title: String,
     val airTimeMinutes: Int?,
+    /** 放送时刻的源时区（"CN"/"JP"/…）。null = 无时区信息，按源时刻原样显示（旧行为）。 */
+    val airTimeZone: String? = null,
 )
 
 /** 一条通知的最终内容。 */
@@ -35,14 +41,38 @@ object AiringNotificationComposer {
     /** 合并标题长度上限（按字符数，含书名号）。 */
     const val MERGED_TITLE_LIMIT = 48
 
-    /** 生成通知内容；[items] 为空返回 null（不打扰）。 */
-    fun compose(items: List<AiringNotificationItem>): AiringNotificationContent? {
+    /**
+     * 生成通知内容；[items] 为空返回 null（不打扰）。
+     *
+     * [date]/[deviceZone] 只服务于"放送时刻换算"：源时刻（静态 onair 数据是 UTC+8）
+     * 与设备时区可能差一小时甚至跨日，[AiringNotificationItem.airTimeZone] 为空时
+     * 保持旧行为（直接显示源时刻文本），以免影响没有时区信息的老数据。
+     */
+    fun compose(
+        items: List<AiringNotificationItem>,
+        date: LocalDate = LocalDate.now(),
+        deviceZone: ZoneId = ZoneId.systemDefault(),
+    ): AiringNotificationContent? {
         if (items.isEmpty()) return null
 
         if (items.size == 1) {
             val only = items.first()
             val text = only.airTimeMinutes
-                ?.let { "今日 ${formatMinutes(it)} 放送，记得观看" }
+                ?.let { minutes ->
+                    val zone = only.airTimeZone
+                    if (zone == null) {
+                        "今日 ${formatMinutes(minutes)} 放送，记得观看"
+                    } else {
+                        val airTime = AirTime(minutes, zone)
+                        val local = airTime.formatLocal(date, deviceZone)
+                        if (airTime.dayShift(date, deviceZone) == 0) {
+                            "今日 $local 放送，记得观看"
+                        } else {
+                            // 换算后已跨日，"今日 X 放送"会自相矛盾
+                            "放送时间 $local，记得观看"
+                        }
+                    }
+                }
                 ?: "今日放送，记得观看"
             return AiringNotificationContent(
                 title = "《${only.title}》今日更新",

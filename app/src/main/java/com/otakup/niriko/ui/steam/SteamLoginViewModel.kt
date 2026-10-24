@@ -35,9 +35,25 @@ data class SteamLoginUiState(
     val error: String? = null,
     /** OpenID 登录 URL（WebView 加载用）。 */
     val loginUrl: String = "",
+    /**
+     * 「重新登录」序号（单调递增，仅用于驱动 WebView 重载）。
+     *
+     * 为什么需要：restartLogin 只改 status 时 loginUrl 不变，
+     * AndroidView.update 里的 `view.url != url` 永远不成立 → WebView 根本不重载，
+     * 用户会觉得按钮没反应。给 update 侧一个必然变化的值即可。
+     */
+    val reloadSeq: Int = 0,
+    /**
+     * 是否正在（重新）走 WebView 登录。
+     *
+     * 为什么不能只靠 [reloadSeq]：登录成功分支只由 [isLoggedIn] 决定，
+     * 而 isLoggedIn 只看 steamId64 —— 已登录时点「重新登录」，界面仍停在已登录分支，
+     * WebView 根本不会被组合出来（也就无从重载）。这里给一个显式的「正在重登」标记。
+     */
+    val loggingIn: Boolean = false,
 ) {
-    /** 已登录且 SteamID64 合法。 */
-    val isLoggedIn: Boolean get() = steamId64.isNotBlank()
+    /** 已登录且 SteamID64 合法（重登过程中不算已登录，否则看不到登录页）。 */
+    val isLoggedIn: Boolean get() = steamId64.isNotBlank() && !loggingIn
 }
 
 /**
@@ -81,7 +97,7 @@ class SteamLoginViewModel(
 
     /** 重新开始登录（WebView 重载）。 */
     fun restartLogin() {
-        _uiState.update { it.copy(status = SteamLoginStatus.LOADING, error = null) }
+        _uiState.update { it.afterRestartRequest() }
     }
 
     /**
@@ -136,7 +152,7 @@ class SteamLoginViewModel(
             }
             SteamApiClient.webCookieProvider = null
             _uiState.update {
-                it.copy(status = SteamLoginStatus.IDLE, steamId64 = "", error = null)
+                it.copy(status = SteamLoginStatus.IDLE, steamId64 = "", error = null, loggingIn = false)
             }
         }
     }
@@ -146,7 +162,12 @@ class SteamLoginViewModel(
         viewModelScope.launch {
             withContext(Dispatchers.IO) { settingsDataStore.setSteamId64(steamId64) }
             _uiState.update {
-                it.copy(status = SteamLoginStatus.LOGGED_IN, steamId64 = steamId64, error = null)
+                it.copy(
+                    status = SteamLoginStatus.LOGGED_IN,
+                    steamId64 = steamId64,
+                    error = null,
+                    loggingIn = false,
+                )
             }
         }
     }
@@ -157,6 +178,20 @@ class SteamLoginViewModel(
             s.length == 17 && s.all(Char::isDigit)
     }
 }
+
+/**
+ * 「重新登录」的纯状态迁移（抽成顶层函数便于 JVM 单测）。
+ *
+ * 不变量：reloadSeq 必须每次 +1，否则 WebView 的 update 侧观察不到变化、不会重载；
+ * 同时清掉上一次的错误并回到 LOADING，让页面重新开始。
+ */
+internal fun SteamLoginUiState.afterRestartRequest(): SteamLoginUiState =
+    copy(
+        status = SteamLoginStatus.LOADING,
+        error = null,
+        reloadSeq = reloadSeq + 1,
+        loggingIn = true,
+    )
 
 class SteamLoginViewModelFactory(
     private val settingsDataStore: SettingsDataStore,

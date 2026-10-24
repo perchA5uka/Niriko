@@ -39,6 +39,15 @@ class SettingsDataStore(private val context: Context) {
         /** F06 第二步：详情页部件顺序（逗号分隔的稳定 key；空 = 默认顺序）。 */
         val DETAIL_SECTION_ORDER = stringPreferencesKey("detail_section_order")
 
+        /** 批次 C · 6.15：外部源区块折叠（按作品分组，见 DetailCollapseState）。 */
+        val DETAIL_COLLAPSED_SECTIONS = stringPreferencesKey("detail_collapsed_v1")
+
+        /** 批次 C · 13.1：标题 logo 三档（"off"/"always"/"text_when_unclear"）。 */
+        val TITLE_LOGO_MODE = stringPreferencesKey("title_logo_mode")
+
+        /** 批次 C · 3.7：榜单周快照（JSON，见 data/rank/RankingSnapshotStore）。 */
+        val RANKING_SNAPSHOT_V1 = stringPreferencesKey("ranking_snapshot_v1")
+
         /** F18：书籍 / 漫画半调网点（默认开）。 */
         val HALFTONE_ENABLED = booleanPreferencesKey("halftone_enabled")
 
@@ -58,7 +67,9 @@ class SettingsDataStore(private val context: Context) {
         val SPLASH_ENABLED = booleanPreferencesKey("splash_enabled")
         val ACTIVE_THEME_PACK_ID = stringPreferencesKey("active_theme_pack_id")
         val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
-        val GLASS_EFFECT = stringPreferencesKey("glass_effect")  // GlassEffectLevel.name
+        val GLASS_EFFECT = stringPreferencesKey("glass_effect")   // GlassEffectLevel.name
+        // 10.1 玻璃自动档：AUTO / MANUAL（批次 C 新增的 DataStore 键）
+        val GLASS_AUTO_TIER = stringPreferencesKey("glass_auto_tier")
         val CUSTOM_ICON_MODE = stringPreferencesKey("custom_icon_mode")
         val SHARE_INCLUDE_RATING = booleanPreferencesKey("share_include_rating")
         val SHARE_INCLUDE_PROGRESS = booleanPreferencesKey("share_include_progress")
@@ -84,7 +95,6 @@ class SettingsDataStore(private val context: Context) {
         val FIRST_RUN_COMPLETED = booleanPreferencesKey("first_run_completed")
 
         // 数据源
-        val ACTIVE_DATA_SOURCE_ID = stringPreferencesKey("active_data_source_id")
         val BANGUMI_ENDPOINT = stringPreferencesKey("bangumi_endpoint")
         val STEAM_API_KEY = stringPreferencesKey("steam_api_key")
         val STEAM_ID64 = stringPreferencesKey("steam_id64")
@@ -158,6 +168,8 @@ class SettingsDataStore(private val context: Context) {
             wallpaperParallaxEnabled = prefs[Keys.WALLPAPER_PARALLAX_ENABLED] ?: defaults.wallpaperParallaxEnabled,
             detailHiddenSections = prefs[Keys.DETAIL_HIDDEN_SECTIONS] ?: defaults.detailHiddenSections,
             detailSectionOrder = prefs[Keys.DETAIL_SECTION_ORDER] ?: defaults.detailSectionOrder,
+            detailCollapsedSections = prefs[Keys.DETAIL_COLLAPSED_SECTIONS] ?: defaults.detailCollapsedSections,
+            titleLogoMode = prefs[Keys.TITLE_LOGO_MODE] ?: defaults.titleLogoMode,
             halftoneEnabled = prefs[Keys.HALFTONE_ENABLED] ?: defaults.halftoneEnabled,
             crtModeEnabled = prefs[Keys.CRT_MODE_ENABLED] ?: defaults.crtModeEnabled,
             wallpaperUri = prefs[Keys.WALLPAPER_URI] ?: defaults.wallpaperUri,
@@ -178,6 +190,7 @@ class SettingsDataStore(private val context: Context) {
             splashEnabled = prefs[Keys.SPLASH_ENABLED] ?: defaults.splashEnabled,
             activeThemePackId = prefs[Keys.ACTIVE_THEME_PACK_ID] ?: defaults.activeThemePackId,
             reduceMotion = prefs[Keys.REDUCE_MOTION] ?: defaults.reduceMotion,
+            glassAutoTier = prefs[Keys.GLASS_AUTO_TIER] ?: defaults.glassAutoTier,
             glassEffect = prefs[Keys.GLASS_EFFECT]?.let { name ->
                 try { GlassEffectLevel.valueOf(name) } catch (_: IllegalArgumentException) { defaults.glassEffect }
             } ?: defaults.glassEffect,
@@ -205,7 +218,6 @@ class SettingsDataStore(private val context: Context) {
             firstRunCompleted = prefs[Keys.FIRST_RUN_COMPLETED] ?: defaults.firstRunCompleted,
 
             // 数据源
-            activeDataSourceId = prefs[Keys.ACTIVE_DATA_SOURCE_ID] ?: defaults.activeDataSourceId,
             bangumiEndpoint = prefs[Keys.BANGUMI_ENDPOINT]?.let { name ->
                 try { BangumiEndpoint.valueOf(name) } catch (_: IllegalArgumentException) { defaults.bangumiEndpoint }
             } ?: defaults.bangumiEndpoint,
@@ -284,6 +296,16 @@ class SettingsDataStore(private val context: Context) {
     /** F06 第二步：写入「详情页部件顺序」（已编码的 key 串；空串 = 默认顺序）。 */
     suspend fun setDetailSectionOrder(encoded: String) {
         runCatching { context.dataStore.edit { it[Keys.DETAIL_SECTION_ORDER] = encoded } }
+    }
+
+    /** 批次 C · 6.15：写入「外部源区块折叠」（DetailCollapseState 编码串）。 */
+    suspend fun setDetailCollapsedSections(encoded: String) {
+        runCatching { context.dataStore.edit { it[Keys.DETAIL_COLLAPSED_SECTIONS] = encoded } }
+    }
+
+    /** 批次 C · 13.1：写入标题 logo 档位（"off"/"always"/"text_when_unclear"）。 */
+    suspend fun setTitleLogoMode(mode: String) {
+        runCatching { context.dataStore.edit { it[Keys.TITLE_LOGO_MODE] = mode } }
     }
 
     /** F18：书籍 / 漫画网点总开关。 */
@@ -365,6 +387,11 @@ class SettingsDataStore(private val context: Context) {
         runCatching { context.dataStore.edit { it[Keys.GLASS_EFFECT] = level.name } }
     }
 
+    /** 10.1：玻璃自动降档开关（AUTO / MANUAL）。 */
+    suspend fun setGlassAutoTier(mode: String) {
+        runCatching { context.dataStore.edit { it[Keys.GLASS_AUTO_TIER] = mode } }
+    }
+
     /** 设置自定义图标模式（"none"/"theme"/"image"）。 */
     suspend fun setCustomIconMode(mode: String) {
         runCatching { context.dataStore.edit { it[Keys.CUSTOM_ICON_MODE] = mode } }
@@ -427,6 +454,19 @@ class SettingsDataStore(private val context: Context) {
         runCatching { context.dataStore.edit { it[Keys.START_PAGE] = page } }
     }
 
+    /**
+     * 批次 C · 3.7：榜单周快照 JSON。
+     *
+     * 单独读写、不进 AppSettings：它是派生数据（由榜单现算），放进设置模型会逼着
+     * 每个调用方都重建一份 AppSettings，也会被备份当成用户设置带走。
+     */
+    suspend fun rankingSnapshotJson(): String? =
+        runCatching { context.dataStore.data.first()[Keys.RANKING_SNAPSHOT_V1] }.getOrNull()
+
+    suspend fun setRankingSnapshotJson(json: String) {
+        runCatching { context.dataStore.edit { it[Keys.RANKING_SNAPSHOT_V1] = json } }
+    }
+
     /** 标记首次启动引导已完成（计划 B1-1）。 */
     suspend fun setFirstRunCompleted(completed: Boolean) {
         runCatching { context.dataStore.edit { it[Keys.FIRST_RUN_COMPLETED] = completed } }
@@ -447,10 +487,6 @@ class SettingsDataStore(private val context: Context) {
     /** 重置所有设置到默认值。 */
     suspend fun resetAll() {
         runCatching { context.dataStore.edit { it.clear() } }
-    }
-
-    suspend fun setActiveDataSourceId(id: String) {
-        runCatching { context.dataStore.edit { it[Keys.ACTIVE_DATA_SOURCE_ID] = id } }
     }
 
     /** 设置 Bangumi 接口端点（官方站 / 国内反代）。 */
@@ -653,6 +689,8 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.WALLPAPER_PARALLAX_ENABLED] = settings.wallpaperParallaxEnabled
         prefs[Keys.DETAIL_HIDDEN_SECTIONS] = settings.detailHiddenSections
         prefs[Keys.DETAIL_SECTION_ORDER] = settings.detailSectionOrder
+        prefs[Keys.DETAIL_COLLAPSED_SECTIONS] = settings.detailCollapsedSections
+        prefs[Keys.TITLE_LOGO_MODE] = settings.titleLogoMode
         prefs[Keys.HALFTONE_ENABLED] = settings.halftoneEnabled
         prefs[Keys.CRT_MODE_ENABLED] = settings.crtModeEnabled
                 prefs[Keys.WALLPAPER_URI] = settings.wallpaperUri
@@ -669,6 +707,7 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.SPLASH_ENABLED] = settings.splashEnabled
                 prefs[Keys.ACTIVE_THEME_PACK_ID] = settings.activeThemePackId
                 prefs[Keys.REDUCE_MOTION] = settings.reduceMotion
+                prefs[Keys.GLASS_AUTO_TIER] = settings.glassAutoTier
                 prefs[Keys.CUSTOM_ICON_MODE] = settings.customIconMode
                 prefs[Keys.SHARE_INCLUDE_RATING] = settings.shareIncludeRating
                 prefs[Keys.SHARE_INCLUDE_PROGRESS] = settings.shareIncludeProgress
@@ -683,7 +722,6 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.SHOW_ANNUALLY_SUMMARY] = settings.showAnnuallySummary
                 prefs[Keys.START_PAGE] = settings.startPage
                 prefs[Keys.FIRST_RUN_COMPLETED] = settings.firstRunCompleted
-                prefs[Keys.ACTIVE_DATA_SOURCE_ID] = settings.activeDataSourceId
                 prefs[Keys.BANGUMI_ENDPOINT] = settings.bangumiEndpoint.name
                 prefs[Keys.STEAM_API_KEY] = settings.steamApiKey
                 prefs[Keys.STEAM_ID64] = settings.steamId64

@@ -8,6 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +25,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,7 +56,9 @@ import com.otakup.niriko.ui.adaptive.NirikoNavSuite
 import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
 import com.otakup.niriko.ui.adaptive.verticalDockStartInset
+import com.otakup.niriko.ui.common.FloatingControlsState
 import com.otakup.niriko.ui.common.LocalBottomBarHideFraction
+import com.otakup.niriko.ui.common.LocalFloatingControls
 import com.otakup.niriko.ui.common.rememberImageLuminance
 import com.otakup.niriko.ui.components.LocalCardGlassBackdrop
 import com.otakup.niriko.ui.components.LocalCardGlassLevel
@@ -261,15 +266,36 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // B11-Step1：方向状态机是唯一写方，这里只把它翻译成连续隐藏进度（0=显示，1=隐藏）。
+                // 手机 Dock 完整滑出、宽屏 dock alpha→0 都读这个进度；AdaptiveInsets 亦复用。
+                val floatingControls = remember { FloatingControlsState() }
                 val bottomBarHideFraction = remember { mutableFloatStateOf(0f) }
-                // 切换顶层页时复位底栏隐藏状态，避免跨页残留
+                var pageSwitchEpoch by remember { mutableIntStateOf(0) }
+                var handledEpoch by remember { mutableIntStateOf(0) }
+                // 切页复位：显示态 + 清累计，且这一帧走 snap（控件不得滑动入场）
                 androidx.compose.runtime.LaunchedEffect(pagerState.currentPage) {
-                    bottomBarHideFraction.floatValue = 0f
+                    floatingControls.reset()
+                    pageSwitchEpoch++
+                }
+                // 动画单源：shown → 隐藏进度。切页/减少动态效果时直接落位，其余 220ms 过渡。
+                androidx.compose.runtime.LaunchedEffect(floatingControls.shown, pageSwitchEpoch) {
+                    val target = if (floatingControls.shown) 0f else 1f
+                    if (settings.reduceMotion || pageSwitchEpoch != handledEpoch) {
+                        handledEpoch = pageSwitchEpoch
+                        bottomBarHideFraction.floatValue = target
+                    } else if (bottomBarHideFraction.floatValue != target) {
+                        animate(
+                            initialValue = bottomBarHideFraction.floatValue,
+                            targetValue = target,
+                            animationSpec = tween(durationMillis = 220),
+                        ) { value, _ -> bottomBarHideFraction.floatValue = value }
+                    }
                 }
                 CompositionLocalProvider(
                     LocalSearchGestureLock provides searchGestureLock,
                     LocalGlassEffect provides settings.glassEffect,
                     LocalBottomBarHideFraction provides bottomBarHideFraction,
+                    LocalFloatingControls provides floatingControls,
                 ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     // 液态玻璃 backdrop（kyant）：捕获全窗口内容（壁纸 + Scaffold），

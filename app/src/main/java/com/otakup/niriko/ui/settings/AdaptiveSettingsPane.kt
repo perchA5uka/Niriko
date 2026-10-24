@@ -50,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.otakup.niriko.navigation.LocalSettingsSeed
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.animation.AnimDurationShort
 import com.otakup.niriko.ui.animation.AnimEasingDefault
@@ -378,10 +379,17 @@ private fun SettingsCategoryDetailBody(
 /**
  * 宽屏下二级页的 ViewModel 直接取当前 NavBackStackEntry 的 store，
  * 工厂参数与 NirikoNavHost 里七个二级页的写法完全一致（同一套单例依赖）。
+ *
+ * X3：这里同样必须传 initialSettings 种子。窄屏走 NavHost 路由时种子由工厂直接给；
+ * 宽屏两栏右列不经 NavHost 路由，种子经 [LocalSettingsSeed] 从 MAIN 路由共享过来。
+ * 不传的话首帧是 AppSettings()（nsfwEnabled=false），真实值到达后 M3 Switch 会从
+ * false 播一次位移动画 —— 平板 / 折叠屏展开时「R18 开关自己动一下」就是这个。
  */
 @Composable
 private fun settingsViewModel(): SettingsViewModel {
     val app = LocalContext.current.nirikoApp
+    // null = 没有种子来源（预览 / 测试），回退到 AppSettings()，与改造前一致
+    val seed = LocalSettingsSeed.current?.value
     return viewModel<SettingsViewModel>(
         factory = SettingsViewModelFactory(
             dataStore = app.settingsDataStore,
@@ -389,6 +397,7 @@ private fun settingsViewModel(): SettingsViewModel {
             syncManager = app.syncManager,
             bangumiSyncManager = app.bangumiSyncManager,
             refreshCoordinator = app.refreshCoordinator,
+            initialSettings = seed,
         ),
     )
 }

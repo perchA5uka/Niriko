@@ -14,13 +14,53 @@ import org.junit.Test
  */
 class TopFadePolicyTest {
     @Test
-    fun edgeToEdgeMaskStartsAtWindowTopWithoutToolbarPlateau() {
-        assertEquals(0f, TopFadePolicy.WINDOW_MASK_HIDDEN_DP, 0f)
+    fun windowMaskHelperNoLongerDefinesTheMaskStart() {
+        // v1.2.1 真机裁决：渐隐上边界回到窗口原点（三处 mask 传 0.dp）。
+        // 这个函数只剩详情页过渡期引用（另一张卡迁移），这里只锁住它的数值不被误改大。
+        assertEquals(56f, TopFadePolicy.windowMaskHiddenDp(0f), 0f)
+        assertEquals(80f, TopFadePolicy.windowMaskHiddenDp(24f), 0f)
+        assertEquals(104f, TopFadePolicy.windowMaskHiddenDp(48f), 0f)
+        // 非法（负）inset 按 0 处理，不会把渐隐带推出屏幕
+        assertEquals(56f, TopFadePolicy.windowMaskHiddenDp(-10f), 0f)
+        // 渐隐带本身的行为不变（alphaFor / contentAlphaAt 与遮罩起点无关）
         val strength = TopFadePolicy.MAX_ALPHA / TopFadePolicy.MAX_ALPHA
         assertEquals(0f, TopFadePolicy.contentAlphaAt(0f, 24f, strength), 0f)
         assertEquals(0.5f, TopFadePolicy.contentAlphaAt(12f, 24f, strength), 0f)
         assertEquals(1f, TopFadePolicy.contentAlphaAt(24f, 24f, strength), 0f)
         assertEquals(1f, TopFadePolicy.contentAlphaAt(56f, 24f, strength), 0f)
+    }
+
+    @Test
+    fun feedTopPaddingStaysByteForByteEquivalent() {
+        // B1 是「只搬运不改语义」：新函数必须与四页原先手写的 inset + searchContentPaddingDp(56f) 同值。
+        assertEquals(72f, TopFadePolicy.feedTopPaddingDp(0f), 0f)
+        assertEquals(96f, TopFadePolicy.feedTopPaddingDp(24f), 0f)
+        assertEquals(120f, TopFadePolicy.feedTopPaddingDp(48f), 0f)
+        // 与旧写法逐点相等
+        for (inset in listOf(0f, 8f, 24f, 32f, 48f)) {
+            assertEquals(
+                inset + TopFadePolicy.searchContentPaddingDp(56f),
+                TopFadePolicy.feedTopPaddingDp(inset),
+                0f,
+            )
+        }
+    }
+
+    @Test
+    fun searchExpandedTopInsetGivesWayToTheExpandedCard() {
+        // B3：收起态 = 56dp 工具栏（与 feedTopPaddingDp 同值）
+        assertEquals(96f, TopFadePolicy.searchExpandedTopInsetDp(24f, 200f, 68f, collapsed = true, immersiveCollapsed = false), 0f)
+        // 沉浸态未编辑：卡片 68dp，让位到 inset + 8 + 68
+        assertEquals(100f, TopFadePolicy.searchExpandedTopInsetDp(24f, 200f, 68f, collapsed = false, immersiveCollapsed = true), 0f)
+        // 菜单展开：inset + 8 + 200
+        assertEquals(232f, TopFadePolicy.searchExpandedTopInsetDp(24f, 200f, 68f, collapsed = false, immersiveCollapsed = false), 0f)
+        // inset = 0 也成立
+        assertEquals(208f, TopFadePolicy.searchExpandedTopInsetDp(0f, 200f, 68f, collapsed = false, immersiveCollapsed = false), 0f)
+        // 展开让位必须比收起态更深（否则内容仍被卡片压住）
+        assertTrue(
+            TopFadePolicy.searchExpandedTopInsetDp(24f, 200f, 68f, collapsed = false, immersiveCollapsed = false) >
+                TopFadePolicy.searchExpandedTopInsetDp(24f, 200f, 68f, collapsed = true, immersiveCollapsed = false),
+        )
     }
 
     @Test

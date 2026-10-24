@@ -37,16 +37,25 @@ object StatsCalculator {
 
     /**
      * 计算完整的 StatsUiState（不含日历部分，日历由 [computeCalendarEvents] 单独填充）。
+     *
+     * [episodesBySubject] 只用于取真实单集时长；没有预取到集数据时退回类型默认值，
+     * 具体分桶与回退规则见 [computeWatchTotals]。
      */
-    fun computeStats(items: List<CollectionWithSubject>): StatsUiState {
+    fun computeStats(
+        items: List<CollectionWithSubject>,
+        episodesBySubject: Map<Long, List<EpisodeInfo>> = emptyMap(),
+    ): StatsUiState {
         if (items.isEmpty()) return StatsUiState(isLoading = false)
 
         val totalCount = items.size
         val myRatings = items.mapNotNull { it.collection.rating }
         val averageMyRating = if (myRatings.isEmpty()) 0.0 else myRatings.average()
-        val totalWatchedEpisodes = items.sumOf { it.collection.watchedEpisodes ?: 0 }
-        val completedCount = items.count { it.collection.status == WatchStatus.COMPLETED }
-        val completionRate = completedCount.toFloat() / totalCount
+        // 只累计视频集数：游戏写进 watchedEpisodes 的是分钟、音乐是曲目数（见 WatchTotals）
+        val watchTotals = computeWatchTotals(items, episodesBySubject)
+        val totalWatchedEpisodes = watchTotals.videoEpisodes
+        // 完成率口径显式化：分母剔除「想看」，并用同一份快照生成 UI 说明卡
+        val completionDetail = CompletionCaliberCalculator.detail(items)
+        val completionRate = completionDetail.rate(CompletionCaliberCalculator.DEFAULT_CALIBER)
 
         val statusCounts = items.groupBy { it.collection.status }.mapValues { it.value.size }
         val statusDistribution = WatchStatus.entries.map { status ->
@@ -86,7 +95,8 @@ object StatsCalculator {
             val yearRatings = yearItems.mapNotNull { it.collection.rating }
             YearlyStats(
                 year = year, totalAdded = yearItems.size, completedCount = completedInYear,
-                totalEpisodes = yearItems.sumOf { it.collection.watchedEpisodes ?: 0 },
+                // 年表同样只算视频集数，否则一年里玩过的游戏分钟会把"观看集数"顶到荒谬值
+                totalEpisodes = computeWatchTotals(yearItems, episodesBySubject).videoEpisodes,
                 averageRating = if (yearRatings.isEmpty()) 0.0 else yearRatings.average(),
             )
         }
@@ -114,6 +124,12 @@ object StatsCalculator {
             isLoading = false,
             totalCount = totalCount, averageMyRating = averageMyRating,
             totalWatchedEpisodes = totalWatchedEpisodes, completionRate = completionRate,
+            completionDetail = completionDetail,
+            watchMinutes = watchTotals.minutes,
+            estimatedMinutesSubjects = watchTotals.estimatedMinutesSubjects,
+            gameMinutes = watchTotals.gameMinutes,
+            readUnits = watchTotals.readUnits,
+            trackCount = watchTotals.trackCount,
             statusDistribution = statusDistribution, typeDistribution = typeDistribution,
             monthlyTrend = monthlyTrend, myRatingDistribution = myRatingDist,
             bangumiRatingDistribution = bangumiRatingDist,

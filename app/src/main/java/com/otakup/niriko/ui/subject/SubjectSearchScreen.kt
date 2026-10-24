@@ -5,9 +5,12 @@ package com.otakup.niriko.ui.subject
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,10 +45,13 @@ import com.otakup.niriko.navigation.LocalSearchGestureLock
 import com.otakup.niriko.navigation.TabReselectSignal
 import com.otakup.niriko.ui.components.topContentAlphaMask
 import com.otakup.niriko.util.TopFadePolicy
+import com.otakup.niriko.ui.common.SearchImmersiveCollapsedHeight
+import com.otakup.niriko.ui.common.SearchMenuHeight
 import com.otakup.niriko.ui.common.SearchMode
 import com.otakup.niriko.ui.common.SearchPhase
 import com.otakup.niriko.ui.common.SearchToolbar
 import com.otakup.niriko.ui.common.SearchViewModel
+import com.otakup.niriko.ui.common.searchContentTopInsetDp
 import com.otakup.niriko.ui.search.DiscoverGridPane
 import com.otakup.niriko.ui.search.DiscoverPosterPane
 import com.otakup.niriko.ui.search.SearchResultsPane
@@ -81,6 +87,15 @@ fun SubjectSearchScreen(
     tabReselectEventId: Int = 0,
     tabReselect: TabReselectSignal = TabReselectSignal.None,
     windowTopInset: Dp = 0.dp,
+    /** B8：搜索态由 MainPager 提升（顶栏在 pager 外层，必须共用同一个实例）。 */
+    hoistedSearchVm: SearchViewModel? = null,
+    /**
+     * 是否由本页自己画顶栏。
+     *
+     * 发现页（MainPager 内）传 false —— 顶栏已搬到 pager 外层的 [DiscoverTopBar]；
+     * 独立路由 `subject_search` 保持 true（该路由没有 pager 外层，需要自己的搜索轨道）。
+     */
+    showOwnTopBar: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -101,7 +116,8 @@ fun SubjectSearchScreen(
     // 前端状态机（纯 UI 层，不触碰数据/业务）
     // rememberSaveable + Saver：navigate 覆盖 MainPager 后 pop 返回时恢复搜索态
     // （否则 phase 重建为 COLLAPSED → 回到发现页首页而非搜索结果页）
-    val searchVm = rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
+    // B8：优先用 MainPager 提升的实例；直接组合本页时（预览/测试）退回本地 rememberSaveable。
+    val searchVm = hoistedSearchVm ?: rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
 
     // 系统返回：IMMERSIVE 搜索态先收起回趋势区（清焦收键盘），菜单态收起菜单，
     // COLLAPSED 不拦截（默认路由返回）——避免"搜索结果页手势返回直接退出应用"
@@ -142,8 +158,22 @@ fun SubjectSearchScreen(
     // Pager 手势锁：搜索交互按下/拖拽期间锁 Pager
     val gestureLock = LocalSearchGestureLock.current
 
-    // Only the collapsed toolbar reserves initial space; every expanded surface is an overlay.
-    val contentTopInset: Dp = windowTopInset + TopFadePolicy.searchContentPaddingDp(56f).dp
+    // B3：搜索表面展开后内容要跟着让位，不能只靠"浮层盖住"——玻璃是半透明的，被盖住的内容会透字。
+    // 收起态仍是 56dp 工具栏；展开态 = inset + 8dp 间隙 + 卡片实际高度（与卡片尺寸动画同一条曲线）。
+    // 沉浸态未编辑 / 未展开筛选行时卡片只有 68dp，让位也随之收窄（判据与组件内一致）。
+    val immersiveCollapsed = searchVm.phase == SearchPhase.IMMERSIVE_SEARCH &&
+        !searchVm.editing && !searchVm.filterRowExpanded
+    val contentTopInset: Dp by animateDpAsState(
+        targetValue = searchContentTopInsetDp(
+            phase = searchVm.phase,
+            windowTopInsetDp = windowTopInset.value,
+            menuHeightDp = SearchMenuHeight.value,
+            collapsedHeightDp = SearchImmersiveCollapsedHeight.value,
+            immersiveCollapsed = immersiveCollapsed,
+        ).dp,
+        animationSpec = tween(durationMillis = 220),
+        label = "searchContentTopInset",
+    )
 
     // F13：顶部**连续**渐隐的输入。复用发现页已有的滚动上报（index+offset），不再新增一套回调；
     // 首项索引 > 0 时按「已滚很远」处理（TopFadePolicy.scrollOffsetFor），避免 offset 归零导致渐隐忽明忽暗。
@@ -172,7 +202,8 @@ fun SubjectSearchScreen(
         scaleY = 1f - 0.04f * progress
         alpha = 1f - 0.15f * progress
     })) {
-    Box(modifier = Modifier.fillMaxSize().layerBackdrop(searchContentBackdrop).topContentAlphaMask(strength = { topFadeAlpha }, hiddenHeight = TopFadePolicy.WINDOW_MASK_HIDDEN_DP.dp)) {
+    // 渐隐上边界 = 窗口原点（屏幕顶部、含状态栏区域）：与 v1.2.0 的发现页一致，不再留 inset + 56dp 的实心台。
+    Box(modifier = Modifier.fillMaxSize().layerBackdrop(searchContentBackdrop).topContentAlphaMask(strength = { topFadeAlpha }, hiddenHeight = 0.dp)) {
         // ===== 内容区：按阶段切换 =====
         when (searchVm.phase) {
             SearchPhase.COLLAPSED,
@@ -198,7 +229,8 @@ fun SubjectSearchScreen(
                     )
                 } else {
                 // 趋势区全屏（下拉刷新 + 滚动位置恢复 + 触底分页）；
-                // 菜单展开（MENU/DRAGGING）时顶部避让，趋势作品卡片不被浮动菜单遮挡
+                // 菜单展开（MENU/DRAGGING）时顶部避让：contentTopInset 已按卡片高度下移（B3），
+                // 趋势作品卡片因此不会钻进展开卡片下面。
                 Column(Modifier.fillMaxSize()) {
                     // 卡片视图与海报视图共用的两个回调（第 3 轮参考计划 P0）。
                     // 两种布局共用同一份 trendingScrollIndex/Offset —— 布局互切后回到同一位置。
@@ -350,34 +382,75 @@ fun SubjectSearchScreen(
             }
         }
     }
-        // ===== 顶栏：趋势标签 + 搜索轨道容器 =====
-        SearchToolbar(
-            viewModel = searchVm,
-            trendingMode = state.trendingMode,
-            onSetTrendingMode = onSetTrendingMode,
-            onModeSelected = { mode ->
-                focusManager.clearFocus()
-                viewModel.setPersonSearch(mode == SearchMode.CHARACTERS)
-            },
-            onTypeSelected = { type ->
-                focusManager.clearFocus()
-                viewModel.setType(type.bangumiType)
-            },
-            onQueryChanged = { q ->
-                searchVm.syncQuery(q)
-                viewModel.onQueryChanged(q)
-            },
-            onSearchSubmit = { viewModel.onSearchSubmit(searchVm.query) },
-            onGestureLockChange = { locked -> gestureLock.value = locked },
-            // 第 5 轮 D28：卡片 / 宫格切换
-            layout = state.discoveryLayout,
-            onToggleLayout = viewModel::toggleDiscoveryLayout,
-            // zIndex：展开的搜索卡片（200dp）溢出工具栏 Box，需绘制在内容区之上并优先命中
-            // Insets belong to the floating controls, never the feed viewport.
-            modifier = Modifier.align(Alignment.TopStart).padding(top = windowTopInset + 8.dp).zIndex(10f),
-        )
-
-
+        // B8：发现页的顶栏由 pager 外层的 [DiscoverTopBar] 渲染（showOwnTopBar=false）；
+        // 独立路由 subject_search 仍由本页自绘，保持原能力不变。
+        if (showOwnTopBar) {
+            SearchToolbar(
+                viewModel = searchVm,
+                trendingMode = state.trendingMode,
+                onSetTrendingMode = onSetTrendingMode,
+                onModeSelected = { mode ->
+                    focusManager.clearFocus()
+                    viewModel.setPersonSearch(mode == SearchMode.CHARACTERS)
+                },
+                onTypeSelected = { type ->
+                    focusManager.clearFocus()
+                    viewModel.setType(type.bangumiType)
+                },
+                onQueryChanged = { q ->
+                    searchVm.syncQuery(q)
+                    viewModel.onQueryChanged(q)
+                },
+                onSearchSubmit = { viewModel.onSearchSubmit(searchVm.query) },
+                onGestureLockChange = { locked -> gestureLock.value = locked },
+                layout = state.discoveryLayout,
+                onToggleLayout = viewModel::toggleDiscoveryLayout,
+                modifier = Modifier.align(Alignment.TopStart)
+                    .padding(top = windowTopInset + 8.dp)
+                    .zIndex(10f),
+            )
+        }
     }
     }
+}
+
+/**
+ * B8：发现页悬浮顶栏（趋势标签 + 搜索轨道）。
+ *
+ * 从 [SubjectSearchScreen] 原样搬出（参数与回调逐字保留），由 MainPager 在 **pager 外层**
+ * 统一渲染 —— 翻页时这组按钮不随页面横向平移。外壳的 56dp/zIndex 由 PagerTopBar 提供，
+ * 这里只负责内容本身（不再 align/zIndex，避免与外壳重复定位）。
+ */
+@Composable
+fun DiscoverTopBar(
+    viewModel: SubjectSearchViewModel,
+    searchVm: SearchViewModel,
+) {
+    val state by viewModel.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
+    val gestureLock = LocalSearchGestureLock.current
+    SearchToolbar(
+        viewModel = searchVm,
+        trendingMode = state.trendingMode,
+        onSetTrendingMode = viewModel::setTrendingMode,
+        onModeSelected = { mode ->
+            focusManager.clearFocus()
+            viewModel.setPersonSearch(mode == SearchMode.CHARACTERS)
+        },
+        onTypeSelected = { type ->
+            focusManager.clearFocus()
+            viewModel.setType(type.bangumiType)
+        },
+        onQueryChanged = { q ->
+            searchVm.syncQuery(q)
+            viewModel.onQueryChanged(q)
+        },
+        onSearchSubmit = { viewModel.onSearchSubmit(searchVm.query) },
+        onGestureLockChange = { locked -> gestureLock.value = locked },
+        // 第 5 轮 D28：卡片 / 宫格切换
+        layout = state.discoveryLayout,
+        onToggleLayout = viewModel::toggleDiscoveryLayout,
+        // 几何（top inset + 8dp / 56dp / zIndex）由 PagerTopBar 外壳提供，这里不再重复
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

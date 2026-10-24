@@ -1,7 +1,9 @@
 package com.otakup.niriko.ui.steam
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
@@ -37,7 +39,7 @@ import com.otakup.niriko.data.remote.steam.SteamOpenIdClient
  *
  * 两种方式：
  * 1. WebView 承载 Steam OpenID 2.0 登录页（官方登录体验）；
- *    回跳 `niriko://steam-auth` 时拦截并解析 SteamID64；
+ *    回跳 `https://localhost/steam-auth` 时拦截并解析 SteamID64（见 SteamOpenIdClient.RETURN_TO_URL）；
  * 2. 手动输入 SteamID64 兜底（steamcommunity.com 不可达时）。
  *
  * 登录成功回调 [onLoginSuccess]（steamId64）。
@@ -92,6 +94,7 @@ fun SteamLoginScreen(
             // WebView 登录
             SteamOpenIdWebView(
                 url = state.loginUrl,
+                reloadSeq = state.reloadSeq,
                 onOpenIdCallback = { url ->
                     viewModel.onOpenIdCallback(url)?.let { onLoginSuccess(it) }
                 },
@@ -160,16 +163,21 @@ fun SteamLoginScreen(
  * 拦截 `https://localhost/steam-auth` 回跳并回调原始 URL（解析由调用方完成）。
  * 回跳后自动导航到 store 域触发 SSO 登录，完成后回调 [onSessionCookie]（store 域会话 Cookie，
  * 用于抓取 webapi_token 家庭库 token）。
+ *
+ * @param reloadSeq 「重新登录」序号；值变化即强制重载（见 [SteamLoginViewModel.restartLogin]）
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun SteamOpenIdWebView(
     url: String,
+    reloadSeq: Int,
     onOpenIdCallback: (String) -> Unit,
     onSessionCookie: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    // 载入/错误页是 WebView 的一次性状态，只在回调与 update 里读写，不能放进 Compose 状态
+    val host = remember { SteamWebHost() }
 
     AndroidView(
         modifier = modifier,
@@ -184,10 +192,39 @@ private fun SteamOpenIdWebView(
                 settings.setSupportZoom(true)
                 settings.builtInZoomControls = true
                 settings.displayZoomControls = false
+                // 必须显式给桌面 UA：默认 UA 带 `; wv`，Steam 的 Akamai 会把它当非浏览器拦成
+                // Access Denied（errors.edgesuite.net）。移动 UA 反而触发另一套风控且页面被压窄。
+                settings.userAgentString = SteamOpenIdClient.DESKTOP_USER_AGENT
                 // Steam 的 SSO 依赖跨站 Cookie，默认策略会把它拒掉 → 登录后拿不到会话
                 android.webkit.CookieManager.getInstance().setAcceptCookie(true)
                 android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                 webViewClient = object : WebViewClient() {
+                    override fun onPageStarted(
+                        view: WebView?,
+                        url: String?,
+                        favicon: android.graphics.Bitmap?,
+                    ) {
+                        super.onPageStarted(view, url, favicon)
+                        // 403 现场定位：第一条 URL 与真实 UA（adb logcat -s SteamOpenId）
+                        Log.i(TAG, "$url | ua=${view?.settings?.userAgentString}")
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        errorResponse: WebResourceResponse?,
+                    ) {
+                        val statusCode = errorResponse?.statusCode ?: return
+                        if (!SteamOpenIdClient.isMainFrameHttpError(request?.isForMainFrame == true, statusCode)) {
+                            return
+                        }
+                        val page = SteamOpenIdClient.httpErrorPage(statusCode) ?: return
+                        // HTTP 状态码错误（403 Access Denied 等）不触发 onReceivedError：
+                        // 不接管的话用户只会看到 Akamai 的英文报错页，不知道还有手动兜底
+                        host.failureShown = true
+                        view?.loadData(steamErrorPageHtml(page.title, page.detail), "text/html", "UTF-8")
+                    }
+
                     override fun onReceivedError(
                         view: WebView?,
                         request: WebResourceRequest?,
@@ -195,11 +232,13 @@ private fun SteamOpenIdWebView(
                     ) {
                         // 失败必须可见：steamcommunity.com 在国区常不可达，改前失败后界面毫无提示
                         if (request?.isForMainFrame == true) {
+                            host.failureShown = true
                             view?.loadData(
-                                "<html><body style=\"font-family:sans-serif;padding:16px\">" +
-                                    "<b>无法加载 Steam 登录页</b><p>域名：steamcommunity.com</p>" +
-                                    "<p>该域名在部分网络环境下不可达。可改用下方的手动输入 SteamID64。</p>" +
-                                    "</body></html>",
+                                steamErrorPageHtml(
+                                    "无法加载 Steam 登录页",
+                                    "域名：steamcommunity.com<br>" +
+                                        "该域名在部分网络环境下不可达。可改用下方的手动输入 SteamID64。",
+                                ),
                                 "text/html",
                                 "UTF-8",
                             )
@@ -213,13 +252,8 @@ private fun SteamOpenIdWebView(
                         request: WebResourceRequest?,
                     ): Boolean {
                         val url = request?.url?.toString() ?: return false
-                        val isSteamCallback =
-                            url.startsWith(SteamOpenIdClient.RETURN_TO_URL) ||
-                                // 兜底：Steam 个别情况下仍可能以 http 形式回跳
-                                url.startsWith(
-                                    SteamOpenIdClient.RETURN_TO_URL.replaceFirst("https://", "http://"),
-                                )
-                        if (isSteamCallback) {
+                        // 回跳判定抽到 SteamOpenIdClient（纯函数，https/http 两种回跳都认）
+                        if (SteamOpenIdClient.isCallbackUrl(url)) {
                             // OpenID 回跳：回调解析，不再继续加载回跳 URL；
                             // 转而加载 store 主页触发 SSO，使 store 域 Cookie 就绪
                             pendingCallback = true
@@ -233,6 +267,10 @@ private fun SteamOpenIdWebView(
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
+                        // 真实页面渲染成功即清掉错误态（错误页是 loadData，url 不会是 http）
+                        if (url?.startsWith("http") == true) {
+                            host.failureShown = false
+                        }
                         if (pendingCallback && url?.startsWith("https://store.steampowered.com/") == true) {
                             pendingCallback = false
                             val cookie = android.webkit.CookieManager.getInstance()
@@ -243,12 +281,23 @@ private fun SteamOpenIdWebView(
                         }
                     }
                 }
+                // 首次载入由 factory 负责；先记下 seq，避免随后的 update 再加载一次
+                host.lastReloadSeq = reloadSeq
                 loadUrl(url)
             }.also { webViewRef = it }
         },
         update = { view ->
-            if (view.url != url && url.isNotBlank()) {
-                view.loadUrl(url)
+            if (url.isNotBlank()) {
+                if (reloadSeq != host.lastReloadSeq) {
+                    // 「重新登录」只改 VM 状态时 url 不变 → 旧的 `view.url != url` 永远不成立，
+                    // WebView 不会重载；seq 变化是唯一可靠的触发信号
+                    host.lastReloadSeq = reloadSeq
+                    host.failureShown = false
+                    view.loadUrl(url)
+                } else if (!host.failureShown && view.url != url) {
+                    // 错误页是用 loadData 渲染的，此时不要把登录页又加载回来
+                    view.loadUrl(url)
+                }
             }
         },
     )
@@ -261,3 +310,21 @@ private fun SteamOpenIdWebView(
         }
     }
 }
+
+/** 诊断日志 tag（adb logcat -s SteamOpenId）。 */
+private const val TAG = "SteamOpenId"
+
+/** WebView 的载入状态（不参与重组，仅回调与 update 之间共享）。 */
+private class SteamWebHost {
+    /** 已消费的 reloadSeq；初值 -1 保证 factory 之后第一次 update 不会重复加载。 */
+    var lastReloadSeq: Int = -1
+
+    /** 当前展示的是错误页：阻止 update 把登录页又加载回来、把错误提示冲掉。 */
+    var failureShown: Boolean = false
+}
+
+/** 错误页 HTML（loadData 渲染，纯内联样式，不依赖网络资源）。 */
+private fun steamErrorPageHtml(heading: String, detail: String): String =
+    "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head>" +
+        "<body style=\"font-family:sans-serif;padding:16px;line-height:1.6\">" +
+        "<b>$heading</b><p>$detail</p></body></html>"

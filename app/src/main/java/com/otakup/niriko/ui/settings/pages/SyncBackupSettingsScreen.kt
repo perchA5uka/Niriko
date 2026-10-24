@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -44,8 +45,9 @@ import com.otakup.niriko.ui.settings.SettingsActionRow
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsPickerRow
-import com.otakup.niriko.ui.settings.SettingsSplitGroup
+import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.BackupViewModel
 import com.otakup.niriko.viewmodel.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -109,6 +111,12 @@ fun SyncBackupSettingsContent(
     snackbarHostState: SnackbarHostState,
 ) {
     val settings by viewModel.settings.collectAsState()
+
+    // A-D5：改造前这里直读 viewModel.isSyncing.value（不是 collectAsState），
+    // loading 不触发重组、syncResult 无人收集 —— 用户点同步就是「什么都没发生」。
+    val isSyncing by viewModel.isSyncing.collectAsState()
+    val syncResult by viewModel.syncResult.collectAsState()
+    val syncConflict by viewModel.syncConflict.collectAsState()
 
     // 自动同步状态：改造前这两个开关打开后完全没有任何反馈（也没有任何消费方），
     // 现在把「上次同步时间 / 失败后的下次可重试时间」显示出来。
@@ -188,10 +196,18 @@ fun SyncBackupSettingsContent(
         backupViewModel?.clearMessages()
     }
 
+    // A-D5：同步结果出口（成功/失败都提示；412 冲突走下面的三选一弹窗）
+    androidx.compose.runtime.LaunchedEffect(syncResult) {
+        syncResult?.let {
+            snackbarHostState.showSnackbar(it.message)
+            viewModel.clearSyncResult()
+        }
+    }
+
     Column {
         // ===== WebDAV =====
         SettingsGroupTitle("WebDAV 同步")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsPickerRow(
                     icon = Icons.Outlined.Cloud,
@@ -216,18 +232,18 @@ fun SyncBackupSettingsContent(
                 OutlinedButton(
                     onClick = { viewModel.uploadToWebDav() },
                     modifier = Modifier.weight(1f),
-                    enabled = !viewModel.isSyncing.value,
+                    enabled = !isSyncing,
                 ) {
-                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
+                    if (isSyncing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                     else Text("上传")
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(
                     onClick = { viewModel.downloadFromWebDav() },
                     modifier = Modifier.weight(1f),
-                    enabled = !viewModel.isSyncing.value,
+                    enabled = !isSyncing,
                 ) {
-                    if (viewModel.isSyncing.value) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
+                    if (isSyncing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
                     else Text("下载")
                 }
             }
@@ -246,7 +262,7 @@ fun SyncBackupSettingsContent(
         // ===== 备份 =====
         if (backupViewModel != null) {
             SettingsGroupTitle("数据备份")
-            SettingsSplitGroup(content = listOf(
+            SettingsPageSplitGroup(content = listOf(
                 {
                     SettingsActionRow(
                         icon = Icons.Outlined.FileUpload,
@@ -306,6 +322,40 @@ fun SyncBackupSettingsContent(
                     showImportConfirm = false
                     pendingImportJson = null
                 }) { Text("取消") }
+            },
+        )
+    }
+
+    // A-D4：412 冲突三选一。默认「先合并」，覆盖云端必须显式点击。
+    syncConflict?.let { conflictMessage ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissSyncConflict() },
+            // B7d：圆角收敛到 Sheet（24dp，M3 默认是 28dp）；表面色显式用 token 而非默认值
+            shape = RoundedCornerShape(NirikoShapes.Sheet),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("同步冲突") },
+            text = {
+                Text(
+                    conflictMessage + "\n\n" +
+                        "云端的 sync.json 在你上次同步后被另一台设备改过。\n" +
+                        "· 先合并：把远端改动并进本地，再上传合并结果\n" +
+                        "· 覆盖云端：忽略并发检查，用本机数据覆盖远端（会丢掉另一台设备的改动）",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissSyncConflict()
+                    viewModel.mergeAndUploadWebDav()
+                }) { Text("先合并（推荐）") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        viewModel.dismissSyncConflict()
+                        viewModel.overwriteWebDav()
+                    }) { Text("覆盖云端", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { viewModel.dismissSyncConflict() }) { Text("取消") }
+                }
             },
         )
     }

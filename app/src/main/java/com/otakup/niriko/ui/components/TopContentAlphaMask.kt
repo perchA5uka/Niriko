@@ -15,14 +15,19 @@ import androidx.compose.ui.unit.dp
 import com.otakup.niriko.util.TopFadePolicy
 
 /**
- * Apply only to the feed sibling, not the wallpaper or floating controls.
- * Window-origin feeds pass hiddenHeight = 0.dp; legacy inset viewports keep their plateau.
+ * 顶部渐隐遮罩（全仓唯一入口）。Apply only to the feed sibling, not the wallpaper or floating controls.
+ *
+ * **上边界 = 窗口原点**：feed 页一律传 `hiddenHeight = 0.dp`，渐隐带从屏幕顶部（含状态栏区域）
+ * 开始、向下 24dp 把内容淡入 —— 与 v1.2.0 的发现页一致（v1.2.1 真机反馈的裁决）。
+ *
+ * `hiddenHeight` 参数保留只为详情页过渡期（它还在传 inset + 56dp 的实心台）；默认值同样是
+ * 0.dp，新增调用点不要传非 0 值。内容避让看 `TopFadePolicy.feedTopPaddingDp`，不是这里。
  */
 @Composable
 fun Modifier.topContentAlphaMask(
     strength: () -> Float,
     height: Dp = TopFadePolicy.FADE_DISTANCE_DP.dp,
-    hiddenHeight: Dp = 56.dp,
+    hiddenHeight: Dp = 0.dp,
 ): Modifier {
     val heightPx = with(LocalDensity.current) { height.toPx() }
     val hiddenPx = with(LocalDensity.current) { hiddenHeight.toPx() }

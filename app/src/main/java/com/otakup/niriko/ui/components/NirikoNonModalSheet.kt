@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.theme.NirikoShapes
 import kotlinx.coroutines.launch
 
 // ==================== 非模态底部面板（R6：skydoves/FlexibleBottomSheet 形态，自研实现） ====================
@@ -87,7 +88,8 @@ fun NirikoNonModalSheet(
     var panelHeightPx by remember { mutableFloatStateOf(0f) }
     val distanceThresholdPx = with(density) { SHEET_DISMISS_DISTANCE_DP.dp.toPx() }
     val velocityThresholdPx = with(density) { SHEET_DISMISS_VELOCITY_DP.dp.toPx() }
-    val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    // B7e：弹层顶角收敛到 Sheet（24dp），与设置页卡片（Card/RowInner）同一套形状 token
+    val shape = RoundedCornerShape(topStart = NirikoShapes.Sheet, topEnd = NirikoShapes.Sheet)
     val backPreview = remember { com.otakup.niriko.ui.animation.BackPreviewState() }
     com.otakup.niriko.ui.animation.PredictiveDismissHandler(
         enabled = true,

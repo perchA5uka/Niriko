@@ -11,7 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import com.otakup.niriko.data.diagnose.ensureContrast
 
 /**
  * 当前主题是否深色（由 NirikoTheme 的设置驱动 darkTheme 提供）。
@@ -233,7 +235,7 @@ fun NirikoTheme(
     content: @Composable () -> Unit,
 ) {
     val seed = themePaletteAt(themeColorIndex)
-    val colorScheme = when {
+    val baseScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -245,6 +247,21 @@ fun NirikoTheme(
         }
         darkTheme -> buildDarkScheme(seed.dark, oledDark)
         else -> buildLightScheme(seed.light)
+    }
+
+    // 10.15：深色下 onSurfaceVariant 承担正文/次要文字，低于 4.5:1 时按 WCAG 调明度（色相不变）。
+    // 三套深色来源（动态色 / 自定义种子 / 预置色板）都经过这一处；浅色与其它 token 一律不动。
+    val colorScheme = if (darkTheme) {
+        baseScheme.copy(
+            onSurfaceVariant = Color(
+                ensureContrast(
+                    foreground = baseScheme.onSurfaceVariant.toArgb().toLong() and 0xFFFFFFFFL,
+                    background = baseScheme.surface.toArgb().toLong() and 0xFFFFFFFFL,
+                ),
+            ),
+        )
+    } else {
+        baseScheme
     }
 
     CompositionLocalProvider(

@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -44,7 +43,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +51,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.otakup.niriko.data.calculator.ChartSeriesCalculator
+import com.otakup.niriko.data.calculator.StatsNarratives
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.animation.RevealOnScroll
@@ -69,6 +68,7 @@ import com.otakup.niriko.data.model.stats.MonthlyStats
 import com.otakup.niriko.data.model.stats.RatingComparison
 import com.otakup.niriko.data.model.stats.RatingDistribution
 import com.otakup.niriko.data.model.stats.StatsUiState
+import com.otakup.niriko.ui.components.GlassProgressBar
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.viewmodel.StatsViewModel
 import com.otakup.niriko.data.model.stats.StatusDistItem
@@ -97,6 +97,12 @@ fun StatsScreen(
     viewModel: StatsViewModel,
     onSubjectClick: (Long) -> Unit = {},
     onNavigateToDiscover: () -> Unit = {},
+    /** 漏看入口：默认复用放送通知那条已接好的链路（切到作品库「在看」筛选）。 */
+    onOpenLagging: () -> Unit = {
+        com.otakup.niriko.data.notification.AiringListFilterRequest.pending = true
+    },
+    /** 健康度每行的入口；作品库暂不支持「未评分 / 无标签」筛选，先留空实现。 */
+    onOpenHygiene: (com.otakup.niriko.data.model.stats.HygieneKind) -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     /** F11：底栏重选统计页事件（不在顶部则回顶；顶部重选无操作）。 */
@@ -124,6 +130,8 @@ fun StatsScreen(
             gestureLock = searchGestureLock,
             onSubjectClick = onSubjectClick,
             onNavigateToDiscover = onNavigateToDiscover,
+            onOpenLagging = onOpenLagging,
+            onOpenHygiene = onOpenHygiene,
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             tabReselectEventId = tabReselectEventId,
@@ -166,6 +174,8 @@ private fun StatsContent(
     gestureLock: MutableState<Boolean>? = null,
     onSubjectClick: (Long) -> Unit = {},
     onNavigateToDiscover: () -> Unit = {},
+    onOpenLagging: () -> Unit = {},
+    onOpenHygiene: (com.otakup.niriko.data.model.stats.HygieneKind) -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     tabReselectEventId: Int = 0,
@@ -205,6 +215,26 @@ private fun StatsContent(
                 EmptyStatsPlaceholder(onNavigateToDiscover = onNavigateToDiscover)
             }
             else -> {
+                // 0a. 今晚看什么（P0）：打开统计页先给结论——今天更新 / 落后了几集
+                if (state.tonight.isNotEmpty()) {
+                    item(key = "tonight") {
+                        TonightSection(
+                            items = state.tonight,
+                            // 徽标只算落后 ≥3 集的：差 1 集属正常追番节奏
+                            laggingCount = com.otakup.niriko.data.calculator.CatchUpCalculator
+                                .severeLags(state.lagging).size,
+                            onSubjectClick = onSubjectClick,
+                            onOpenLagging = onOpenLagging,
+                        )
+                    }
+                }
+                // 0b. 接下来七天：7 列固定宽度，没有更新的一天显示「—」而不是消失
+                if (state.upcoming.any { it.count > 0 }) {
+                    item(key = "upcoming") {
+                        UpcomingWeekStrip(days = state.upcoming)
+                    }
+                }
+
                 // 0. 作品日历（置顶，核心）
                 item(key = "calendar") {
                     CalendarCard(
@@ -239,6 +269,16 @@ private fun StatsContent(
 
                 // 2. 概览仪表板
                 item(key = "overview") { StatsOverviewSection(state = state) }
+                // 2b. 收藏健康度（P1）：四类待整理 + 入口；全为 0 时组件内部不渲染
+                if (state.hygiene.actionableCount > 0) {
+                    item(key = "hygiene") {
+                        HygieneSection(
+                            report = state.hygiene,
+                            onOpenHygiene = onOpenHygiene,
+                            onOpenWatching = onOpenLagging,
+                        )
+                    }
+                }
                 item(key = "div3") { HorizontalDivider() }
 
                 // 3. 收藏状态分布（环形图）
@@ -406,15 +446,13 @@ private fun TypeBarRow(
             )
         }
         Spacer(Modifier.height(4.dp))
-        LinearProgressIndicator(
-            progress = { ratio.coerceIn(0f, 1f) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(MaterialTheme.shapes.small),
+        // B6：换成玻璃进度条（胶囊轨道 + 6dp，与收藏卡同一口径），越界值由组件内部收敛
+        GlassProgressBar(
+            progress = ratio,
+            modifier = Modifier.fillMaxWidth(),
+            height = 6.dp,
             color = color,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            strokeCap = StrokeCap.Round,
         )
     }
 }
@@ -503,7 +541,21 @@ private fun TasteRadarSection(state: StatsUiState) {
 @Composable
 private fun MonthlyTrendSection(state: StatsUiState) {
     StatsSectionCard {
-        SectionTitle("收藏月度趋势")
+        // 5.3：一句话对比；数据不足时 narrative 为 null，整格不渲染（不留空白占位）
+        val narrative = remember(state.monthlyTrend) {
+            StatsNarratives.monthlyNarrative(state.monthlyTrend)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            SectionTitle("收藏月度趋势")
+            if (narrative != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = narrative,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (state.monthlyTrend.isEmpty()) {
             Text("暂无月度数据", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -612,7 +664,7 @@ private fun YearlySummarySection(state: StatsUiState) {
                 ) {
                     YearlyStatItem(label = "新增收藏", value = "${yearly.totalAdded}")
                     YearlyStatItem(label = "已完成", value = "${yearly.completedCount}")
-                    YearlyStatItem(label = "观看集数", value = "${yearly.totalEpisodes}")
+                    YearlyStatItem(label = "视频集数", value = "${yearly.totalEpisodes}")
                     YearlyStatItem(label = "均分", value = if (yearly.averageRating > 0) "%.1f".format(yearly.averageRating) else "-")
                 }
             }

@@ -89,6 +89,19 @@ class TmdbRepository(
         return TmdbImageSelection.sortPosters(posters)
     }
 
+    /**
+     * 标题 logo 候选（批次 C · 13.1）。
+     *
+     * 与海报/背景同一个 images 响应：TMDb 的 logos 一直有反序列化，只是此前没人用。
+     * 选图（语言/票数/跳过 svg）交给纯函数 TitleLogoPolicy.pick，仓储只负责取数。
+     */
+    suspend fun logoCandidates(subject: SubjectEntity): List<TmdbImageDto> {
+        val tvId = boundTvId(subject.subjectId) ?: return emptyList()
+        applyEndpoint()
+        val images = runCatching { TmdbClient.apiService.tvImages(tvId) }.getOrNull() ?: return emptyList()
+        return images.logos
+    }
+
     /** 背景图（剧照区用）。 */
     suspend fun backdropCandidates(subject: SubjectEntity): List<TmdbImageDto> {
         val tvId = boundTvId(subject.subjectId) ?: return emptyList()

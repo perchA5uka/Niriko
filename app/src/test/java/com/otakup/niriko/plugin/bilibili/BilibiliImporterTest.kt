@@ -113,6 +113,13 @@ class BilibiliImporterTest {
             collections.removeAll { it.id == collection.id }
             return before - collections.size
         }
+        // 数据体检（C-1）新增的只读计数：测试替身返回 0 即可。
+        override suspend fun countAll(): Int = collections.size
+
+        override suspend fun countWithoutProgress(): Int = 0
+
+        override suspend fun countWithoutRating(): Int = 0
+
         override suspend fun deleteBySubjectId(subjectId: Long): Int {
             val before = collections.size
             collections.removeAll { it.subjectId == subjectId }

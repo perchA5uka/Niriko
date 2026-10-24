@@ -187,7 +187,8 @@ fun DiscoverPosterPane(
         // 首次加载中：整屏海报骨架（3 列 × 4 行 = 12 格，几何与真卡一致）
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
-            modifier = Modifier.fillMaxWidth(),
+            // B11-Step1：骨架列表也要上报，否则首次加载时 Dock 藏不起来
+            modifier = Modifier.fillMaxWidth().reportBottomBarScroll(),
             contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = topInset + 4.dp, bottom = 120.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

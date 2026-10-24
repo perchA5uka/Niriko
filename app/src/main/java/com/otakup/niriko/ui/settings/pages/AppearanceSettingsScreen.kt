@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Title
 import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.BlurCircular
@@ -64,13 +65,19 @@ import com.otakup.niriko.data.settings.ThemeMode
 import com.otakup.niriko.data.settings.WallpaperAtmosphere
 import com.otakup.niriko.ui.icon.AppIconManager
 import com.otakup.niriko.ui.settings.SettingsActionRow
+import com.otakup.niriko.util.TitleLogoMode
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsInfoRow
 import com.otakup.niriko.ui.settings.SettingsPickerRow
 import com.otakup.niriko.ui.settings.SettingsRadioRow
 import com.otakup.niriko.ui.settings.SettingsSliderRow
-import com.otakup.niriko.ui.settings.SettingsSplitGroup
+import com.otakup.niriko.data.diagnose.GlassAutoMode
+import com.otakup.niriko.data.diagnose.deviceTier
+import com.otakup.niriko.data.diagnose.effectiveGlassLevel
+import com.otakup.niriko.data.diagnose.glassLevelLabel
+import com.otakup.niriko.data.diagnose.glassTierLabel
+import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.theme.SeedColorScheme
 import com.otakup.niriko.ui.theme.ThemeColorPickerDialog
@@ -142,7 +149,7 @@ fun AppearanceSettingsContent(
     Column {
         // ===== 主题模式（三选项：就地单选） =====
         SettingsGroupTitle("主题模式")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsRadioRow(
                     icon = Icons.Outlined.BrightnessAuto,
@@ -172,9 +179,41 @@ fun AppearanceSettingsContent(
             },
         ))
 
+        // ===== 详情页标题（C · 13.1）：默认只用文字，避免替所有人改观感 =====
+        SettingsGroupTitle("详情页标题")
+        SettingsPageSplitGroup(content = listOf(
+            {
+                SettingsRadioRow(
+                    icon = Icons.Outlined.Title,
+                    title = "只用文字",
+                    description = "默认；不请求任何 logo",
+                    selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.OFF,
+                    onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.OFF.key) },
+                )
+            },
+            {
+                SettingsRadioRow(
+                    icon = Icons.Outlined.AutoAwesome,
+                    title = "始终用作品 logo",
+                    description = "没有 logo 的条目仍显示文字",
+                    selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.ALWAYS,
+                    onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.ALWAYS.key) },
+                )
+            },
+            {
+                SettingsRadioRow(
+                    icon = Icons.Outlined.Visibility,
+                    title = "看不清时显示文字",
+                    description = "推荐：对比度不足时回退文字",
+                    selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.TEXT_WHEN_UNCLEAR,
+                    onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.TEXT_WHEN_UNCLEAR.key) },
+                )
+            },
+        ))
+
         // ===== 主题 =====
         SettingsGroupTitle("主题")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsPickerRow(
                     icon = Icons.Outlined.Palette,
@@ -219,7 +258,7 @@ fun AppearanceSettingsContent(
 
         // ===== 玻璃效果（三选项：就地单选） =====
         SettingsGroupTitle("玻璃效果")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsRadioRow(
                     icon = Icons.Outlined.BlurOn,
@@ -247,11 +286,26 @@ fun AppearanceSettingsContent(
                     onSelect = { viewModel.setGlassEffect(GlassEffectLevel.OFF) },
                 )
             },
+            {
+                // 10.1：设备能力自动降档。把「本机能力」和「最终生效」一起写出来，
+                // 用户不用猜 REDUCED 到底关了什么；关掉开关即完全听用户档位。
+                val tier = remember { deviceTier(context) }
+                val effective = effectiveGlassLevel(settings.glassEffect, tier)
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.AutoAwesome,
+                    title = "按设备能力自动降档",
+                    description = "本机：${glassTierLabel(tier)} · 生效：${glassLevelLabel(effective)}",
+                    checked = GlassAutoMode.isAuto(settings.glassAutoTier),
+                    onCheckedChange = { auto ->
+                        viewModel.setGlassAutoTier(if (auto) GlassAutoMode.AUTO else GlassAutoMode.MANUAL)
+                    },
+                )
+            },
         ))
 
         // ===== 卡片玻璃（三选项：就地单选） =====
         SettingsGroupTitle("卡片玻璃")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsRadioRow(
                     icon = Icons.Outlined.Layers,
@@ -285,7 +339,7 @@ fun AppearanceSettingsContent(
         val globalUri = settings.wallpaperUri
         // F18：书籍 / 漫画半调网点（其他类型不生效）
         SettingsGroupTitle("漫画 / 书籍")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.AutoAwesome,
@@ -308,7 +362,7 @@ fun AppearanceSettingsContent(
         ))
 
         SettingsGroupTitle("壁纸")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.Wallpaper,
@@ -428,7 +482,7 @@ fun AppearanceSettingsContent(
 
         // ===== 壁纸氛围（三选项：就地单选） =====
         SettingsGroupTitle("壁纸氛围")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsRadioRow(
                     icon = Icons.Outlined.Contrast,
@@ -514,7 +568,7 @@ fun AppearanceSettingsContent(
         }
 
         SettingsGroupTitle("桌面图标")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsActionRow(
                     icon = Icons.Outlined.Brush,
@@ -604,7 +658,7 @@ fun AppearanceSettingsContent(
 
         // ===== 分享卡 =====
         SettingsGroupTitle("分享卡")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.Star,
@@ -636,7 +690,7 @@ fun AppearanceSettingsContent(
 
         // ===== 放送提醒 =====
         SettingsGroupTitle("放送提醒")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.NotificationsActive,

@@ -83,6 +83,47 @@ class ShareBitmapHost {
         }
     }
 
+    /**
+     * 以任意尺寸渲染任意 Compose 内容（批次 C 的三张卡用）。
+     *
+     * 之所以复用同一套 attach → 等两帧 → measure/layout/draw 流程：Compose 的离屏方案
+     * 在本项目已验证会输出白图（见类注释），三张卡没有理由再踩一次。
+     */
+    suspend fun renderContent(
+        context: Context,
+        width: Int,
+        height: Int,
+        content: @androidx.compose.runtime.Composable () -> Unit,
+    ): Bitmap = withContext(Dispatchers.Main) {
+        val activity = context.findActivity() ?: return@withContext errorBitmap()
+        val container = (activity.window?.decorView as? ViewGroup)
+            ?: return@withContext errorBitmap()
+        val composeView = ComposeView(activity).apply {
+            setContent {
+                CompositionLocalProvider(LocalDensity provides Density(1f)) { content() }
+            }
+        }
+        val params = FrameLayout.LayoutParams(width, height).apply {
+            leftMargin = -width - 200
+            topMargin = -height - 200
+        }
+        container.addView(composeView, params)
+        try {
+            withFrameNanos { }
+            withFrameNanos { }
+            composeView.measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+            )
+            composeView.layout(0, 0, width, height)
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            composeView.draw(Canvas(bitmap))
+            bitmap
+        } finally {
+            container.removeView(composeView)
+        }
+    }
+
     /** 渲染 AniShelf 海报风分享卡（预览/导出共用）。 */
     suspend fun renderPoster(
         context: Context,

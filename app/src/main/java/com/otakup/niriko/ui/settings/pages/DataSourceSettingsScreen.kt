@@ -18,7 +18,6 @@ import androidx.compose.material.icons.outlined.Autorenew
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.CompareArrows
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -57,9 +57,10 @@ import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsInfoRow
 import com.otakup.niriko.ui.settings.SettingsPickerRow
-import com.otakup.niriko.ui.settings.SettingsSplitGroup
+import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.settings.RatingSourceSettingsGroup
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.SettingsViewModel
 
 /** 数据源与账号设置页（二级页外壳：脚手架 + 返回箭头 + Snackbar 宿主）。 */
@@ -113,52 +114,40 @@ fun DataSourceSettingsContent(
     }
 
     // ===== 数据源行 =====
+    // X2：兜底源 picker 已删除。数据源由 DataSourceChain 按插件注册顺序自动调度，
+    // 不再存在「当前数据源」这个概念（activeDataSourceId 偏好随之一并删除）。
     val datasourceRows = mutableListOf<@Composable () -> Unit>()
-    if (viewModel.plugins.isNotEmpty()) {
-        datasourceRows.add {
-            val endpoint = settings.bangumiEndpoint
-            SettingsPickerRow(
-                icon = Icons.Outlined.Cloud,
-                title = "Bangumi 接口",
-                description = "官方站与国内反代一键切换",
-                value = if (endpoint == BangumiEndpoint.PROXY) "国内反代" else "官方站",
-                onClick = {
-                    viewModel.setBangumiEndpoint(
-                        if (endpoint == BangumiEndpoint.PROXY) BangumiEndpoint.OFFICIAL else BangumiEndpoint.PROXY,
-                    )
-                },
-            )
-        }
-        viewModel.plugins.forEach { plugin ->
-            datasourceRows.add {
-                val isActive = plugin.id == viewModel.primaryPluginId
-                SettingsPickerRow(
-                    icon = Icons.Outlined.Extension,
-                    title = plugin.name,
-                    description = "数据源插件",
-                    value = if (isActive) "✓ 当前" else "点击切换",
-                    onClick = { if (!isActive) viewModel.setActiveDataSourceId(plugin.id) },
+    datasourceRows.add {
+        val endpoint = settings.bangumiEndpoint
+        SettingsPickerRow(
+            icon = Icons.Outlined.Cloud,
+            title = "Bangumi 接口",
+            description = "官方站与国内反代一键切换",
+            value = if (endpoint == BangumiEndpoint.PROXY) "国内反代" else "官方站",
+            onClick = {
+                viewModel.setBangumiEndpoint(
+                    if (endpoint == BangumiEndpoint.PROXY) BangumiEndpoint.OFFICIAL else BangumiEndpoint.PROXY,
                 )
-            }
-        }
-        datasourceRows.add {
-            SettingsPickerRow(
-                icon = Icons.Outlined.Key,
-                title = "Steam API Key",
-                description = "可选：公开接口无需 Key",
-                value = if (settings.steamApiKey.isEmpty()) "未配置(可选)" else "已配置(点击修改)",
-                onClick = { showSteamConfig = true },
-            )
-        }
-        datasourceRows.add {
-            SettingsPickerRow(
-                icon = Icons.Outlined.SportsEsports,
-                title = "Steam 账号与游戏库",
-                description = "登录后导入 Steam 游戏库",
-                value = if (settings.steamId64.isEmpty()) "未登录" else "已登录 · 点击导入",
-                onClick = onNavigateToSteamSync,
-            )
-        }
+            },
+        )
+    }
+    datasourceRows.add {
+        SettingsPickerRow(
+            icon = Icons.Outlined.Key,
+            title = "Steam API Key",
+            description = "可选：公开接口无需 Key",
+            value = if (settings.steamApiKey.isEmpty()) "未配置(可选)" else "已配置(点击修改)",
+            onClick = { showSteamConfig = true },
+        )
+    }
+    datasourceRows.add {
+        SettingsPickerRow(
+            icon = Icons.Outlined.SportsEsports,
+            title = "Steam 账号与游戏库",
+            description = "登录后导入 Steam 游戏库",
+            value = if (settings.steamId64.isEmpty()) "未登录" else "已登录 · 点击导入",
+            onClick = onNavigateToSteamSync,
+        )
     }
 
     // ===== Bangumi 账号行 =====
@@ -348,10 +337,10 @@ fun DataSourceSettingsContent(
     Column {
         if (datasourceRows.isNotEmpty()) {
             SettingsGroupTitle("数据源")
-            SettingsSplitGroup(content = datasourceRows)
+            SettingsPageSplitGroup(content = datasourceRows)
         }
         SettingsGroupTitle("Bangumi 账号")
-        SettingsSplitGroup(content = bangumiRows)
+        SettingsPageSplitGroup(content = bangumiRows)
         SettingsGroupTitle("权威数据源")
         RatingSourceSettingsGroup(
             viewModel = viewModel,
@@ -367,7 +356,7 @@ fun DataSourceSettingsContent(
             onDoubanAntiSpoiler = viewModel::setDoubanAntiSpoiler,
         )
         SettingsGroupTitle("导入")
-        SettingsSplitGroup(content = listOf(
+        SettingsPageSplitGroup(content = listOf(
             {
                 KazumiImportSection(
                     subjectDao = context.nirikoApp.database.subjectDao(),
@@ -387,6 +376,9 @@ fun DataSourceSettingsContent(
     if (showSteamConfig) {
         AlertDialog(
             onDismissRequest = { showSteamConfig = false },
+            // B7d：密钥提示弹窗统一 24dp 圆角 + 表面色 token（只改容器，按钮/文案不动）
+            shape = RoundedCornerShape(NirikoShapes.Sheet),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text("Steam Web API Key") },
             text = {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {

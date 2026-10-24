@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,17 +23,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.otakup.niriko.data.model.SubjectCardDisplayModel
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.rank.RankDelta
+import com.otakup.niriko.data.rank.RankDirection
 import com.otakup.niriko.util.ProgressBumpPolicy
 import com.otakup.niriko.ui.components.CoverThumbnail
+import com.otakup.niriko.ui.components.GlassProgressBar
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.components.rememberCoverTint
 import com.otakup.niriko.ui.components.touchGlow
@@ -84,6 +84,8 @@ fun UniversalSubjectCard(
     isCollectionCard: Boolean = false,
     modifier: Modifier = Modifier,
     pressTiltEnabled: Boolean = false,
+    /** 3.7：榜单行尾的 ▲▼（历史排名专用；null = 无快照/非榜单，不显示）。 */
+    rankDelta: RankDelta? = null,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val lighting = remember { com.otakup.niriko.ui.animation.PressTiltLighting() }
@@ -170,6 +172,20 @@ fun UniversalSubjectCard(
                                 modifier = Modifier.padding(start = 6.dp),
                             )
                         }
+                        // 3.7：榜单行尾 —— 主题色 ▲/▼ + 数字，持平一条横线；无快照整段不出现
+                        rankDelta?.let { delta ->
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                text = delta.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (delta.direction == RankDirection.SAME) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                            )
+                        }
                     }
 
                     // 第 2 行：主标题
@@ -234,11 +250,12 @@ fun UniversalSubjectCard(
                     if (watchedEpisodes != null || watchedVolumes != null) {
                         Spacer(Modifier.height(4.dp))
                         when {
-                            progressFraction != null -> LinearProgressIndicator(
-                                progress = { progressFraction },
-                                modifier = Modifier.fillMaxWidth().height(6.dp).clip(MaterialTheme.shapes.small),
+                            // B6：玻璃进度条（6dp 胶囊轨道），与统计页同一口径
+                            progressFraction != null -> GlassProgressBar(
+                                progress = progressFraction,
+                                modifier = Modifier.fillMaxWidth(),
+                                height = 6.dp,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                strokeCap = StrokeCap.Round,
                             )
                             // 分母未知（总卷数没记录）：写出已读卷数，而不是画一条错的进度条
                             isVolumeUnit -> Text(

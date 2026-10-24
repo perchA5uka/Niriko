@@ -21,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -36,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.components.GlassToggle
 
 // ==================== 行度量（对齐 Kazumi SettingsTile / _TileLabel） ====================
 
@@ -161,9 +161,11 @@ fun SettingsSwitchRow(
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(12.dp))
-        Switch(
+        // B6：设置行是 34 个开关的唯一入口 —— 在这里换掉 M3 Switch，全站开关材质即统一。
+        // checked 仍由调用方（设置流）传入，首帧策略不动（批次 A 的 X3 种子依赖它）。
+        GlassToggle(
             checked = checked,
-            onCheckedChange = if (enabled) onCheckedChange else null,
+            onCheckedChange = onCheckedChange,
             enabled = enabled,
         )
     }

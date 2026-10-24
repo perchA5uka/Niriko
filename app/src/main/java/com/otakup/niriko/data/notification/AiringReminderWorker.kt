@@ -69,14 +69,17 @@ class AiringReminderWorker(
         }
 
         // 多条合并（计划 B1-3）：收集今日命中 → 一次性构造内容
+        // airTimeZone 一并传下去：静态 onair 数据是 UTC+8，非中国时区用户的通知时刻要按设备时区显示
         val content = AiringNotificationComposer.compose(
             airingToday.map { subject ->
                 AiringNotificationItem(
                     subjectId = subject.subjectId,
                     title = subject.title,
                     airTimeMinutes = subject.airTimeMinutes,
+                    airTimeZone = subject.airTimeZone,
                 )
             },
+            date = today,
         ) ?: return Result.success()
 
         val intent = Intent(applicationContext, MainActivity::class.java).apply {

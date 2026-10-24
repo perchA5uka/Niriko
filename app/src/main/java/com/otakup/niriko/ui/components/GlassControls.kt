@@ -3,6 +3,7 @@ package com.otakup.niriko.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -36,12 +38,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kyant.shapes.Capsule
 import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.util.RatingFeedbackPolicy
 
@@ -49,7 +60,8 @@ import com.otakup.niriko.util.RatingFeedbackPolicy
  * 液态玻璃控件（开关 / 滑块 / 分段容器）。
  *
  * 材质：一律复用 [appleGlassCard]（无卡片 backdrop 时自动退化为静态玻璃，含发光边 / 内厚度）。
- * 形状：圆角全部来自 [NirikoShapes] 令牌，组件内不再写圆角魔数。
+ * 形状：容器类圆角仍来自 [NirikoShapes] 令牌；胶囊类控件（开关 / 进度条）自 B6 起用内置
+ * [com.kyant.shapes.Capsule]（连续曲率胶囊，与 kyant 上游控件同一几何口径）。
  *
  * 本轮（B5）只替换**视觉层**（轨道 / 圆钮 / 高光的绘制方式，参考 Kyant0/AndroidLiquidGlass 的
  * 控件样例）：开关的轨道选中时着色、圆钮改白芯 + 投影；滑块的已选区间改主题色渐变、
@@ -57,7 +69,10 @@ import com.otakup.niriko.util.RatingFeedbackPolicy
  */
 
 /**
- * 液态玻璃开关（P3 收藏编辑 sheet）：玻璃胶囊底 + 着色轨道 + 白色圆钮。
+ * 液态玻璃开关：玻璃胶囊底 + 着色轨道 + 白色圆钮。
+ *
+ * 使用方：收藏编辑 sheet 的「私密收藏」，以及设置页的**全部**开关行
+ * （[com.otakup.niriko.ui.settings.SettingsSwitchRow]，B6 起替代 M3 Switch）。
  *
  * 视觉：轨道 = appleGlassCard 玻璃底板 + 选中态强调色填充（动画过渡）；
  * 圆钮 = 白芯 + 柔和投影（保持玻璃上的对比度，深色模式同样可读）。
@@ -74,10 +89,12 @@ fun GlassToggle(
     val trackHeight = 30.dp
     val thumbSize = 24.dp
     val pad = 3.dp
-    val shape = NirikoShapes.capsule(trackHeight)
+    // 形状用内置 Shapes 的 Capsule（连续曲率胶囊）：与 kyant 上游开关同一几何口径，
+    // 也让「玻璃控件形状」从 RoundedCornerShape 世界收敛到一套库上。
+    val shape: Shape = Capsule()
     val thumbOffset by animateDpAsState(
         // 圆钮滑动区间 = 内缩 pad 后的轨道区域，两端各留 pad（原 checked 端会越出玻璃胶囊外沿）。
-        targetValue = if (checked) trackWidth - thumbSize - pad * 2 else 0.dp,
+        targetValue = glassToggleThumbOffset(trackWidth, thumbSize, pad, checked),
         animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f),
         label = "glassToggleThumb",
     )
@@ -90,7 +107,14 @@ fun GlassToggle(
         modifier = modifier
             .width(trackWidth)
             .height(trackHeight)
+            // disabled 必须看得见差异（M3 Switch 自带该反馈，自绘件要显式给）
+            .graphicsLayer { alpha = if (enabled) 1f else 0.38f }
             .appleGlassCard(shape = shape)
+            // 换掉 M3 Switch 后必须自己补 Role.Switch + 开关状态，否则 TalkBack 只剩「按钮」
+            .semantics {
+                role = Role.Switch
+                toggleableState = ToggleableState(checked)
+            }
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(pad),
         contentAlignment = Alignment.CenterStart,
@@ -336,3 +360,67 @@ fun GlassRatingSlider(
         )
     }
 }
+
+// ==================== 进度条 ====================
+
+/**
+ * 开关圆钮的滑动位移（纯函数，便于 JVM 单测穷举）。
+ *
+ * 为什么单独抽出来：位移量是「轨道宽 − 圆钮 − 两侧内缩」，改任一个尺寸都要重新算；
+ * 旧实现把这算式写在 `animateDpAsState` 的 targetValue 里，测试只能靠肉眼看。
+ */
+internal fun glassToggleThumbOffset(trackWidth: Dp, thumbSize: Dp, pad: Dp, checked: Boolean): Dp =
+    if (checked) (trackWidth - thumbSize - pad * 2).coerceAtLeast(0.dp) else 0.dp
+
+/**
+ * 进度值收敛到 0..1（纯函数）。NaN（视图层除零得来）按 0 处理，
+ * 否则 `fillMaxWidth(NaN)` 会抛 IllegalArgumentException。
+ */
+internal fun progressFraction(progress: Float): Float =
+    if (progress.isNaN()) 0f else progress.coerceIn(0f, 1f)
+
+/**
+ * 液态玻璃进度条（替代 Material3 `LinearProgressIndicator`）。
+ *
+ * 为什么不直接用 M3 的：它的高度 / 圆角 / 轨道色由各调用点各自传（6dp / 8dp / 默认 4dp、
+ * `shapes.small` 与默认方角混用），同屏能出现三种形态；这里固定「胶囊轨道 + 主题色填充」，
+ * 圆角来自内置 Shapes 的 `Capsule()`，与玻璃开关同一几何口径。
+ *
+ * @param progress 0..1；越界与 NaN 会被 [progressFraction] 收敛
+ * @param height 轨道高度（历史口径：收藏卡与统计坚持 6dp、详情成就条 8dp）
+ * @param color 可传状态色（统计页按状态分组着色）
+ */
+@Composable
+fun GlassProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    height: Dp = 8.dp,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+) {
+    val target = progressFraction(progress)
+    val reduceMotion = LocalReduceMotion.current
+    val animated by animateFloatAsState(
+        targetValue = target,
+        // 进度填充属于「效果类」动效（颜色/尺寸占比），减少动态效果时直接跳变
+        animationSpec = if (reduceMotion) snap() else NirikoMotionSpecs.effectsDefault(),
+        label = "glassProgress",
+    )
+    val shape = remember { Capsule() }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(shape)
+            .background(trackColor),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(animated)
+                .fillMaxHeight()
+                .clip(shape)
+                .background(color),
+        )
+    }
+}
+

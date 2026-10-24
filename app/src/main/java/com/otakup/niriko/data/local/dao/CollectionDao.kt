@@ -60,6 +60,20 @@ interface CollectionDao {
     @Query("SELECT COUNT(*) FROM collections")
     fun observeCount(): Flow<Int>
 
+    // 数据体检（C-1）用的只读计数：只 COUNT，不加索引、不改表。
+    @Query("SELECT COUNT(*) FROM collections")
+    suspend fun countAll(): Int
+
+    @Query(
+        "SELECT COUNT(*) FROM collections " +
+            "WHERE (watchedEpisodes IS NULL OR watchedEpisodes <= 0) " +
+            "AND (watchedVolumes IS NULL OR watchedVolumes <= 0)",
+    )
+    suspend fun countWithoutProgress(): Int
+
+    @Query("SELECT COUNT(*) FROM collections WHERE rating IS NULL OR rating <= 0")
+    suspend fun countWithoutRating(): Int
+
     @Transaction
     @Query("SELECT * FROM collections ORDER BY updateTime DESC")
     fun observeAllWithSubject(): Flow<List<CollectionWithSubject>>

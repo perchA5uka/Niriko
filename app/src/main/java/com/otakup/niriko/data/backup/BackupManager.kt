@@ -176,6 +176,12 @@ class BackupManager(
      * 默认模式为全覆盖（清空现有数据后导入）。
      */
     suspend fun importFromJson(jsonString: String, merge: Boolean = false): ImportResult {
+        // C-3：先给「即将覆盖/合并前的现有数据」留一份后悔药。
+        // 这里能拿到的最接近现场的数据是导入文件本身（含各表全量），tag 区分覆盖/合并。
+        com.otakup.niriko.data.snapshot.SnapshotRuntime.preflight(
+            jsonString,
+            tag = if (merge) "import-merge" else "import-restore",
+        )
         val root = try {
             json.decodeFromJsonElement<JsonObject>(json.parseToJsonElement(jsonString))
         } catch (e: Exception) {
@@ -361,6 +367,8 @@ class BackupManager(
         put("subjectId", JsonPrimitive(c.subjectId))
         put("status", JsonPrimitive(c.status.name))
         c.watchedEpisodes?.let { put("watchedEpisodes", JsonPrimitive(it)) }
+        // A-D3：卷进度（书籍/漫画）此前没进备份 —— 导出→清数据→导入后卷进度归零
+        c.watchedVolumes?.let { put("watchedVolumes", JsonPrimitive(it)) }
         c.rating?.let { put("rating", JsonPrimitive(it.toDouble())) }
         c.startDate?.let { put("startDate", JsonPrimitive(it.toString())) }
         c.finishDate?.let { put("finishDate", JsonPrimitive(it.toString())) }
@@ -455,7 +463,6 @@ class BackupManager(
         put("showSearchSuggestions", JsonPrimitive(s.showSearchSuggestions))
 
         // 数据源
-        put("activeDataSourceId", JsonPrimitive(s.activeDataSourceId))
         put("bangumiEndpoint", JsonPrimitive(s.bangumiEndpoint.name))
         put("steamApiKey", JsonPrimitive(s.steamApiKey))
         put("steamId64", JsonPrimitive(s.steamId64))
@@ -546,6 +553,8 @@ class BackupManager(
                 subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@map null,
                 status = o["status"]?.jsonPrimitive?.content?.let { try { WatchStatus.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
                 watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
+                // A-D3：旧备份（≤v4）没有这个键 → null，不影响其它字段
+                watchedVolumes = o["watchedVolumes"]?.jsonPrimitive?.content?.toIntOrNull(),
                 rating = o["rating"]?.jsonPrimitive?.content?.toFloatOrNull(),
                 startDate = o["startDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
                 finishDate = o["finishDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
@@ -730,7 +739,6 @@ class BackupManager(
             showSearchSuggestions = o["showSearchSuggestions"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showSearchSuggestions,
 
             // 数据源
-            activeDataSourceId = o["activeDataSourceId"]?.jsonPrimitive?.content ?: defaults.activeDataSourceId,
             bangumiEndpoint = o["bangumiEndpoint"]?.jsonPrimitive?.content?.let { n ->
                 try { BangumiEndpoint.valueOf(n) } catch (_: Exception) { null }
             } ?: defaults.bangumiEndpoint,
@@ -775,12 +783,15 @@ class BackupManager(
 
     companion object {
         /**
-     * 备份格式版本（F09 起为 4）。
+     * 备份格式版本（A-D3 起为 5）。
      *
      * v3 → v4：新增 `libraryFolders`（作品库自定义分区）与每个分区下的 `members`。
-     * 旧版本备份（≤3）没有这两个字段 → 解析成空列表，导入照常成功（不视为错误）。
+     * v4 → v5：collections 增加 `watchedVolumes`（书籍/漫画卷进度）。
+     * 旧版本备份缺这些字段 → 解析成空/null，导入照常成功（不视为错误）；
+     * 反过来，旧版 App 读 v5 备份会被 [importFromJson] 的版本校验**显式拒绝**，
+     * 不会静默丢字段。
      */
-    private const val EXPORT_VERSION = 4
+    private const val EXPORT_VERSION = 5
         private val APP_VERSION: String = com.otakup.niriko.BuildConfig.VERSION_NAME
         private const val TAG = "BackupManager"
     }

@@ -58,6 +58,24 @@ object NirikoShapes {
     /** 小控件（输入框、徽标、小按钮）圆角（12dp）。 */
     val Control: Dp = 12.dp
 
+    /**
+     * 底部弹层 / 面板的**顶部**圆角（24dp）。
+     *
+     * 口径来源：`ui/components/NirikoNonModalSheet.kt` 的 `RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)`，
+     * 以及 B7 表面清单里弹层类的统一目标值。B7a 只建 token、**不替换调用点**，
+     * 因此现有界面观感不变；B7e（与 B9 合并）再切过来。
+     */
+    val Sheet: Dp = 24.dp
+
+    /**
+     * 分组列表内「行」的小圆角（4dp）。
+     *
+     * 口径来源：`ui/settings/SettingsGroup.kt:61` 的 `RowInnerRadius`。
+     * 与 [Card] 配对使用：组容器用 [Card]（20dp），行在未按压/非首末行时用 [RowInner]（4dp），
+     * 按压时 morph 到 [Card] —— 该 morph 动画就是设置页现在的按压反馈。
+     */
+    val RowInner: Dp = 4.dp
+
     /** 四档令牌 → [Shape] 的线性圆角映射（纯映射，无副作用）。 */
     fun rounded(radius: Dp): Shape = RoundedCornerShape(radius)
 

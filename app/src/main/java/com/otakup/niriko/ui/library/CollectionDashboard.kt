@@ -42,6 +42,13 @@ fun CollectionDashboard(
         if (stats.totalWatchedEpisodes > 0) {
             DashboardChip("累计 ${stats.totalWatchedEpisodes} 集")
         }
+        // 游戏时长与阅读卷数是不同量纲，各自成颗胶囊，不再并进"集"
+        if (stats.gameMinutes > 0) {
+            DashboardChip("游戏 ${formatPlaytime(stats.gameMinutes)}")
+        }
+        if (stats.readUnits > 0) {
+            DashboardChip("已读 ${stats.readUnits} 卷")
+        }
         if (stats.completionRate > 0f) {
             DashboardChip("完成率 %.0f%%".format(stats.completionRate * 100))
         }
@@ -49,6 +56,14 @@ fun CollectionDashboard(
             DashboardChip("${status.label} $count", color = MaterialTheme.colorScheme.secondary)
         }
     }
+}
+
+/** 游戏分钟 → 顶栏文案：不足 1 小时给分钟，否则给一位小数小时（50.0 → 50）。 */
+private fun formatPlaytime(minutes: Int): String {
+    if (minutes < 60) return "${minutes} 分钟"
+    val hours = minutes / 60.0
+    val text = "%.1f".format(hours).removeSuffix(".0")
+    return "$text 小时"
 }
 
 @Composable
@@ -87,6 +102,8 @@ private fun CollectionDashboardPreview() {
                 totalCount = 128,
                 averageRating = 8.4,
                 totalWatchedEpisodes = 350,
+                gameMinutes = 3000,
+                readUnits = 42,
                 completionRate = 0.65f,
                 statusCounts = mapOf(
                     com.otakup.niriko.data.model.WatchStatus.PLAN_TO_WATCH to 20,

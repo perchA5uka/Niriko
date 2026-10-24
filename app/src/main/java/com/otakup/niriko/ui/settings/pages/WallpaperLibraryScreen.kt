@@ -56,6 +56,7 @@ import com.otakup.niriko.ui.settings.SettingsSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.settings.SingleChoiceDialog
 import com.otakup.niriko.util.WallpaperPage
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
@@ -252,6 +253,9 @@ fun WallpaperLibraryContent(
     acting?.let { entry ->
         AlertDialog(
             onDismissRequest = { acting = null },
+            // B7d：长按操作弹窗（含「删除」）统一 24dp 圆角 + 表面色 token
+            shape = RoundedCornerShape(NirikoShapes.Sheet),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text(entry.name.ifBlank { "壁纸" }) },
             text = {
                 Column {

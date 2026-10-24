@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.snapshotFlow
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
+import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.data.model.search.TrendingMode
 import com.otakup.niriko.navigation.TabReselectSignal
 import com.otakup.niriko.navigation.TopLevelDestination
@@ -100,7 +101,8 @@ fun DiscoverGridPane(
     }
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize(),
+        // B11-Step1：补上滚动上报（漏报会让「Dock 藏了、内容还在滚」）
+        modifier = modifier.fillMaxSize().reportBottomBarScroll(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topInset + 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

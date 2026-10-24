@@ -5,7 +5,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.otakup.niriko.data.calculator.CalendarRangeCalculator
+import com.otakup.niriko.data.calculator.CatchUpCalculator
+import com.otakup.niriko.data.calculator.HygieneCalculator
 import com.otakup.niriko.data.calculator.StatsCalculator
+import com.otakup.niriko.data.calculator.StatsTonightCalculator
+import com.otakup.niriko.data.calculator.UpcomingAiringCalculator
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
@@ -388,8 +392,14 @@ class StatsViewModel(
 
     // ==================== 统计计算 ====================
 
-    /** 基础统计缓存：仅随 items 变化才重算（切月份/模式/放送刷新不重复计算）。 */
+    /**
+     * 基础统计缓存：仅随 items 与集数据变化才重算（切月份/模式/放送刷新不重复计算）。
+     *
+     * 缓存键必须并入 episodesBySubject：时长要靠每集真实 durationSeconds，
+     * 而它是异步预取的——只按 items 签名会让"预取完成后时长仍然停在第一版"。
+     */
     private var baseItemsSignature: Int = 0
+    private var baseEpisodesSignature: Int = 0
     private var cachedBaseStats: StatsUiState? = null
 
     private fun computeStats(
@@ -404,7 +414,7 @@ class StatsViewModel(
         monthState: BroadcastMonthState,
     ): StatsUiState {
         return try {
-            val base = computeBaseStats(items)
+            val base = computeBaseStats(items, episodesBySubject)
             val (rangeStart, rangeEnd) = CalendarRangeCalculator.visibleRange(anchorDate, expanded)
             val calendarDayEvents = StatsCalculator.computeCalendarEventsForRange(
                 items, rangeStart, rangeEnd, mode, broadcast, seasonal, episodesBySubject,
@@ -419,6 +429,25 @@ class StatsViewModel(
                     if (eventCount == 0) BroadcastMonthStatus.EMPTY else BroadcastMonthStatus.SUCCESS
                 else monthState.status,
             )
+            // 「今晚 / 接下来七天 / 漏看 / 健康度」四块都是纯派生：只读 items + 放送缓存 + 每集数据，
+            // 不额外发请求。七天事件与日历共用 computeCalendarEventsForRange，口径不会分叉。
+            val todayDate = today()
+            val upcomingEvents = UpcomingAiringCalculator.events(
+                items = items,
+                today = todayDate,
+                broadcast = broadcast,
+                seasonal = seasonal,
+                episodesBySubject = episodesBySubject,
+            )
+            val lags = CatchUpCalculator.lagging(items, episodesBySubject, todayDate)
+            val tonight = StatsTonightCalculator.tonight(items, todayDate, upcomingEvents, lags, episodesBySubject)
+            val upcomingDays = UpcomingAiringCalculator.days(
+                events = upcomingEvents,
+                items = items,
+                today = todayDate,
+                episodesBySubject = episodesBySubject,
+            )
+            val hygiene = HygieneCalculator.report(items, nowMillis())
             base.copy(
                 calendarYear = anchorMonth.year, calendarMonth = anchorMonth.monthValue,
                 calendarAnchorDate = anchorDate, calendarExpanded = expanded,
@@ -427,6 +456,10 @@ class StatsViewModel(
                 broadcastError = broadcastError,
                 selectedBroadcastMonth = selectedMonth,
                 episodesBySubject = episodesBySubject,
+                tonight = tonight,
+                upcoming = upcomingDays,
+                lagging = lags,
+                hygiene = hygiene,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Stats calculation failed", e)
@@ -445,16 +478,21 @@ class StatsViewModel(
         const val MAX_SEASONAL_MONTHS = 24
     }
 
-    /** 基础统计：按 items 内容签名缓存，收藏未变化时直接复用上次结果。 */
-    private fun computeBaseStats(items: List<CollectionWithSubject>): StatsUiState {
+    /** 基础统计：按 items 与集数据签名缓存，两者都没变时直接复用上次结果。 */
+    private fun computeBaseStats(
+        items: List<CollectionWithSubject>,
+        episodesBySubject: Map<Long, List<EpisodeInfo>>,
+    ): StatsUiState {
         val signature = items.hashCode()
+        val episodesSignature = episodesBySubject.hashCode()
         val cached = cachedBaseStats
-        if (signature == baseItemsSignature && cached != null) {
+        if (signature == baseItemsSignature && episodesSignature == baseEpisodesSignature && cached != null) {
             return cached
         }
-        return StatsCalculator.computeStats(items).also {
+        return StatsCalculator.computeStats(items, episodesBySubject).also {
             cachedBaseStats = it
             baseItemsSignature = signature
+            baseEpisodesSignature = episodesSignature
         }
     }
 }

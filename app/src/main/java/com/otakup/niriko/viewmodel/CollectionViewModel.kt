@@ -3,6 +3,7 @@ package com.otakup.niriko.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.otakup.niriko.data.calculator.computeWatchTotals
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.model.CollectionStats
 import com.otakup.niriko.data.model.WatchStatus
@@ -138,11 +139,15 @@ class CollectionViewModel(
                 }
 
                 val ratingAvg = sorted.mapNotNull { it.collection.rating }.average()
+                // 顶栏与统计页共用同一个分流器：游戏写进 watchedEpisodes 的是分钟，不能当集数加
+                val watchTotals = computeWatchTotals(sorted)
                 val stats = CollectionStats(
                     totalCount = sorted.size,
                     statusCounts = sorted.groupBy { it.collection.status }.mapValues { it.value.size },
                     averageRating = if (ratingAvg.isNaN() || ratingAvg <= 0.0) 0.0 else ratingAvg,
-                    totalWatchedEpisodes = sorted.sumOf { it.collection.watchedEpisodes ?: 0 },
+                    totalWatchedEpisodes = watchTotals.videoEpisodes,
+                    gameMinutes = watchTotals.gameMinutes,
+                    readUnits = watchTotals.readUnits,
                     completionRate = if (sorted.isEmpty()) 0f
                     else sorted.count { it.collection.status == WatchStatus.COMPLETED }.toFloat() / sorted.size,
                 )

@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.otakup.niriko.data.model.SubjectCardDisplayModel
+import com.otakup.niriko.data.rank.RankDelta
 import com.otakup.niriko.ui.theme.NirikoTheme
 
 /**
@@ -25,6 +26,8 @@ fun SubjectResultCard(
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     modifier: Modifier = Modifier,
     pressTiltEnabled: Boolean = false,
+    /** 3.7：榜单行尾的 ▲▼（null = 不显示）。 */
+    rankDelta: RankDelta? = null,
 ) {
     UniversalSubjectCard(
         model = model,
@@ -35,6 +38,7 @@ fun SubjectResultCard(
         animatedVisibilityScope = animatedVisibilityScope,
         modifier = modifier,
         pressTiltEnabled = pressTiltEnabled,
+        rankDelta = rankDelta,
     )
 }
 

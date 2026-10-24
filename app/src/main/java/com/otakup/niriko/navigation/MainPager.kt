@@ -8,6 +8,9 @@ import androidx.compose.foundation.pager.PagerState
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.Dp
@@ -21,12 +24,27 @@ import com.otakup.niriko.ui.adaptive.NirikoNavSuite
 import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.screens.LibraryScreen
+import com.otakup.niriko.ui.screens.LibraryTopBar
+import com.otakup.niriko.ui.subject.DiscoverTopBar
+import com.otakup.niriko.ui.bottombar.LibraryControlsState
+import com.otakup.niriko.ui.bottombar.PagerTopBar
+import com.otakup.niriko.ui.bottombar.topBarSlotFor
+import com.otakup.niriko.ui.common.SearchViewModel
+import com.otakup.niriko.ui.components.LocalSearchGlassBackdrop
+import com.otakup.niriko.ui.common.LocalFloatingControls
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import com.otakup.niriko.ui.common.SearchPhase
+import com.otakup.niriko.ui.bottombar.floatingBarRestoreOnBlankTap
 import com.otakup.niriko.ui.screens.StatsScreen
 import com.otakup.niriko.ui.settings.SettingsScreen
 import com.otakup.niriko.ui.subject.SubjectSearchScreen
@@ -86,10 +104,64 @@ fun MainPager(
     // 底栏本身在捕获层之外 —— 因此不会出现「捕获层包含自己」的 RenderNode 自引用环。
     val pageBackdrop = rememberLayerBackdrop { drawContent() }
     val barBackdrop = rememberCombinedBackdrop(backdrop, pageBackdrop)
+
+    // ===== B8：状态提升（最小集）=====
+    // 两个页面的 ViewModel 提到 pager 顶层（owner 仍是 MAIN backStackEntry，实例与改造前相同），
+    // 让「页面内容」与「pager 外层的悬浮顶栏」共用同一份数据。
+    val app = navigationContext.nirikoApp
+    val libraryViewModel = viewModel<CollectionViewModel>(
+        factory = CollectionViewModelFactory(
+            collectionRepository = app.collectionRepository,
+            steamRepository = app.steamRepository,
+            libraryFolderDao = app.database.libraryFolderDao(),
+        ),
+    )
+    val discoverViewModel = viewModel<SubjectSearchViewModel>(
+        factory = SubjectSearchViewModelFactory(
+            subjectRepository = app.subjectRepository,
+            collectionRepository = app.collectionRepository,
+            searchHistoryDao = app.searchHistoryDao,
+            steamRepository = app.steamRepository,
+            subjectDao = app.subjectDao,
+            settingsDataStore = app.settingsDataStore,
+            refreshCoordinator = app.refreshCoordinator,
+            seasonalTrendingRepository = app.seasonalTrendingRepository,
+        ),
+    )
+    val libraryControls = rememberSaveable(saver = LibraryControlsState.Saver) { LibraryControlsState() }
+    val librarySearchVm = rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
+    val discoverSearchVm = rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
+    // 切页：收起离开页的搜索卡 + 收键盘，避免「在发现页残留作品库展开卡」
+    val chromeFocusManager = LocalFocusManager.current
+    val chromeKeyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(pagerState.settledPage) {
+        librarySearchVm.collapse()
+        discoverSearchVm.collapse()
+        chromeFocusManager.clearFocus()
+        chromeKeyboard?.hide()
+    }
+
+    // ===== B11-Step2/3：所有悬浮控件共用一个隐藏进度与一个空白点击恢复入口 =====
+    // task-25：真机反馈「底栏藏了顶栏没走」。顶栏不再依赖窗口层的 fraction（跨 CompositionLocal
+    // 读取在重组时序上不稳），改为直接由**同一个** FloatingControlsState.shown 驱动本地位移动画；
+    // 源仍是同一份状态，只多一个 220ms 的呈现动画（与 MainActivity 的同参数，视觉同步）。
+    val floatingControls = LocalFloatingControls.current
+    val topBarHideProgress by animateFloatAsState(
+        targetValue = if (floatingControls?.shown != false) 0f else 1f,
+        animationSpec = tween(durationMillis = 220),
+        label = "pagerTopBarHide",
+    )
+    val searchExpanded = librarySearchVm.phase != SearchPhase.COLLAPSED ||
+        discoverSearchVm.phase != SearchPhase.COLLAPSED
+    // 搜索表面展开期间强制显示并暂停自动隐藏（否则 200dp 卡会被移出屏幕）
+    LaunchedEffect(searchExpanded) { floatingControls?.forceShown(searchExpanded) }
+
     Box(modifier = modifier.fillMaxSize()) {
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // Step3：点空白恢复（Final-pass 观察，不消费事件、无全屏透明层）
+            .floatingBarRestoreOnBlankTap { floatingControls?.restore() }
             .layerBackdrop(pageBackdrop),
     ) {
     HorizontalPager(
@@ -108,17 +180,11 @@ fun MainPager(
         val pageSharedScope = if (page == pagerState.currentPage) sharedTransitionScope else null
         when (destination) {
             TopLevelDestination.Library -> {
-                val libraryViewModel = viewModel<CollectionViewModel>(
-                    factory = CollectionViewModelFactory(
-                        collectionRepository = app.collectionRepository,
-                        steamRepository = app.steamRepository,
-                        // F09：作品库自定义分区（导航条 / 加入分区 / 折叠）
-                        libraryFolderDao = app.database.libraryFolderDao(),
-                    ),
-                )
                 LibraryScreen(
                     windowTopInset = contentTopInset,
                     viewModel = libraryViewModel,
+                    controls = libraryControls,
+                    searchVm = librarySearchVm,
                     ambientActive = pagerState.settledPage == page && !pagerState.isScrollInProgress,
                     onNavigateToSearch = { navController.navigate("subject_search") },
                     onSubjectClick = openSubject,
@@ -131,21 +197,11 @@ fun MainPager(
                 )
             }
             TopLevelDestination.Discover -> {
-                val searchViewModel = viewModel<SubjectSearchViewModel>(
-                    factory = SubjectSearchViewModelFactory(
-                        subjectRepository = app.subjectRepository,
-                        collectionRepository = app.collectionRepository,
-                        searchHistoryDao = app.searchHistoryDao,
-                        steamRepository = app.steamRepository,
-                        subjectDao = app.subjectDao,
-                        settingsDataStore = app.settingsDataStore,
-                        refreshCoordinator = app.refreshCoordinator,
-                        seasonalTrendingRepository = app.seasonalTrendingRepository,
-                    ),
-                )
                 SubjectSearchScreen(
                     windowTopInset = contentTopInset,
-                    viewModel = searchViewModel,
+                    viewModel = discoverViewModel,
+                    hoistedSearchVm = discoverSearchVm,
+                    showOwnTopBar = false,
                     onSubjectClick = openSubject,
                     onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
                     // 第 6 轮 §5/§6：DiscoverViewModel（找条目 + 评分月刊）已整体删除
@@ -189,6 +245,32 @@ fun MainPager(
             }
         }
     }
+    }
+    // ===== B8：两页悬浮顶栏挂在 pager 外层（与底栏同级，不随页横向平移）=====
+    // 玻璃源沿用底栏的 barBackdrop（壁纸 + 本页内容层），页面内部的 provider 保持不动。
+    val topBarSlot = topBarSlotFor(pagerState.settledPage)
+    if (topBarSlot != null) {
+        CompositionLocalProvider(LocalSearchGlassBackdrop provides barBackdrop) {
+            PagerTopBar(
+                slot = topBarSlot,
+                windowTopInset = contentTopInset,
+                hideProgress = topBarHideProgress,
+                modifier = Modifier.align(Alignment.TopStart),
+                libraryContent = {
+                    LibraryTopBar(
+                        viewModel = libraryViewModel,
+                        controls = libraryControls,
+                        searchVm = librarySearchVm,
+                    )
+                },
+                discoverContent = {
+                    DiscoverTopBar(
+                        viewModel = discoverViewModel,
+                        searchVm = discoverSearchVm,
+                    )
+                },
+            )
+        }
     }
     // 手机 / 中等宽度：横向胶囊底栏挂在 MAIN 路由内容里 —— 预测性返回预览父页时，
     // 底栏会随父页一起被画出来（挂在窗口层则预览里没有它）。

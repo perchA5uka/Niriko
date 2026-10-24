@@ -28,15 +28,28 @@ import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.otakup.niriko.navigation.SETTINGS_APPEARANCE_ROUTE
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.navigation.SETTINGS_LIBRARY_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_SEARCH_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_DATASOURCE_ROUTE
@@ -95,6 +108,47 @@ private fun SettingsCategoryListScreen(
             modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp),
         )
         Spacer(Modifier.height(4.dp))
+
+        // 10.17 设置搜索：命中标题 / 说明 / 分组，结果置顶，点击直达分类页。
+        // 索引是显式表（见 SettingsSearchIndex.kt）——手写 Compose 设置页没有自描述能力，
+        // 但显式表可以被单测钉住「新分类忘了进索引」。
+        var searchQuery by rememberSaveable { mutableStateOf("") }
+        val searchIndex = remember { defaultSettingsIndex() }
+        val searchHits = remember(searchQuery) { searchSettings(searchIndex, searchQuery) }
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+            placeholder = { Text("搜索设置（标题 / 说明 / 分组）") },
+            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    TextButton(onClick = { searchQuery = "" }) { Text("清除") }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(NirikoShapes.Control),
+        )
+        if (searchQuery.isNotBlank()) {
+            SettingsGroupTitle(
+                "搜索结果",
+                description = if (searchHits.isEmpty()) "没有找到相关设置" else "共 ${searchHits.size} 项",
+            )
+            if (searchHits.isEmpty()) {
+                SettingsSplitGroup(content = listOf({
+                    SettingsInfoRow(
+                        icon = Icons.Outlined.Search,
+                        title = "没有找到这个设置",
+                        description = "试试「壁纸」「同步」「更新」「备份」等关键词",
+                    )
+                }))
+            } else {
+                SettingsSplitGroup(content = searchHits.map { hit ->
+                    { SettingsSearchResultRow(hit) { onNavigateToCategory(hit.entry.route) } }
+                })
+            }
+            Spacer(Modifier.height(8.dp))
+        }
 
         SettingsGroupTitle("偏好", description = "外观、收藏展示与搜索")
         SettingsSplitGroup(content = listOf(
@@ -251,3 +305,69 @@ private fun SettingsCategoryRow(
         )
     }
 }
+
+/**
+ * 搜索结果行：命中标题时把匹配片段标成主题色 + 加粗。
+ *
+ * 不复用 [SettingsCategoryRow]：后者只接受 String，而高亮需要 AnnotatedString；
+ * 这里只画「图标 + 高亮标题 + 分组面包屑 + chevron」，与分类行视觉一致。
+ */
+@Composable
+private fun SettingsSearchResultRow(
+    hit: SettingsSearchHit,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = highlightedTitle(hit),
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "${hit.entry.group} · ${hit.entry.pageTitle}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            imageVector = Icons.Outlined.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp),
+        )
+    }
+}
+
+/** 把命中区间染成主题色（越界区间会被裁掉，防脏数据把行渲染坏）。 */
+@Composable
+private fun highlightedTitle(hit: SettingsSearchHit): AnnotatedString {
+    val accent = MaterialTheme.colorScheme.primary
+    val title = hit.entry.title
+    return buildAnnotatedString {
+        append(title)
+        hit.ranges.forEach { range ->
+            val start = range.first.coerceIn(0, title.length)
+            val end = (range.last + 1).coerceIn(start, title.length)
+            if (end > start) {
+                addStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold), start, end)
+            }
+        }
+    }
+}
+

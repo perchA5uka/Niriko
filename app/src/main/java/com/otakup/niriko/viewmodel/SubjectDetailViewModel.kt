@@ -20,6 +20,8 @@ import com.otakup.niriko.data.repository.SteamRepository
 import com.otakup.niriko.data.repository.SubjectRepository
 import com.otakup.niriko.data.repository.VndbRepository
 import com.otakup.niriko.util.AniListIdParser
+import com.otakup.niriko.util.CollectionSavePolicy
+import com.otakup.niriko.util.CompletionProgressPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,7 +29,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -256,6 +261,16 @@ class SubjectDetailViewModel(
 
     private val completionFeedback = CompletionEvents()
     val completionEvents = completionFeedback.events
+
+    /**
+     * 保存成功事件：只在**写库成功**时发一次，编辑弹层据此自己收层。
+     *
+     * 为什么不放进 UiState：它是「一次动作」而不是「页面状态」，也不该被详情页快照缓存
+     * （真实快照用例要求 UiState 每个字段都被显式分类）；用一次性事件既能表达「成功才收层」，
+     * 又不会在旋转/重组后重放。
+     */
+    private val _recordSaved = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val recordSavedEvents: SharedFlow<Unit> = _recordSaved.asSharedFlow()
 
     /** F14：**进度写满**的独立通道（剧集区块的波浪点亮用，与状态完成的全屏庆祝分开）。 */
     val episodeCompletionEvents = completionFeedback.progressEvents
@@ -1284,18 +1299,17 @@ class SubjectDetailViewModel(
         val s = _uiState.value
         if (!s.isInCollection || s.collectionId == 0L || s.isUpdating) return
         collectionMutation++
-        val total = when (s.subject?.type) {
-            com.otakup.niriko.data.model.SubjectType.ANIME,
-            com.otakup.niriko.data.model.SubjectType.REAL -> s.subject?.totalEpisodes
-            com.otakup.niriko.data.model.SubjectType.BOOK,
-            com.otakup.niriko.data.model.SubjectType.MANGA -> s.subject?.volumes ?: s.subject?.totalEpisodes
-            else -> null
-        }
-        val newProgress = when (newStatus) {
-            WatchStatus.PLAN_TO_WATCH -> null
-            WatchStatus.COMPLETED -> total?.takeIf { it > 0 }
-            else -> s.watchedEpisodes
-        }
+        // 卷数不能写进 watchedEpisodes（A-D1 写入侧）：有卷写卷，没卷才写话。
+        // 判定集中在 CompletionProgressPolicy —— 统计侧把 watchedEpisodes 当「集数」，
+        // 把 24 卷写进去会让统计虚高 24 集。
+        val progressTarget = CompletionProgressPolicy.targetFor(
+            type = s.subject?.type,
+            status = newStatus,
+            totalEpisodes = s.subject?.totalEpisodes,
+            volumes = s.subject?.volumes,
+            currentEpisodes = s.watchedEpisodes,
+            currentVolumes = s.watchedVolumes,
+        )
         val newStart = if (newStatus == WatchStatus.WATCHING && s.startDate == null) LocalDate.now() else s.startDate
         val newFinish = if (newStatus == WatchStatus.COMPLETED && s.finishDate == null) LocalDate.now() else s.finishDate
         _uiState.update { it.copy(isUpdating = true) }
@@ -1303,7 +1317,8 @@ class SubjectDetailViewModel(
             val written = withContext(Dispatchers.IO) {
                 collectionRepository.update(CollectionEntity(
                     id = s.collectionId, subjectId = subjectId, status = newStatus,
-                    watchedEpisodes = newProgress, watchedVolumes = s.watchedVolumes,
+                    watchedEpisodes = progressTarget.watchedEpisodes,
+                    watchedVolumes = progressTarget.watchedVolumes,
                     isPrivate = s.isPrivate, rating = s.myRating,
                     personalTags = s.personalTags, personalImpression = s.personalImpression,
                     remark = s.remark, startDate = newStart, finishDate = newFinish,
@@ -1312,7 +1327,9 @@ class SubjectDetailViewModel(
                 ))
             }
             _uiState.update { it.copy(
-                currentStatus = newStatus, watchedEpisodes = newProgress,
+                currentStatus = newStatus,
+                watchedEpisodes = progressTarget.watchedEpisodes,
+                watchedVolumes = progressTarget.watchedVolumes,
                 startDate = newStart, finishDate = newFinish, isUpdating = false,
             ) }
             completionFeedback.onStatusWritten(subjectId, s.currentStatus, newStatus, written)
@@ -1322,7 +1339,8 @@ class SubjectDetailViewModel(
                     s.watchedEpisodes, s.watchedVolumes, s.subject?.totalEpisodes, s.subject?.volumes,
                 ),
                 com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
-                    newProgress, s.watchedVolumes, s.subject?.totalEpisodes, s.subject?.volumes,
+                    progressTarget.watchedEpisodes, progressTarget.watchedVolumes,
+                    s.subject?.totalEpisodes, s.subject?.volumes,
                 ),
                 s.subject?.type, written,
             )
@@ -1403,8 +1421,26 @@ class SubjectDetailViewModel(
                 type = s.subject?.type,
                 succeeded = written,
             )
-            _uiState.update { it.copy(isUpdating = false, snackbarMessage = "记录已保存") }
+            // 写库失败必须如实提示（改造前无条件写「记录已保存」，屏幕层还据此退页）；
+            // 收层信号只在成功时发一次，失败不得关层。
+            if (written) _recordSaved.tryEmit(Unit)
+            _uiState.update {
+                it.copy(
+                    isUpdating = false,
+                    snackbarMessage = CollectionSavePolicy.messageFor(written),
+                )
+            }
         }
+    }
+
+    /**
+     * 屏幕层消费完 Snackbar 后清空。
+     *
+     * 不清空的话，任何让消息重新参与组合的变化都可能把同一条提示再弹一次
+     * （改造前靠「保存即退页」掩盖了这个缺陷）。
+     */
+    fun clearSnackbarMessage() {
+        _uiState.update { it.copy(snackbarMessage = null) }
     }
 
     // ==================== 权威评分 + 每集评分（阶段 0–1）====================
