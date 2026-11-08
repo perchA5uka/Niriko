@@ -192,6 +192,7 @@ cd ~/workspace/Niriko
 
 ### 4.3 正式发布（仍在电脑上，10 分钟）
 
+0. 签名已收敛到仓库密钥：CI Secrets 里配了 `NIRIKO_KEYSTORE_BASE64` / `NIRIKO_KEYSTORE_PASSWORD` / `NIRIKO_KEY_ALIAS` / `NIRIKO_KEY_PASSWORD`，工作流会解出 keystore 并构建带签名的 `release` 包；本机 `keystore.properties` 指向同一把钥匙，本地 `assembleRelease` 产物与 CI 同签名。装包一律走 `ninstall`（见 §5）。
 1. 电脑上 `gradlew assembleRelease` 出正式包，按 `docs/release-vX.Y.Z.md` 写发布说明。
 2. 手机端打 tag 并推：`git tag v1.2.2 && git push origin v1.2.2`。
 3. GitHub 网页建 Release，上传 APK（与以前一致）。

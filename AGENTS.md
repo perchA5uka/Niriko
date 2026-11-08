@@ -49,4 +49,7 @@
 ## 5. 真机验证
 
 - 手机就是目标设备，已装 `com.otakup.niriko`。装新包后用 `mcp__phone__*` 操作与截图（截图能直接读进来判断）。
-- 签名提醒：手机上装的是 **release 签名**包。debug 包签名不同（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），要么用 CI 产出的 release 签名包，要么卸载重装（会丢本地数据，先做应用内备份/WebDAV 同步）。
+- **装包统一用 `ninstall`**（= `bash scripts/mobile/install-apk.sh`，参数是 APK 路径，默认取 `/sdcard/Download/DSH-Go/apk` 下最新包）。签名一致直接覆盖；不一致时它自己走「备份 → 卸载 → 安装 → 恢复数据」，不会丢收藏。
+- 签名已经收敛：仓库密钥由 GitHub Secrets（`NIRIKO_KEYSTORE_BASE64` 等四个）提供给 CI，本机 `keystore.properties` 指向同一把钥匙。所以 **CI 的 `--release` 包与手机已装包同签名**，日常迭代不需要再审一遍签名。
+- 不要再用裸 `adb install -r` 装包：这台小米 HyperOS 会直接回 `INSTALL_FAILED_USER_RESTRICTED: Invalid apk`（不是包的问题）。`ninstall` 已经改成「拷到 /data/local/tmp → root `pm install`」，绕开这个限制。
+- 签名变更（换钥匙）时 `ninstall` 会自动备份并恢复数据；恢复后按**新 uid** chown、按新装目录的 categories 递归 chcon —— 这两步缺一个，应用启动就会报 SQLite `Permission denied`。
