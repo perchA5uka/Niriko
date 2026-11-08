@@ -1,0 +1,45 @@
+# Niriko · DSH 手机端协作须知
+
+作者 perchA5uka。Android 应用：Kotlin + Jetpack Compose + Room（23 表，v32）。
+仓库：https://github.com/perchA5uka/Niriko
+手机端构建与验证的完整流程见 **docs/mobile-dev-flow.md**（遇到流程问题先读它，不要猜）。
+
+## 0. 位置与边界
+
+- 仓库在本机：`/root/workspace/Niriko`。当前目录不是它时，先 `cd /root/workspace/Niriko` 再动手。
+- 本机是 Android 手机（Android 17 / SDK 37 / arm64），不是桌面 Linux；没有 x86 工具链，不要假设能跑 `./gradlew`（原因见流程文档 §6）。
+- 产出文件（APK、日志、截图）放 `/sdcard/Download/DSH-Go/`；**不要**把产物、密钥、临时文件提交进仓库。
+
+## 1. 验证顺序（改完代码必须走一遍）
+
+1. 补/更新 JVM 单测：`app/src/test/...`（README「开发约定」要求新增逻辑必须带单测）。
+2. 静态自查：`git diff`、`git status`，确认没有夹带无关文件。
+3. 推送后等 GitHub Actions 绿（`scripts/mobile/ci.sh watch`）。手机端不本地编译，**CI 绿是唯一的编译级验证**。
+4. 装包到本机肉眼验证（`scripts/mobile/ci.sh apk`，然后安装）；能用手机工具截图就截图判断。
+5. 数据库迁移、签名、发布包这类只在真机/发布链路才暴露的问题，必须按流程文档 §5 单独确认。
+
+## 2. 提交与分支
+
+- 中文 conventional commit：`feat(ui): …`、`fix(sync): …`、`docs: …`、`test: …`、`chore: …`。一个改动一个提交，正文写「为什么改 + 怎么验证的」。
+- 小改动直接推 `main`；跨多文件、动数据库、改公共组件这类走 `feat/xxx` 分支 + PR，CI 绿再合。
+- 禁止 `git push --force` 到 `main`；`main` 上历史即发布史（tag v1.0.0…v1.2.1）。
+- 只改了文档/说明时，commit message 里加 `[skip ci]` 省一次 6 分钟构建。
+
+## 3. 代码约定（细节以 README「开发约定」为准）
+
+- 无 DI 框架：依赖在 `NirikoApplication` 装配，ViewModel 用手写 Factory。
+- 纯函数优先：统计 / 排序 / 匹配 / 在播判定等逻辑抽成不依赖 Android 的函数。
+- KDoc 用「」而不是反引号。
+- Room 迁移的 DDL 必须与 `app/schemas` 导出的 `createSql` 逐字一致；`app/schemas/` 随仓库提交。
+- 引入新第三方依赖前先问用户。
+
+## 4. 读代码的姿势（手机上下文预算有限）
+
+- `README.md`（约 50KB）和 `docs/` 下的大文档**不要整篇读**：先 grep/rg 定位，再只读命中的片段。
+- 713 个 Kotlin 文件，先按文件名/符号搜索缩小范围；跨模块的大范围探索交给 subagent，别把整文件贴进对话。
+- 改完用 `git diff` 自查，别复述整个文件。
+
+## 5. 真机验证
+
+- 手机就是目标设备，已装 `com.otakup.niriko`。装新包后用 `mcp__phone__*` 操作与截图（截图能直接读进来判断）。
+- 签名提醒：手机上装的是 **release 签名**包。debug 包签名不同（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），要么用 CI 产出的 release 签名包，要么卸载重装（会丢本地数据，先做应用内备份/WebDAV 同步）。
