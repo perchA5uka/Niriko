@@ -34,6 +34,12 @@
 - Room 迁移的 DDL 必须与 `app/schemas` 导出的 `createSql` 逐字一致；`app/schemas/` 随仓库提交。
 - 引入新第三方依赖前先问用户。
 
+## 3.5 新功能前置调研（用户要求，2026-11-08）
+
+- 写任何新功能之前，**先查有没有现成库/现成实现**：Maven Central（search.maven.org 检索接口）、GitHub（按 star 排序搜 Kotlin/Compose）、AndroidX 官方组件。
+- 调研结论写进对应的 docs 计划文件：候选清单、适用性、维护状态（最后发布年份/是否有 Compose 版本）、为什么用或不用。没有可用库时写明「自研」的具体理由与工作量。
+- 只搜一两个关键词就下结论不算数；至少覆盖「功能名 + Compose / Android / Kotlin」三类关键词。
+
 ## 4. 读代码的姿势（手机上下文预算有限）
 
 - `README.md`（约 50KB）和 `docs/` 下的大文档**不要整篇读**：先 grep/rg 定位，再只读命中的片段。
