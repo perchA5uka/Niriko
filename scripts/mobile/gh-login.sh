@@ -4,11 +4,11 @@
 # 用法：bash scripts/mobile/gh-login.sh
 # 流程：脚本给出 8 位设备码 → 手机浏览器打开 https://github.com/login/device → 输入码并授权
 #       → 脚本自动把 token 交给 gh 保存（~/.config/gh/hosts.yml，权限 600）。
-# scopes：repo（看自己仓库的 Actions 日志 / artifact / release 需要它）
+# scopes：repo,read:org（Actions 日志 / artifact / release 与 gh 的 token 校验都需要）
 set -euo pipefail
 
 CLIENT_ID="178c6fc778ccc68e1d6a"   # GitHub CLI 的公开 OAuth client id（设备码流程）
-SCOPE="${NIRIKO_GH_SCOPE:-repo}"
+SCOPE="${NIRIKO_GH_SCOPE:-repo,read:org}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "缺少命令 $1" >&2; exit 1; }; }
 need curl
