@@ -37,8 +37,20 @@ ROOT() { bash "$ROOT_SH" "$1"; }
 log "设备：$(adb -s "$ADB_SERIAL" shell getprop ro.product.model | tr -d '\r')"
 log "安装包：$APK（$(du -h "$APK" | cut -f1)）"
 
+# 手机侧 root 看不到 proot 里的路径（/root/workspace 是 DSH 的根文件系统，不是 Android 的），
+# 所以任何不在 /sdcard 下的包都要先落一份到手机存储，后续 root 侧一律用 HOST_APK。
+case "$APK" in
+  /sdcard/*) HOST_APK="$APK" ;;
+  *)
+    mkdir -p "$BK_ROOT/apk"
+    HOST_APK="$BK_ROOT/apk/$(basename "$APK")"
+    cp -f "$APK" "$HOST_APK" || die "复制到 $HOST_APK 失败"
+    log "  · 已复制到 $HOST_APK（root 侧可见）"
+    ;;
+esac
+
 # ---- 1. root 就地安装（签名一致时最短路径） --------------------------------
-ROOT "cp '$APK' '$TMP_APK' && chmod 0644 '$TMP_APK'" >/dev/null || die "拷包到 $TMP_APK 失败"
+ROOT "cp '$HOST_APK' '$TMP_APK' && chmod 0644 '$TMP_APK'" >/dev/null || die "拷包到 $TMP_APK 失败"
 OUT="$(ROOT "pm install -r -d '$TMP_APK'")"
 if printf '%s' "$OUT" | grep -q 'Success'; then
   log "✓ 签名一致，已就地覆盖安装（数据未动）"
