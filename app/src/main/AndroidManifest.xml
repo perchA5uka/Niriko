@@ -25,6 +25,7 @@
         <package android:name="tv.danmaku.bili" />
         <package android:name="com.valvesoftware.android.steam.community" />
         <package android:name="com.czy0729.bangumi" />
+        <package android:name="com.predidit.kazumi" />
         <package android:name="com.netease.cloudmusic" />
         <package android:name="com.tencent.qqmusic" />
         <package android:name="eu.kanade.tachiyomi" />

@@ -153,6 +153,8 @@ import coil.Coil
 import coil.request.ImageRequest
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import com.otakup.niriko.data.local.entity.SubjectEntity
@@ -227,6 +229,7 @@ import com.otakup.niriko.util.RichTextParser
 import com.otakup.niriko.util.TopFadePolicy
 import com.otakup.niriko.util.TitleResolver
 import com.otakup.niriko.util.PortalLauncher
+import com.otakup.niriko.util.portalLaunchPlan
 import com.otakup.niriko.util.VolumeProgressPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -254,7 +257,15 @@ private data class PortalUiItem(
     val label: String,
     val subtitle: String?,
     val actions: List<PortalAction>,
+    /** 仅拉起型目标（如 Kazumi）要复制到剪贴板的标题；null 表示不需要。 */
+    val copyTitle: String? = null,
 )
+
+/** 把标题写进剪贴板：Kazumi 这类没有深链的目标，跳过去之前先给用户一个可粘贴的标题。 */
+private fun copyPortalTitle(context: Context, text: String) {
+    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    manager.setPrimaryClip(ClipData.newPlainText("title", text))
+}
 
 /** 组装传送门可展示项：按作品类型过滤，缺失 ID 的目标自动隐藏。 */
 private fun buildPortalUiItems(subject: SubjectEntity, state: SubjectDetailUiState, context: Context): List<PortalUiItem> {
@@ -263,10 +274,12 @@ private fun buildPortalUiItems(subject: SubjectEntity, state: SubjectDetailUiSta
         .mapNotNull { target ->
             val actions = target.resolve(subject, ids)
             if (actions.isEmpty()) return@mapNotNull null
+            val plan = portalLaunchPlan(actions, subject.displayTitle)
             PortalUiItem(
                 label = target.label,
-                subtitle = portalSubtitle(actions),
+                subtitle = if (plan.copyToClipboard != null) "拉起 App · 自动复制标题" else portalSubtitle(actions),
                 actions = actions,
+                copyTitle = plan.copyToClipboard,
             )
         }
         // 未安装的「仅拉起」目标（如 Mihon）自动隐藏；带网页兜底的目标必然可启动
@@ -408,6 +421,7 @@ fun SubjectDetailScreen(
                 onDismissDoubanCandidates = viewModel::clearDoubanCandidates,
             ),
             onPortalUnavailable = { coroutineScope.launch { snackbarHostState.showSnackbar("未安装或无法打开") } },
+            onPortalHint = { message -> coroutineScope.launch { snackbarHostState.showSnackbar(message) } },
             sharedTransitionScope = sharedTransitionScope,
             animatedVisibilityScope = animatedVisibilityScope,
             modifier = Modifier.padding(innerPadding),
@@ -491,6 +505,8 @@ private fun SubjectDetailContent(
     onClearAnilistManualMessage: () -> Unit = {},
     onRetryAnilist: () -> Unit = {},
     onPortalUnavailable: () -> Unit = {},
+    /** 传送门跳转后的补偿提示（例如「已复制标题」）；默认不提示。 */
+    onPortalHint: (String) -> Unit = {},
     ratingCallbacks: RatingSectionCallbacks = RatingSectionCallbacks(),
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
@@ -810,8 +826,12 @@ private fun SubjectDetailContent(
                                     },
                                     onClick = {
                                         portalMenuExpanded = false
+                                        val copied = item.copyTitle
+                                        if (copied != null) copyPortalTitle(context, copied)
                                         if (!PortalLauncher.launch(context, item.actions)) {
                                             onPortalUnavailable()
+                                        } else if (copied != null) {
+                                            onPortalHint("已复制「$copied」，粘贴即可搜索")
                                         }
                                     },
                                 )

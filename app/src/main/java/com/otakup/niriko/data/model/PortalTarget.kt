@@ -65,6 +65,15 @@ object PortalRegistry {
             }
         },
         PortalTarget(
+            id = "kazumi",
+            label = "Kazumi",
+            subjectTypes = setOf(SubjectType.ANIME),
+        ) { _, _ ->
+            // Kazumi 没有注册任何自定义 scheme（读其源码确认），外部无法传参，只能拉起；
+            // 复制标题的补偿动作在 util/PortalLaunchPlan.kt 里算，UI 负责写剪贴板。
+            listOf(PortalAction.LaunchPackage("com.predidit.kazumi"))
+        },
+        PortalTarget(
             id = "bangumi",
             label = "Bangumi App",
             subjectTypes = setOf(SubjectType.ANIME, SubjectType.MANGA, SubjectType.BOOK, SubjectType.GAME, SubjectType.MUSIC, SubjectType.REAL),
