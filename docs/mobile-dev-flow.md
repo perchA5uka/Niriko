@@ -15,9 +15,9 @@
 | 打包产物 | **GitHub Actions artifact** | 每次 push 自动上传 `niriko-debug-apk`；配了签名 secrets 再多一个 `niriko-release-apk` |
 | 装机验证 / 截图回归 | **手机** | 手机就是目标设备（Android 17 / SDK 37），装完直接看、直接截图给 AI |
 | 发布签名 / 正式 Release | **电脑**（偶尔） | keystore 留在电脑；也可以让 CI 用 secrets 打同签名包 |
-| 手机本地编译 | 可选实验 | 见 §6：`aapt2` 只有 x86_64 版是唯一硬障碍 |
+| 手机本地编译 | 可行（已实测） | 见 §6：用 qemu 转译官方 aapt2，`assembleDebug` 约 6 分钟。默认仍走 CI，本地用于快速反复验证 |
 
-**为什么编译不放手机**：Google 的 `aapt2` 只发布 x86_64 ELF（本机实测：`aapt2-8.13.2-linux.jar` 内是 `ELF 64-bit x86-64`），aarch64 上 `./gradlew` 会死在 `processDebugResources`；`testDebugUnitTest` 因为 `isIncludeAndroidResources = true` 也要过 aapt2，所以单测同样跑不了。CI runner 是 ubuntu x86_64，天然没有这个问题。
+**为什么默认编译仍放云端**：Google 的 `aapt2` 只发布 x86_64 ELF（本机实测：`aapt2-8.13.2-linux.jar` 内是 `ELF 64-bit x86-64`），aarch64 直接跑会在 `processDebugResources` 失败。手机端已用 qemu-user 转译官方 aapt2 绕开（§6 已实测通过），但本地跑 Gradle 会占 2.5GB 内存 + 1.8GB 依赖缓存，构建时手机明显变慢；**日常以 CI 为准，本地构建只在需要连续快改时开**。
 
 ---
 
@@ -157,6 +157,20 @@ bash scripts/mobile/ci.sh logs      # 只打印失败步骤的日志
 
 把关键报错贴给 AI，或让它自己 `logs` 拉取。常见根因：单测断言过时、Room schema 与迁移 DDL 不一致、新依赖版本冲突、`app/schemas` 没随迁移一起提交。
 
+### 3.9 可选：本地快速验证（不推 CI 也能编译）
+
+环境已装好（§6），连续改 UI 时用本地构建代替等 CI：
+
+```bash
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64
+export ANDROID_HOME=/root/android-sdk
+cd ~/workspace/Niriko
+./gradlew :app:assembleDebug --console=plain    # 第一次约 6 分钟，增量 1~2 分钟
+```
+
+产物仍是 `app/build/outputs/apk/debug/app-debug.apk`（debug 签名，装不上已装的 release 包）。
+本地构建**不能替代** CI：合并前仍要等 Actions 绿（CI 环境干净、有单测报告）。
+
 ---
 
 ## 4. 分支、提交与发布
@@ -195,33 +209,54 @@ bash scripts/mobile/ci.sh logs      # 只打印失败步骤的日志
 
 ---
 
-## 6. 手机本地编译（可选实验）
+## 6. 手机本地编译（已实测：可行）
 
-> 结论随实测补充；未完成前按 §1 走云端。
+> 2026-11-08 在本机实测：`assembleDebug` 成功出包，耗时 5 分 54 秒（含首次依赖下载）。
+> 环境用一条命令配置：`bash scripts/mobile/local-build-setup.sh`（幂等，可重复跑；`--check` 只检查）。
 
-### 6.1 唯一硬障碍：aapt2 架构
+### 6.1 为什么默认还在云端构建
 
-- `build-tools;37.0.0` 里的 `aapt2` 是 x86_64 ELF，aarch64 无法执行。
-- `processDebugResources`（所有构建都需要）和 `testDebugUnitTest`（`isIncludeAndroidResources = true`）都依赖 aapt2。
-- AGP 支持替换：`android.aapt2FromMavenOverride=<可执行文件>`（写在**本机** `~/.gradle/gradle.properties`，不要进仓库）。
+Google 的 `aapt2` 只发布 x86_64 ELF（`aapt2-8.13.2-linux.jar` 里实测是 `ELF 64-bit x86-64`），aarch64 直接跑会在 `processDebugResources` 失败。绕过方案是 qemu-user 转译 + 隔离 amd64 sysroot，可行但要占资源：
 
-### 6.2 正在验证的绕过思路
+| 占用 | 大小 |
+| --- | --- |
+| `~/.gradle`（依赖缓存） | 1.8GB |
+| `/root/android-sdk` | 649MB |
+| `/root/amd64-root`（amd64 运行库） | 17MB |
+| 构建时内存峰值 | 约 1GB（Gradle 上限设 2.56GB） |
 
-1. **qemu-user 跑 x86_64 aapt2**（最看好）：`apt install qemu-user-static` + 隔离的 amd64 sysroot（`dpkg -x` 解包 `libc6/libstdc++6/zlib1g:amd64` 到 `/root/amd64-root`），wrapper 脚本 `exec qemu-x86_64 -L /root/amd64-root <真 aapt2> "$@"`，通过 `android.aapt2FromMavenOverride` 指过去；d8/R8/zipalign 不需要原生可执行（AGP 内部用 Java 实现），所以理论上只需转译 aapt2。
-2. **Debian 打包的 aarch64 aapt2**（`apt install aapt`）：版本是 AOSP 14 左右，可能不认 compileSdk 37 的新参数，需要实测。
-3. 失败兜底：维持云端构建方案（默认方案，不影响日常）。
+构建那 6 分钟手机会明显变慢。所以日常仍然「推 CI」，本地编译只在连续快改 UI 时开（见 §3.9）。
 
-### 6.3 实测结论（待补）
+### 6.2 环境配置（一次性，约 5~10 分钟）
+
+```bash
+cd ~/workspace/Niriko
+bash scripts/mobile/local-build-setup.sh
+```
+
+脚本做的事（全部写本机路径，不动仓库构建配置）：
+
+1. 装 JDK 21（顺手修 proot 里 `/usr/share/man/man1` 缺失导致的 dpkg 报错）；
+2. 装 Android cmdline-tools + `platforms;android-37.0` + `build-tools;35.0.0/37.0.0`；
+3. `apt install qemu-user`，把 `libc6/libgcc-s1/libstdc++6/zlib1g` 的 amd64 包解到 `/root/amd64-root`（隔离 sysroot，不动系统 glibc）；
+4. 解出官方 aapt2 8.13.2，生成 wrapper `/root/android-aapt2/bin/aapt2`（内容：`exec qemu-x86_64 -L /root/amd64-root /root/android-aapt2/aapt2 "$@"`）；
+5. 往 `~/.gradle/gradle.properties` 写 `android.aapt2FromMavenOverride=/root/android-aapt2/bin/aapt2` 和 `org.gradle.jvmargs=-Xmx2560m …`。
+
+### 6.3 实测结论
 
 | 项 | 结果 |
 | --- | --- |
-| JDK21 + sdkmanager 能否在 aarch64 跑 | 待测 |
-| qemu 转译 aapt2 | 待测 |
-| `processDebugResources` 通过 | 待测 |
-| `testDebugUnitTest`（Robolectric） | 待测 |
-| `assembleDebug` 总耗时 | 待测 |
+| JDK21 + sdkmanager 在 aarch64 | ✅ 可用（sdkmanager 是 JVM 程序） |
+| qemu 转译官方 aapt2 | ✅ `aapt2 version` / `compile` 冒烟通过 |
+| `:app:processDebugResources` | ✅ 2 分 09 秒（含首次下载 Maven 依赖） |
+| `:app:assembleDebug` | ✅ 5 分 54 秒，产物 `app-debug.apk` 31MB |
+| `:app:testDebugUnitTest` | ⚠️ 1412 个测试里 42 个失败：Robolectric 的 native runtime 不支持 Linux aarch64（Room DAO/迁移、渲染类测试）。**单测结论以 CI 为准**；纯 JVM 测试本地可跑（用 `--tests` 指定类） |
 
----
+### 6.4 三个必须记住的坑
+
+1. **aapt2 wrapper 文件名必须以 `aapt2` 结尾**：AGP 的 `Aapt2FromMaven` 会校验 `endsWith("aapt2")`，叫 `aapt2-arm` 会报 `Custom AAPT2 location does not point to an AAPT2 executable`。
+2. **qemu sysroot 要补 `/lib64/ld-linux-x86-64.so.2`**：Ubuntu 的 amd64 libc6 包把这个加载器放在 `usr/lib64/`，`qemu -L` 找的是 `lib64/`，需建相对软链（脚本已处理）。
+3. **proot 里 openjdk 的 postinst 会因为缺 `/usr/share/man/man1` 失败**，先 `mkdir -p /usr/share/man/man1` 再装（脚本已处理）。
 
 ## 7. 速查与排障
 
@@ -237,6 +272,9 @@ bash scripts/mobile/ci.sh logs      # 只打印失败步骤的日志
 | 取包目录 | `/sdcard/Download/DSH-Go/apk/` |
 | Actions 页面 | https://github.com/perchA5uka/Niriko/actions |
 | 登录 gh | `bash scripts/mobile/gh-login.sh` |
+| 配置本地编译环境 | `bash scripts/mobile/local-build-setup.sh` |
+| 本地打包（可选） | `./gradlew :app:assembleDebug`（需先 export JAVA_HOME/ANDROID_HOME，见 §6.2） |
+| 本地单测（仅纯 JVM） | `./gradlew :app:testDebugUnitTest --tests '…'`（Robolectric 类本地跑不了） |
 
 ### 7.2 常见报错
 
@@ -257,8 +295,8 @@ bash scripts/mobile/ci.sh logs      # 只打印失败步骤的日志
 
 | 项 | 桌面（以前） | 手机（现在） |
 | --- | --- | --- |
-| 编译 | 本地 `gradlew assembleDebug` | 推送后 GitHub Actions（约 6~7 分钟） |
-| 跑单测 | 本地 `testDebugUnitTest` | CI 里跑；本地无编译环境 |
+| 编译 | 本地 `gradlew assembleDebug` | 默认推送后 GitHub Actions（约 6~7 分钟）；本地也能编（qemu aapt2，约 6 分钟），见 §6 |
+| 跑单测 | 本地 `testDebugUnitTest` | CI 里跑（本地 42 个 Robolectric 用例跑不了，见 §6.3） |
 | 装包 | adb / Android Studio | 下载 APK 手点安装 |
 | 看日志 | logcat | 无 adb；靠截图 + CI 单测 |
 | 看 diff | IDE | `git diff` + GitHub PR 页面 |
