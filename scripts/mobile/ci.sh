@@ -154,6 +154,7 @@ cmd_apk() {
   mkdir -p "$APK_DIR"
   local dest="$APK_DIR/$(basename "$apk")"
   cp "$apk" "$dest"
+  rm -rf "$tmp"; trap - EXIT
   log "✓ 已保存：$dest（$(du -h "$dest" | cut -f1)）"
   log "安装：手机「文件管理」→ 下载/DSH-Go/apk → 点开 $(basename "$apk") → 安装"
   log "  提示：debug 包与已装 release 包签名不同，装不上；要覆盖安装并保留数据用 --release"
