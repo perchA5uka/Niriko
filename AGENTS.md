@@ -7,14 +7,15 @@
 ## 0. 位置与边界
 
 - 仓库在本机：`/root/workspace/Niriko`。当前目录不是它时，先 `cd /root/workspace/Niriko` 再动手。
-- 本机是 Android 手机（Android 17 / SDK 37 / arm64），不是桌面 Linux；没有 x86 工具链，不要假设能跑 `./gradlew`（原因见流程文档 §6）。
+- 本机是 Android 手机（Android 17 / SDK 37 / arm64），不是桌面 Linux。
+- **本地可以编译，但要先用 `bash scripts/mobile/local-build-setup.sh` 配好 qemu 转译的 aapt2**（见流程文档 §6；已实测 `assembleDebug` 约 6 分钟）。默认仍推荐「推送后等 CI」，本地构建用于需要快速反复验证时。
 - 产出文件（APK、日志、截图）放 `/sdcard/Download/DSH-Go/`；**不要**把产物、密钥、临时文件提交进仓库。
 
 ## 1. 验证顺序（改完代码必须走一遍）
 
 1. 补/更新 JVM 单测：`app/src/test/...`（README「开发约定」要求新增逻辑必须带单测）。
 2. 静态自查：`git diff`、`git status`，确认没有夹带无关文件。
-3. 推送后等 GitHub Actions 绿（`scripts/mobile/ci.sh watch`）。手机端不本地编译，**CI 绿是唯一的编译级验证**。
+3. 推送后等 GitHub Actions 绿（`scripts/mobile/ci.sh watch`）；需要快速反复时也可先本地 `./gradlew :app:assembleDebug`（环境见流程文档 §6）。**CI 绿仍是合并前的最终门槛**。
 4. 装包到本机肉眼验证（`scripts/mobile/ci.sh apk`，然后安装）；能用手机工具截图就截图判断。
 5. 数据库迁移、签名、发布包这类只在真机/发布链路才暴露的问题，必须按流程文档 §5 单独确认。
 
