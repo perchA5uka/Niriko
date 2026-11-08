@@ -301,7 +301,10 @@ private fun String.steamAppIdFromSourceKey(): Int? =
 /** 副文案：精确 scheme 显示目标、搜索显示要搜的标题、网页/拉起给提示。 */
 private fun portalSubtitle(actions: List<PortalAction>): String? =
     when (val a = actions.firstOrNull()) {
-        is PortalAction.UriScheme -> Uri.parse(a.uri).getQueryParameter("keyword")?.let { "搜索：$it" }
+        is PortalAction.UriScheme -> when {
+            a.uri.startsWith("kazumi://bangumi/") -> "直达番剧详情"
+            else -> Uri.parse(a.uri).getQueryParameter("keyword")?.let { "搜索：$it" }
+        }
         is PortalAction.WebUrl -> "打开网页"
         is PortalAction.LaunchPackage -> "打开 App"
         else -> null
