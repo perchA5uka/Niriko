@@ -125,7 +125,9 @@ git commit -m "fix(ui): 顶部控件横屏下的间距" -m "为什么：横屏�
 git push              # 首次：git push -u origin main
 ```
 
-改动大或动数据库时，先开分支（见 §4.1）。
+- 推 `main` 会直接触发一次 CI。
+- 推**功能分支**不会触发；要在 GitHub 上开 PR 才跑 CI（这也是分支改动的评审入口）。
+- 改动大或动数据库时，先开分支（见 §4.1）。
 
 ### 3.5 等 CI
 
@@ -180,7 +182,7 @@ cd ~/workspace/Niriko
 | 情况 | 做法 |
 | --- | --- |
 | 单文件小修、文案、注释 | 直接 `main` |
-| 跨多文件 / 公共组件 / UI 大改 | `git switch -c feat/xxx` → 推 → GitHub 开 PR（PR 也跑 CI，手机浏览器看 diff）→ 绿了合 |
+| 跨多文件 / 公共组件 / UI 大改 | `git switch -c feat/xxx` → 推 → GitHub 开 PR（**分支 push 本身不触发 CI，开 PR 才触发**；手机浏览器看 diff）→ 绿了合 |
 | 动 Room 迁移 / 版本号 | 必须开分支 + PR，并真机升级验证（见 §5） |
 | 只改文档 | 直接 `main`，commit message 里加 `[skip ci]` 省一轮构建 |
 
