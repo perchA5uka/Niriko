@@ -216,8 +216,11 @@ import com.otakup.niriko.ui.components.topContentAlphaMask
 import com.otakup.niriko.ui.share.RatingComparisonCardData
 import com.otakup.niriko.ui.share.ShareBitmapHost
 import com.otakup.niriko.ui.share.ShareCardData
+import com.otakup.niriko.ui.share.ShareCardVariants
 import com.otakup.niriko.ui.share.ShareFlow
 import com.otakup.niriko.ui.share.SharePreviewSheet
+import com.otakup.niriko.ui.share.ShareShowcasePolicy
+import com.otakup.niriko.ui.share.SubjectShowcaseCardData
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
 import com.otakup.niriko.ui.theme.NirikoShapes
@@ -558,6 +561,8 @@ private fun SubjectDetailContent(
     // 分享预览 Sheet（AniShelf 借鉴）
     var sharePreviewData by remember { mutableStateOf<ShareCardData?>(null) }
     var showSharePreview by remember { mutableStateOf(false) }
+    // 批 B：作品信息分享卡（竖版 1080×1400）；非空时预览与导出都走新卡
+    var shareShowcase by remember { mutableStateOf<SubjectShowcaseCardData?>(null) }
     // 背景墙材质到达动画（Apple §12 Materialize：材质渐显，非瞬间出现）
     var bgEntered by remember { mutableStateOf(false) }
     LaunchedEffect(coverFlightActive) { if (!coverFlightActive) bgEntered = true }
@@ -724,6 +729,7 @@ private fun SubjectDetailContent(
                             host = shareBitmapHost,
                             data = sharePreviewData!!,
                             onDismiss = { showSharePreview = false },
+                            showcase = shareShowcase,
                             // 批次 C · 8.6：评分对照卡 —— 数据已在本页（我的分/社区分/分布/百分位）。
                             ratingComparison = RatingComparisonCardData(
                                 title = sharePreviewData!!.primaryTitle,
@@ -831,6 +837,22 @@ private fun SubjectDetailContent(
                         shareScope.launch {
                             val cover = loadShareCover(context, it.coverUrl)
                             sharePreviewData = buildShareData(context, it, state, cover)
+                            // 批 B：作品信息分享卡换竖版 1080×1400（原型 07）
+                            val s = context.nirikoApp.settingsDataStore.settings.first()
+                            val title = TitleResolver.resolve(it.titleCN, it.title)
+                            shareShowcase = SubjectShowcaseCardData(
+                                cover = cover,
+                                typeLabel = it.type.label,
+                                title = title.primary,
+                                secondaryTitle = title.secondary,
+                                communityScore = if (s.shareIncludeRating) it.ratingScore else null,
+                                ratingTotal = if (s.shareIncludeRating) it.ratingTotal?.let { n -> "$n 人" } else null,
+                                metaText = buildMetaText(it),
+                                tags = it.tags,
+                                impression = state.personalImpression ?: RichTextParser.toPlainText(it.summary),
+                                progressText = ShareShowcasePolicy.progressLabel(state.watchedEpisodes, it.totalEpisodes),
+                                progressFraction = ShareShowcasePolicy.progressFraction(state.watchedEpisodes, it.totalEpisodes),
+                            )
                             showSharePreview = true
                         }
                     }
@@ -845,6 +867,8 @@ private fun SubjectDetailContent(
                             shareScope.launch {
                                 val cover = loadShareCover(context, it.coverUrl)
                                 sharePreviewData = buildShareData(context, it, state, cover)
+                                // 收藏分享暂时仍走旧卡，等批 B 后续（收藏总览 / 单作品收藏卡）落地
+                                shareShowcase = null
                                 showSharePreview = true
                             }
                         }
@@ -4713,18 +4737,22 @@ private suspend fun shareSubject(
     val metaText = buildMetaText(subject)
     // 阶段 I：分享卡配置开关
     val s = context.nirikoApp.settingsDataStore.settings.first()
-    val bitmap = host.render(
+    // 批 B：作品信息分享卡换成 1080×1400 竖版（原型 07），封面通栏、文字压在封面下沿
+    val bitmap = ShareCardVariants.renderSubjectShowcase(
         context,
-        ShareCardData(
+        host,
+        SubjectShowcaseCardData(
             cover = cover,
             typeLabel = subject.type.label,
-            primaryTitle = title.primary,
+            title = title.primary,
             secondaryTitle = title.secondary,
             communityScore = if (s.shareIncludeRating) subject.ratingScore else null,
             ratingTotal = if (s.shareIncludeRating) subject.ratingTotal?.let { "$it 人" } else null,
             metaText = metaText,
-            summary = RichTextParser.toPlainText(subject.summary).takeIf { it.isNotBlank() },
-            communityTags = subject.tags.take(10),
+            tags = subject.tags,
+            impression = state.personalImpression ?: RichTextParser.toPlainText(subject.summary),
+            progressText = ShareShowcasePolicy.progressLabel(state.watchedEpisodes, subject.totalEpisodes),
+            progressFraction = ShareShowcasePolicy.progressFraction(state.watchedEpisodes, subject.totalEpisodes),
         ),
     )
     val text = buildString {

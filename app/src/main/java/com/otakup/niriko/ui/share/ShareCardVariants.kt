@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -54,6 +55,9 @@ object ShareCardVariants {
     suspend fun renderWeekly(context: Context, host: ShareBitmapHost, data: WeeklyReportCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { WeeklyReportCard(data) }
 
     suspend fun renderPartitionPage(context: Context, host: ShareBitmapHost, data: PartitionPosterCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { PartitionPosterCard(data) }
+
+    /** 作品信息分享卡（重做版）：全幅封面 + 标题/评分/标签/短评/进度。 */
+    suspend fun renderSubjectShowcase(context: Context, host: ShareBitmapHost, data: SubjectShowcaseCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { SubjectShowcaseCard(data) }
 
     /** 日历分享卡：7 列固定网格，行数与前置空格由 [CalendarShareLayoutPolicy] 算出。 */
     suspend fun renderCalendar(context: Context, host: ShareBitmapHost, data: CalendarShareCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { CalendarShareCard(data) }
@@ -108,6 +112,21 @@ data class WeeklyReportCardData(
     val finishedCount: Int,
     val highlightTitle: String? = null,
     val highlightCover: Bitmap? = null,
+)
+
+/** 作品信息分享卡（重做版，1080×1400）的数据；封面已预加载成 Bitmap。 */
+data class SubjectShowcaseCardData(
+    val cover: Bitmap? = null,
+    val typeLabel: String = "",
+    val title: String = "",
+    val secondaryTitle: String? = null,
+    val communityScore: Float? = null,
+    val ratingTotal: String? = null,
+    val metaText: String? = null,
+    val tags: List<String> = emptyList(),
+    val impression: String? = null,
+    val progressText: String? = null,
+    val progressFraction: Float = 0f,
 )
 
 /** 日历分享卡的一格（天号 + 当天放送作品数）。 */
@@ -482,6 +501,175 @@ private fun CalendarShareCell(
                             .background(ShareCompose.Primary),
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * 作品信息分享卡（1080×1400）：上 55% 全幅封面 + 底部渐隐，下半是标题/评分/标签/短评/进度。
+ *
+ * 与旧版横向 3:2 卡的区别：封面从 3:4 侧栏变成通栏主视觉，文字信息压到封面下沿，
+ * 更适合聊天窗口的竖屏预览（原型 07）。
+ */
+@Composable
+private fun SubjectShowcaseCard(data: SubjectShowcaseCardData) {
+    CardBase(ShareCardVariants.PAGE_WIDTH, ShareCardVariants.PAGE_HEIGHT) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxWidth().height(760.dp)) {
+                if (data.cover != null) {
+                    Image(
+                        bitmap = data.cover.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(ShareCompose.CoverGradStart, ShareCompose.CoverGradEnd),
+                                ),
+                            ),
+                    )
+                }
+                // 底部渐隐：把封面压到卡面底色，文字落在过渡区上
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, ShareCompose.Card.copy(alpha = 0.92f), ShareCompose.Card),
+                            ),
+                        ),
+                )
+                // 类型 chip（左上角）
+                Box(
+                    modifier = Modifier
+                        .padding(56.dp)
+                        .clip(NirikoShapes.ControlShape)
+                        .background(ShareCompose.ChipBg)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        data.typeLabel,
+                        style = TextStyle(fontSize = 20.sp),
+                        color = ShareCompose.ChipInk,
+                    )
+                }
+                // 标题块（封面下沿）
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(horizontal = 56.dp, vertical = 40.dp),
+                ) {
+                    Text(
+                        data.title,
+                        style = TextStyle(fontSize = 56.sp),
+                        color = ShareCompose.Ink,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    data.secondaryTitle?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            it,
+                            style = TextStyle(fontSize = 26.sp),
+                            color = ShareCompose.Ink2,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+
+            Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 56.dp)) {
+                Spacer(Modifier.height(28.dp))
+                // 评分 + 元信息
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        ShareShowcasePolicy.scoreText(data.communityScore),
+                        style = TextStyle(fontSize = 44.sp),
+                        color = ShareCompose.Primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    data.ratingTotal?.let {
+                        Spacer(Modifier.width(10.dp))
+                        Text(it, style = TextStyle(fontSize = 20.sp), color = ShareCompose.Ink3)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    data.metaText?.let {
+                        Text(
+                            it,
+                            style = TextStyle(fontSize = 20.sp),
+                            color = ShareCompose.Ink3,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                val tags = ShareShowcasePolicy.tagsToShow(data.tags)
+                if (tags.isNotEmpty()) {
+                    Spacer(Modifier.height(20.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        tags.forEach { tag ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(NirikoShapes.ControlShape)
+                                    .background(ShareCompose.ChipBg)
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                            ) { Text(tag, style = TextStyle(fontSize = 18.sp), color = ShareCompose.ChipInk) }
+                        }
+                    }
+                }
+
+                val impression = ShareShowcasePolicy.clampImpression(data.impression)
+                if (impression != null) {
+                    Spacer(Modifier.height(28.dp))
+                    Text("我的一句话", style = TextStyle(fontSize = 18.sp), color = ShareCompose.Ink3)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "「" + impression + "」",
+                        style = TextStyle(fontSize = 30.sp),
+                        color = ShareCompose.Ink,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                data.progressText?.let { label ->
+                    Spacer(Modifier.height(28.dp))
+                    Text("我的进度", style = TextStyle(fontSize = 18.sp), color = ShareCompose.Ink3)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(12.dp)
+                                .clip(NirikoShapes.ControlShape)
+                                .background(ShareCompose.Line),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(data.progressFraction.coerceIn(0f, 1f))
+                                    .background(ShareCompose.Primary),
+                            )
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Text(label, style = TextStyle(fontSize = 20.sp), color = ShareCompose.Ink2)
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+                BrandFooter()
+                Spacer(Modifier.height(40.dp))
             }
         }
     }

@@ -1,11 +1,14 @@
 package com.otakup.niriko.ui.share
 
 import android.content.Context
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,12 +27,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.common.LocalNirikoFeedback
 import com.otakup.niriko.ui.settings.SettingsSplitGroup
@@ -48,6 +55,8 @@ fun SharePreviewSheet(
     host: ShareBitmapHost,
     data: ShareCardData,
     onDismiss: () -> Unit,
+    /** 作品信息分享卡（1080×1400 竖版）：非 null 时预览与导出都走新卡。 */
+    showcase: SubjectShowcaseCardData? = null,
     /** 批次 C · 8.6：有数据时多给一个「评分对照卡」出口；null = 不显示。 */
     ratingComparison: RatingComparisonCardData? = null,
 ) {
@@ -60,6 +69,13 @@ fun SharePreviewSheet(
     var showProgress by remember { mutableStateOf(true) }
     var showTags by remember { mutableStateOf(true) }
     var sharing by remember { mutableStateOf(false) }
+    // 新卡是 1080×1400 的离屏渲染图：打开预览时先渲染一次，导出直接复用，避免二次生成。
+    var showcaseBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    LaunchedEffect(showcase) {
+        if (showcase != null) {
+            showcaseBitmap = ShareCardVariants.renderSubjectShowcase(context, host, showcase)
+        }
+    }
     // F03：全局反馈通道（宿主在 MainActivity 窗口层）。预览/单测里为 null，`?.show` 即跳过。
     val feedback = LocalNirikoFeedback.current
 
@@ -70,7 +86,11 @@ fun SharePreviewSheet(
             // 按钮文案卡死在「生成中…」且再也点不动。finally 保证一定复位，catch 给一次回执，
             // sheet 不关 —— 按钮恢复可点就是天然的重试入口。
             try {
-                val bmp = host.renderPoster(context, data, showRating, showProgress, showTags, rounded)
+                val bmp = if (showcase != null) {
+                    showcaseBitmap ?: ShareCardVariants.renderSubjectShowcase(context, host, showcase)
+                } else {
+                    host.renderPoster(context, data, showRating, showProgress, showTags, rounded)
+                }
                 val text = buildString {
                     append(data.primaryTitle)
                     data.statusLabel?.let { append("  ·  " + it) }
@@ -134,14 +154,39 @@ fun SharePreviewSheet(
             Text("分享卡预览", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             // 预览（限高，避免撑爆 Sheet 导致下方开关不可见）
             Box(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                SharePosterCard(
-                    data = data,
-                    showRating = showRating,
-                    showProgress = showProgress,
-                    showTags = showTags,
-                    rounded = rounded,
-                    modifier = Modifier.fillMaxWidth().height(320.dp),
-                )
+                if (showcase != null) {
+                    // 新卡按 1080:1400 比例等比缩放预览，圆角开关同样生效
+                    val radius = if (rounded) 20.dp else 0.dp
+                    val bmp = showcaseBitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1080f / 1400f)
+                                .clip(RoundedCornerShape(radius)),
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1080f / 1400f)
+                                .clip(RoundedCornerShape(radius))
+                                .background(ShareCompose.Card),
+                        )
+                    }
+                } else {
+                    SharePosterCard(
+                        data = data,
+                        showRating = showRating,
+                        showProgress = showProgress,
+                        showTags = showTags,
+                        rounded = rounded,
+                        modifier = Modifier.fillMaxWidth().height(320.dp),
+                    )
+                }
             }
             // 半展开档位的上滑提示：只在停靠档显示，展开后自动消失
             if (sheetState.currentValue == SheetValue.PartiallyExpanded) {
