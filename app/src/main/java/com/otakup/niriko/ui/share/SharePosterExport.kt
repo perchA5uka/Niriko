@@ -47,8 +47,14 @@ object SharePosterExport {
 
     /** 日历分享卡：渲染一张 1080×1400 的图并交给系统 Sharesheet；失败静默。 */
     suspend fun shareCalendar(context: Context, data: CalendarShareCardData): Boolean = runCatching {
+        // 封面必须先预加载：卡面渲染是同步的（同分区海报的做法），不能等 Coil。
+        val urls = data.days.mapNotNull { it.coverUrl }.distinct()
+        val bitmaps = loadCovers(context, urls).mapIndexed { index, bitmap -> urls[index] to bitmap }.toMap()
+        val withCovers = data.copy(
+            days = data.days.map { day -> day.copy(cover = day.coverUrl?.let { bitmaps[it] }) },
+        )
         val host = ShareBitmapHost()
-        val bitmap = ShareCardVariants.renderCalendar(context, host, data)
+        val bitmap = ShareCardVariants.renderCalendar(context, host, withCovers)
         val uri = ShareFlow.saveAndGetUri(context, bitmap, "calendar_" + System.currentTimeMillis() + ".png")
         context.startActivity(
             ShareFlow.buildChooser(

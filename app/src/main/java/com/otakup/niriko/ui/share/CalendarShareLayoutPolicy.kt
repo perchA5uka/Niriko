@@ -59,11 +59,14 @@ fun buildCalendarShareData(
     month: java.time.YearMonth,
     subjectCountByDate: Map<java.time.LocalDate, Int>,
     monthSubjectCount: Int,
+    coverUrlByDate: Map<java.time.LocalDate, String?> = emptyMap(),
 ): CalendarShareCardData {
     val days = (1..month.lengthOfMonth()).map { day ->
+        val date = month.atDay(day)
         CalendarShareDay(
             dayOfMonth = day,
-            subjectCount = subjectCountByDate[month.atDay(day)] ?: 0,
+            subjectCount = subjectCountByDate[date] ?: 0,
+            coverUrl = coverUrlByDate[date],
         )
     }
     val activeDays = days.count { it.subjectCount > 0 }

@@ -314,10 +314,18 @@ fun CalendarCard(
                         val countByDate = dayEvents
                             .filterKeys { !it.isBefore(monthStart) && !it.isAfter(monthEnd) }
                             .mapValues { it.value.broadcastSubjects.size }
+                        // 封面沿用应用内日格的取法：优先 displayCover（一图一格轮换），兜底候选第一张
+                        val coverByDate = dayEvents
+                            .filterKeys { !it.isBefore(monthStart) && !it.isAfter(monthEnd) }
+                            .mapValues { entry ->
+                                entry.value.displayCover?.coverUrl
+                                    ?: entry.value.coverCandidates.firstOrNull()?.coverUrl
+                            }
                         val data = buildCalendarShareData(
                             month = YearMonth.from(monthStart),
                             subjectCountByDate = countByDate,
                             monthSubjectCount = monthSubjects.size,
+                            coverUrlByDate = coverByDate,
                         )
                         exportScope.launch { SharePosterExport.shareCalendar(context, data) }
                     },

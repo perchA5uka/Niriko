@@ -89,4 +89,13 @@ class CalendarShareLayoutPolicyTest {
         assertEquals(false, CalendarShareLayoutPolicy.isInMonth(0, 30))
         assertEquals(true, CalendarShareLayoutPolicy.isInMonth(28, 28))
     }
+
+    @Test
+    fun `封面地址进格子`() {
+        val month = java.time.YearMonth.of(2026, 11)
+        val covers = mapOf(month.atDay(3) to "https://example.com/a.jpg")
+        val data = buildCalendarShareData(month, mapOf(month.atDay(3) to 2), 1, covers)
+        assertEquals("https://example.com/a.jpg", data.days.first { it.dayOfMonth == 3 }.coverUrl)
+        assertEquals(null, data.days.first { it.dayOfMonth == 4 }.coverUrl)
+    }
 }

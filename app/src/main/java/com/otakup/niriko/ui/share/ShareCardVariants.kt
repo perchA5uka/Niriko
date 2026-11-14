@@ -114,6 +114,10 @@ data class WeeklyReportCardData(
 data class CalendarShareDay(
     val dayOfMonth: Int,
     val subjectCount: Int,
+    /** 该格展示的封面地址：优先应用内同款 displayCover，兜底候选第一张。 */
+    val coverUrl: String? = null,
+    /** 预加载后的封面（渲染是同步的，位图必须先由调用方拉好）。 */
+    val cover: Bitmap? = null,
 )
 
 /** 日历分享卡的数据（由日历页当月的 dayEvents 现算，不落库）。 */
@@ -386,6 +390,7 @@ private fun CalendarShareCard(data: CalendarShareCardData) {
                                 dayNumber = dayNumber,
                                 dayCount = data.days.size,
                                 subjectCount = byDay[dayNumber]?.subjectCount ?: 0,
+                                cover = byDay[dayNumber]?.cover,
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -424,35 +429,59 @@ private fun CalendarShareCard(data: CalendarShareCardData) {
 
 /** 单日格：天号 + 放送点数；不属于本月的格子只占位不画。 */
 @Composable
-private fun CalendarShareCell(dayNumber: Int, dayCount: Int, subjectCount: Int, modifier: Modifier = Modifier) {
+private fun CalendarShareCell(
+    dayNumber: Int,
+    dayCount: Int,
+    subjectCount: Int,
+    cover: Bitmap?,
+    modifier: Modifier = Modifier,
+) {
     // 月末余位不是「31 号」：按当月实际天数判断，否则 11 月会出现一个不该存在的 31 格。
     if (!CalendarShareLayoutPolicy.isInMonth(dayNumber, dayCount)) {
         Box(modifier = modifier.height(120.dp))
         return
     }
-    Column(
+    Box(
         modifier = modifier
             .height(120.dp)
             .clip(NirikoShapes.ControlShape)
-            .background(if (subjectCount > 0) ShareCompose.CoverBg else Color.Transparent)
-            .padding(10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .background(if (subjectCount > 0) ShareCompose.CoverBg else Color.Transparent),
     ) {
-        Text(
-            dayNumber.toString(),
-            style = TextStyle(fontSize = 22.sp),
-            color = if (subjectCount > 0) ShareCompose.Ink else ShareCompose.Ink3,
-            fontWeight = if (subjectCount > 0) FontWeight.Bold else FontWeight.Normal,
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(CalendarShareLayoutPolicy.dotCount(subjectCount)) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(ShareCompose.Primary),
-                )
+        // 与应用内日历日格同款：一图一格铺满 + 0.45 暗纱，保证白字可读
+        if (cover != null) {
+            Image(
+                bitmap = cover.asImageBitmap(),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
+        }
+        Column(
+            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
+        ) {
+            Text(
+                dayNumber.toString(),
+                style = TextStyle(fontSize = 22.sp),
+                color = if (cover != null) {
+                    Color.White
+                } else if (subjectCount > 0) {
+                    ShareCompose.Ink
+                } else {
+                    ShareCompose.Ink3
+                },
+                fontWeight = if (subjectCount > 0) FontWeight.Bold else FontWeight.Normal,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(CalendarShareLayoutPolicy.dotCount(subjectCount)) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(ShareCompose.Primary),
+                    )
+                }
             }
         }
     }
