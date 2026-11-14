@@ -49,7 +49,8 @@ class ShapeLiteralPolicyTest {
         "10.dp" to 12,
         "11.dp" to 1,
         "14.dp" to 3,
-        "28.dp" to 3,
+        // 2026-11-14 合并手机端 A1：底栏「传送门」胶囊复用底栏 28dp 玻璃胶囊口径（+1）。
+        "28.dp" to 4,
         "48.dp" to 1,
         "50.dp" to 4,
     )

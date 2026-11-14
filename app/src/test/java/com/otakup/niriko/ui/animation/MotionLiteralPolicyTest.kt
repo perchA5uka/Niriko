@@ -62,10 +62,15 @@ class MotionLiteralPolicyTest {
         "ui/subject/SubjectDetailScreen.kt :: 350" to 1,
     )
 
-    /** chrome 令牌的消费点数量（只增不减：新增 chrome 也必须走令牌）。 */
+    /**
+     * chrome 令牌的消费点数量（只增不减：新增 chrome 也必须走令牌）。
+     *
+     * 2026-11-14 合并手机端 A1 后 +1：底栏「传送门」主胶囊与收藏胶囊同进同出，
+     * 复用 `DETAIL_CHROME_DURATION_MS`（不是新增时长）。
+     */
     private val chromeTokenUses = mapOf(
         "CHROME_HIDE_DURATION_MS" to 3,
-        "DETAIL_CHROME_DURATION_MS" to 2,
+        "DETAIL_CHROME_DURATION_MS" to 3,
     )
 
     private fun sources(): List<Pair<String, String>> = mainRoot.walkTopDown()
