@@ -2,6 +2,9 @@ name: Android CI
 
 # 计划 B5 · 6-5：仓库此前没有 CI，单测与构建只能本地跑。
 # 本工作流对应 README 的两条命令：testDebugUnitTest（纯 JVM，无需设备）与 assembleDebug。
+#
+# 手机端开发（docs/mobile-dev-flow.md）：手机不本地编译，APK 由本工作流产出并以 artifact 上传，
+# 手机用 scripts/mobile/ci.sh apk 下载后直接在本机安装验证。
 on:
   push:
     branches: [ main, master ]
@@ -11,6 +14,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -62,11 +68,48 @@ jobs:
       - name: Spotless (changed files only)
         run: ./gradlew :app:spotlessCheck -PspotlessRatchetFrom=origin/main --console=plain
 
+      # ── 可选：发布签名（手机端「同签名覆盖安装」需要）────────────────────────
+      # 手机已装的是 release 签名包，debug 包签名不同装不上去（INSTALL_FAILED_UPDATE_INCOMPATIBLE）。
+      # 仓库 Settings → Secrets 里配了这 4 个 secret，就会多打一个同签名 release 包：
+      #   NIRIKO_KEYSTORE_BASE64 / NIRIKO_KEYSTORE_PASSWORD / NIRIKO_KEY_ALIAS / NIRIKO_KEY_PASSWORD
+      # 生成方式见 docs/mobile-dev-flow.md §4.3。没配时整段自动跳过，行为与以前一致。
+      - name: Check release signing secrets
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.NIRIKO_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::未配置 NIRIKO_KEYSTORE_BASE64，跳过 release 签名构建（只产 debug 包）"
+          fi
+
+      - name: Restore release signing material (optional)
+        if: steps.signing.outputs.available == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.NIRIKO_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.NIRIKO_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NIRIKO_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NIRIKO_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/niriko-release.jks"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/niriko-release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
       - name: Unit tests (pure JVM, no device)
         run: ./gradlew testDebugUnitTest --console=plain
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --console=plain
+
+      - name: Assemble release-signed APK (optional)
+        if: steps.signing.outputs.available == 'true'
+        run: ./gradlew assembleRelease --console=plain
 
       - name: Upload unit test results
         if: always()
@@ -75,3 +118,37 @@ jobs:
           name: unit-test-results
           path: app/build/test-results/testDebugUnitTest/**/*.xml
           if-no-files-found: ignore
+
+      # 手机端取包入口：scripts/mobile/ci.sh apk [--release]
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: niriko-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload release-signed APK
+        if: steps.signing.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: niriko-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Android CI"
+            echo ""
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- ref: \`${{ github.ref_name }}\`"
+            for f in app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk; do
+              [ -f "$f" ] && echo "- \`$f\` · $(du -h "$f" | cut -f1)"
+            done
+            echo ""
+            echo "手机取包：\`bash scripts/mobile/ci.sh apk\`（同签名包加 \`--release\`）"
+          } >> "$GITHUB_STEP_SUMMARY"

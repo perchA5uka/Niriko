@@ -41,6 +41,14 @@ data class PortalTarget(
 )
 
 /**
+ * Kazumi 深链：宿主 `bangumi` + Bangumi 条目 ID，2.4.0 起支持。
+ *
+ * 纯函数，便于单测；调用前不需要判断 Kazumi 是否安装 —— 未安装时
+ * [com.otakup.niriko.util.PortalLauncher] 会降级到下一个动作。
+ */
+internal fun kazumiDeepLinkUrl(subjectId: Long): String = "kazumi://bangumi/$subjectId"
+
+/**
  * Portal 注册表：按作品类型分组，返回可展示的跳转目标。
  * P0：Bilibili / Bangumi App / Steam / VNDB。Kazumi 深链适配暂缓（见 docs/portal-feature-plan.md）。
  */
@@ -65,6 +73,19 @@ object PortalRegistry {
             }
         },
         PortalTarget(
+            id = "kazumi",
+            label = "Kazumi",
+            subjectTypes = setOf(SubjectType.ANIME),
+        ) { s, _ ->
+            // Kazumi 2.4.0+ 支持 kazumi://bangumi/<Bangumi 条目 ID> 直达番剧详情页
+            // （见其 AndroidManifest 的 host="bangumi"，issue #2628 落地）。
+            // 老版本没有该 scheme 时由 PortalLauncher 自动降级为「只拉起 App」。
+            listOf(
+                PortalAction.UriScheme(kazumiDeepLinkUrl(s.subjectId)),
+                PortalAction.LaunchPackage("com.predidit.kazumi"),
+            )
+        },
+        PortalTarget(
             id = "bangumi",
             label = "Bangumi App",
             subjectTypes = setOf(SubjectType.ANIME, SubjectType.MANGA, SubjectType.BOOK, SubjectType.GAME, SubjectType.MUSIC, SubjectType.REAL),
@@ -83,7 +104,9 @@ object PortalRegistry {
                     PortalAction.UriScheme("steam://store/$appId"),
                     PortalAction.WebUrl("https://store.steampowered.com/app/$appId"),
                 )
-            } else emptyList()
+            } else {
+                emptyList()
+            }
         },
         PortalTarget(
             id = "vndb",
@@ -102,7 +125,9 @@ object PortalRegistry {
             if (id != null) {
                 val kind = if (s.type == SubjectType.MANGA) "manga" else "anime"
                 listOf(PortalAction.WebUrl("https://anilist.co/$kind/$id"))
-            } else emptyList()
+            } else {
+                emptyList()
+            }
         },
         PortalTarget(
             id = "netease",

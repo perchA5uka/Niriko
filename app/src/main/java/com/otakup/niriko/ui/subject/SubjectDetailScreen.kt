@@ -2,6 +2,8 @@
 
 package com.otakup.niriko.ui.subject
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -73,6 +75,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -231,6 +234,7 @@ import com.otakup.niriko.util.TitleResolver
 import com.otakup.niriko.util.TopFadePolicy
 import com.otakup.niriko.util.VolumeProgressPolicy
 import com.otakup.niriko.util.phaseRevealStartAlpha
+import com.otakup.niriko.util.portalLaunchPlan
 import com.otakup.niriko.util.shouldPlayPhaseReveal
 import com.otakup.niriko.util.shouldPlayRatingBump
 import com.otakup.niriko.viewmodel.SubjectDetailUiState
@@ -264,7 +268,15 @@ private data class PortalUiItem(
     val label: String,
     val subtitle: String?,
     val actions: List<PortalAction>,
+    /** 仅拉起型目标（如 Kazumi）要复制到剪贴板的标题；null 表示不需要。 */
+    val copyTitle: String? = null,
 )
+
+/** 把标题写进剪贴板：Kazumi 这类没有深链的目标，跳过去之前先给用户一个可粘贴的标题。 */
+private fun copyPortalTitle(context: Context, text: String) {
+    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+    manager.setPrimaryClip(ClipData.newPlainText("title", text))
+}
 
 /** 组装传送门可展示项：按作品类型过滤，缺失 ID 的目标自动隐藏。 */
 private fun buildPortalUiItems(subject: SubjectEntity, state: SubjectDetailUiState, context: Context): List<PortalUiItem> {
@@ -273,10 +285,12 @@ private fun buildPortalUiItems(subject: SubjectEntity, state: SubjectDetailUiSta
         .mapNotNull { target ->
             val actions = target.resolve(subject, ids)
             if (actions.isEmpty()) return@mapNotNull null
+            val plan = portalLaunchPlan(actions, subject.displayTitle)
             PortalUiItem(
                 label = target.label,
-                subtitle = portalSubtitle(actions),
+                subtitle = if (plan.copyToClipboard != null) "拉起 App · 自动复制标题" else portalSubtitle(actions),
                 actions = actions,
+                copyTitle = plan.copyToClipboard,
             )
         }
         // 未安装的「仅拉起」目标（如 Mihon）自动隐藏；带网页兜底的目标必然可启动
@@ -296,9 +310,15 @@ private fun String.steamAppIdFromSourceKey(): Int? = if (startsWith("steam:")) r
 
 /** 副文案：精确 scheme 显示目标、搜索显示要搜的标题、网页/拉起给提示。 */
 private fun portalSubtitle(actions: List<PortalAction>): String? = when (val a = actions.firstOrNull()) {
-    is PortalAction.UriScheme -> Uri.parse(a.uri).getQueryParameter("keyword")?.let { "搜索：$it" }
+    is PortalAction.UriScheme -> when {
+        a.uri.startsWith("kazumi://bangumi/") -> "直达番剧详情"
+        else -> Uri.parse(a.uri).getQueryParameter("keyword")?.let { "搜索：$it" }
+    }
+
     is PortalAction.WebUrl -> "打开网页"
+
     is PortalAction.LaunchPackage -> "打开 App"
+
     else -> null
 }
 
@@ -417,6 +437,7 @@ fun SubjectDetailScreen(
                     onDismissDoubanCandidates = viewModel::clearDoubanCandidates,
                 ),
                 onPortalUnavailable = { coroutineScope.launch { snackbarHostState.showSnackbar("未安装或无法打开") } },
+                onPortalHint = { message -> coroutineScope.launch { snackbarHostState.showSnackbar(message) } },
                 sharedTransitionScope = sharedTransitionScope,
                 animatedVisibilityScope = animatedVisibilityScope,
                 modifier = Modifier.padding(innerPadding),
@@ -500,6 +521,8 @@ private fun SubjectDetailContent(
     onClearAnilistManualMessage: () -> Unit = {},
     onRetryAnilist: () -> Unit = {},
     onPortalUnavailable: () -> Unit = {},
+    /** 传送门跳转后的补偿提示（例如「已复制标题」）；默认不提示。 */
+    onPortalHint: (String) -> Unit = {},
     ratingCallbacks: RatingSectionCallbacks = RatingSectionCallbacks(),
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
@@ -513,6 +536,8 @@ private fun SubjectDetailContent(
     val headerHeight = statusTop + 56.dp
     var shareMenuExpanded by remember { mutableStateOf(false) }
     var portalMenuExpanded by remember { mutableStateOf(false) }
+    // A1：编辑层显隐上提到这里，顶栏「编辑」胶囊与底栏状态胶囊共用
+    var showCollectionSheet by remember { mutableStateOf(false) }
     var shareAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var portalAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val shareFocus = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -655,13 +680,17 @@ private fun SubjectDetailContent(
                                 Icon(Icons.Filled.Share, contentDescription = "分享")
                             }
                         }
-                        // 传送门：作品跳转到其他平台 / App（P0）
-                        Box {
-                            IconButton(onClick = {
-                                shareMenuExpanded = false
-                                portalMenuExpanded = true
-                            }, modifier = Modifier.focusRequester(portalFocus).onGloballyPositioned { portalAnchor = it.boundsInRoot() }.padding(4.dp).size(48.dp).searchGlassSurface(CircleShape, source = floatingButtonSource)) {
-                                Icon(Icons.AutoMirrored.Outlined.Launch, contentDescription = "传送门")
+                        // A1：传送门移到底栏主位；顶栏这格改成「编辑收藏」（仅已收藏时出现）
+                        if (state.isInCollection) {
+                            IconButton(
+                                onClick = {
+                                    shareMenuExpanded = false
+                                    portalMenuExpanded = false
+                                    showCollectionSheet = true
+                                },
+                                modifier = Modifier.padding(4.dp).size(48.dp).searchGlassSurface(CircleShape, source = floatingButtonSource),
+                            ) {
+                                Icon(Icons.Outlined.Edit, contentDescription = "编辑收藏")
                             }
                         }
                     }
@@ -763,6 +792,12 @@ private fun SubjectDetailContent(
                                 ratingCallbacks = ratingCallbacks,
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
+                                showCollectionSheet = showCollectionSheet,
+                                onShowCollectionSheet = { showCollectionSheet = it },
+                                onOpenPortal = { rect ->
+                                    portalAnchor = rect
+                                    portalMenuExpanded = true
+                                },
                             )
                             if (state.isRefreshing) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter))
@@ -865,8 +900,12 @@ private fun SubjectDetailContent(
                         },
                         onClick = {
                             portalMenuExpanded = false
+                            val copied = item.copyTitle
+                            if (copied != null) copyPortalTitle(context, copied)
                             if (!PortalLauncher.launch(context, item.actions)) {
                                 onPortalUnavailable()
+                            } else if (copied != null) {
+                                onPortalHint("已复制「$copied」，粘贴即可搜索")
                             }
                         },
                     )
@@ -1094,6 +1133,11 @@ private fun SubjectDetailBody(
     ratingCallbacks: RatingSectionCallbacks = RatingSectionCallbacks(),
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    /** A1：收藏编辑层显隐由 [SubjectDetailContent] 持有，顶栏与底栏共用一个来源。 */
+    showCollectionSheet: Boolean = false,
+    onShowCollectionSheet: (Boolean) -> Unit = {},
+    /** A1：底栏传送门胶囊把自身锚点回传给顶层的传送门菜单。 */
+    onOpenPortal: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     // 共享模糊封面：横向小卡毛玻璃背景的唯一模糊源（进程级缓存,只模糊一次）
     val episodeWaveProgress by rememberEpisodeCompletionWave(episodeCompletionEvents, subject.subjectId)
@@ -1183,7 +1227,6 @@ private fun SubjectDetailBody(
     var watchedTrackIdsLocal by rememberSaveable(state.collectionId, stateSaver = TrackIdSetSaver) { mutableStateOf(state.watchedTrackIds) }
     var startDateValue by rememberSaveable(state.collectionId) { mutableStateOf(state.startDate) }
     var finishDateValue by rememberSaveable(state.collectionId) { mutableStateOf(state.finishDate) }
-    var showCollectionSheet by remember { mutableStateOf(false) }
     // F07：分集评价合并（预览弹层）。条目按需从 ViewModel 取，不进 uiState。
     var showEpisodeMerge by remember { mutableStateOf(false) }
     var episodeMergeEntries by remember { mutableStateOf<List<com.otakup.niriko.util.EpisodeReviewMergePolicy.Entry>>(emptyList()) }
@@ -2094,20 +2137,8 @@ private fun SubjectDetailBody(
                 )
                 // B10：两态共用的唯一外壳。visible 先常显；B11 的滚动显隐只改这一个入参，不改这里。
                 // isScrolling 传 false：胶囊相对窗口静止，不需要滚动期降级采样。
-                DetailCollectionAction(
-                    state = detailCollectionActionState(state.isInCollection, state.isUpdating),
-                    statusLabel = state.currentStatus.label,
-                    ratingText = if (myRatingValue > 0) "%.1f 分".format(myRatingValue) else "未评分",
-                    progressText = if (!isGameType && parsedWatched != null && subject.totalEpisodes != null) {
-                        "$parsedWatched/${subject.totalEpisodes} 集"
-                    } else {
-                        null
-                    },
-                    backdrop = glassBackdrop,
-                    isScrolling = false,
-                    // B11-Step2：向下滚退出、向上滚恢复；弹层打开时强制显示（见上方 LaunchedEffect）
-                    visible = detailChrome.shown,
-                    onClick = { if (state.isInCollection) showCollectionSheet = true else onAddToCollection() },
+                // A1：底栏 = 「传送门」主胶囊（左）+ 收藏状态胶囊（右）；编辑入口已上移到顶栏。
+                Row(
                     modifier = Modifier
                         // 左右各 16dp：与列表内容同边距；宽屏时在整屏居中（Box 的 BottomCenter）。
                         .fillMaxWidth()
@@ -2115,7 +2146,32 @@ private fun SubjectDetailBody(
                         .padding(horizontal = 16.dp)
                         .navigationBarsPadding()
                         .padding(bottom = 12.dp),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    DetailPortalPill(
+                        backdrop = glassBackdrop,
+                        isScrolling = false,
+                        visible = detailChrome.shown,
+                        onClick = onOpenPortal,
+                    )
+                    DetailCollectionAction(
+                        state = detailCollectionActionState(state.isInCollection, state.isUpdating),
+                        statusLabel = state.currentStatus.label,
+                        ratingText = if (myRatingValue > 0) "%.1f 分".format(myRatingValue) else "未评分",
+                        progressText = if (!isGameType && parsedWatched != null && subject.totalEpisodes != null) {
+                            "$parsedWatched/${subject.totalEpisodes} 集"
+                        } else {
+                            null
+                        },
+                        backdrop = glassBackdrop,
+                        isScrolling = false,
+                        // B11-Step2：向下滚退出、向上滚恢复；弹层打开时强制显示（见上方 LaunchedEffect）
+                        visible = detailChrome.shown,
+                        onClick = { if (state.isInCollection) onShowCollectionSheet(true) else onAddToCollection() },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     } // CompositionLocalProvider(LocalDetailCoverFallback)
@@ -2136,11 +2192,11 @@ private fun SubjectDetailBody(
                     snapshotFlow { completionPlayback.isActive }.first { !it }
                 }
                 runCatching { sheetState.hide() }
-                showCollectionSheet = false
+                onShowCollectionSheet(false)
             }
         }
         ModalBottomSheet(
-            onDismissRequest = { showCollectionSheet = false },
+            onDismissRequest = { onShowCollectionSheet(false) },
             sheetState = sheetState,
             // B9A：贴顶不再由内容高度决定 —— 铺满宽度、去掉把手与 M3 内建 inset，
             // 顶部安全区交给内容自己的 statusBarsPadding，短内容也顶到窗口顶，
@@ -2398,6 +2454,66 @@ internal fun detailCollectionActionState(
 }
 
 /**
+ * A1：底栏「传送门」主胶囊。
+ *
+ * 与收藏胶囊同高（最少 56dp）、共用玻璃外壳与 180ms 显隐；点击时把自身在根坐标里的矩形
+ * 回传给顶层的传送门菜单（菜单仍挂在顶层那一层，只是锚点从顶栏图标换成了这里）。
+ */
+@Composable
+private fun DetailPortalPill(
+    backdrop: Backdrop?,
+    isScrolling: Boolean,
+    visible: Boolean,
+    onClick: (androidx.compose.ui.geometry.Rect) -> Unit,
+) {
+    val shown by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = NirikoMotionSpecs.DETAIL_CHROME_DURATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "detailPortalPill",
+    )
+    val hiddenShiftPx = with(LocalDensity.current) { 96.dp.toPx() } * (1f - shown)
+    // 用普通引用存锚点：onGloballyPositioned 每次布局都会回调，写 State 会白白触发重组。
+    val boundsRef = remember { java.util.concurrent.atomic.AtomicReference<androidx.compose.ui.geometry.Rect?>(null) }
+    GlassSectionCard(
+        backdrop = backdrop,
+        isScrolling = isScrolling,
+        // 固定宽度：底栏是 Row，让「传送门」吃点固定份额，剩下的留给收藏状态，避免状态被挤成竖排。
+        modifier = Modifier
+            .width(124.dp)
+            .offset { IntOffset(0, hiddenShiftPx.roundToInt()) }
+            .graphicsLayer { alpha = shown }
+            .onGloballyPositioned { boundsRef.set(it.boundsInRoot()) },
+        shape = RoundedCornerShape(28.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 56.dp)
+                .clickable { boundsRef.get()?.let(onClick) }
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.Launch,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(Modifier.width(5.dp))
+            Text(
+                "传送门",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    }
+}
+
+/**
  * B10：收藏入口的**唯一外壳** —— 未收藏 / 已收藏共用同一枚 28dp 玻璃胶囊。
  *
  * 它悬浮在窗口层（overlay）而不是列表 item，所以滚动不会把它带走；
@@ -2452,11 +2568,29 @@ private fun DetailCollectionAction(
             Spacer(Modifier.width(10.dp))
             if (state.inCollection) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(statusLabel, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Text(ratingText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        statusLabel,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        ratingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 progressText?.let {
-                    Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(end = 10.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        maxLines = 1,
+                        modifier = Modifier.padding(end = 10.dp),
+                    )
                 }
             } else {
                 Text(
@@ -2466,7 +2600,10 @@ private fun DetailCollectionAction(
                     modifier = Modifier.weight(1f),
                 )
             }
-            Text("›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 已收藏时胶囊是只读状态（编辑入口在顶栏），不再画「›」，把宽度留给评分
+            if (!state.inCollection) {
+                Text("›", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
