@@ -76,6 +76,33 @@
 - 编辑收藏从底部条移到右上角 28dp 胶囊组（编辑 / 分享 / 更多），形状由圆角矩形改 999 胶囊；底部只留「传送门」主按钮 + 收藏状态胶囊。
 - 依据：底部两个等宽按钮会让「主操作」和「进入设置」权重相同；改后主按钮独占左半边，右侧状态胶囊只读。
 
+## 2.9 Liquid glass 按钮触控反馈对齐（LG-1，2026-11-14 并入 K4）
+
+**目标**：本项目所有 Liquid glass 按钮的按压反馈与设备上的 Backdrop Catalog demo 一致；机制借 demo，**数值按本项目尺寸重标**。
+
+> 与 PC 侧 `docs/v1.2.2/04-kyant-reference.md` §3-K4 是同一件事：那边已完成参数级逆向（含 28dp 小件的收敛结论），本节只保留落地口径，不再重复造方案。
+
+**demo 实测参数**（`Kyant0/AndroidLiquidGlass`，`components/LiquidButton.kt:69-84` + `utils/InteractiveHighlight.kt`）：
+
+| 维度 | demo（48dp 高基准） | 本项目应收敛到 | 现状 |
+| --- | --- | --- | --- |
+| 按下缩放 | `1 + 4dp/height` ≈ 1.083× | `maxScaleDp = 2.dp`（28dp 件 ≈ 1.07×，比例与 demo 一致；**不能直接照抄 4dp**，28dp 会被放大到 1.14×） | 玻璃按钮无形变（只有 ripple） |
+| 跟手位移 | `maxOffset * tanh(0.05·offset/maxOffset)` | 同式，`maxOffsetDp = 3.dp` | 无 |
+| 方向拉伸 | 逐边 `±4dp/height·|cos/sin|` | 小件可先不做，避免 28dp 上过冲 | 无 |
+| 高光 | 整块白 8% + 径向 15%（半径 1.5×minDimension） | 沿用 `Highlight.Default`，按压期 alpha 随 progress | 只有 `GlassCard` 的 alpha 变化 |
+| 弹簧 | `spring(0.5, 300)` | `spring(0.5, 400)`（与 `GlassCard.kt:146` 同值，全页节奏一致） | — |
+| 水波纹 | `indication = null` | 玻璃按钮去掉 ripple，用形变 + 高光替代；**保留 `Role.Button` 语义** | 部分按钮仍 M3 ripple |
+
+**落地步骤**
+
+1. 新增 `ui/components/liquidglass/GlassPressMorph.kt`：`Modifier.glassPressMorph(interactionSource, maxScaleDp = 2.dp, maxOffsetDp = 3.dp, pressed)`，内部 `graphicsLayer` 做 scale + tanh 位移；几何抽纯函数 + `GlassPressMorphTest`（scale 与高度反比、clamp 上下限）。
+2. 接入 13 处 `searchGlassSurface` 按钮（顶栏圆钮、搜索工具栏、详情页胶囊、锚定菜单触发件）；底部标签栏已 1:1 移植 demo，不动。
+3. 列表卡片保持 `PressTilt`（缩小 0.99 + 7° 倾斜）—— 那是滚动容器里的卡片语言，不与按钮形变混用。
+
+**验收**：48dp 胶囊按下 ≈1.08×、28dp 胶囊 ≈1.07×，松手 200ms 内回位无过冲；与 demo 同屏并排比对；滚动里按住不触发；`Role.Button` 语义与点击热区不变。
+
+**工作量**：K4 原型 1 天 + 逐处接入 1–2 天。
+
 ## 3. 分批计划
 
 | 批次 | 内容 | 预估 | 风险 |
@@ -84,6 +111,7 @@
 | B | 三张分享卡（日历 / 作品 / 收藏）复用渲染桥 | 3–5 天 | 中；图片加载降级 |
 | C | 「接下来七天」合并 + 展开动效 | 3–4 天 | 中；两处口径对齐 |
 | D | 角色数据 + 角色页 + 两张关系图 | 2–3 周 | 高；角色关系需解析 Bangumi 网页、全关系布局性能 |
+| E | Liquid glass 按钮触控反馈对齐（LG-1） | 2–3 天 | 中；13 处替换、需与 demo 逐项比对 |
 
 每批的完成标准：单测覆盖新增纯函数（布局/解析/口径）+ 真机截图对照原型 + CI 绿。
 
