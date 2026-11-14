@@ -14,20 +14,23 @@ import com.otakup.niriko.data.local.entity.CollectionWithSubject
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.stats.AiringSubject
-import com.otakup.niriko.data.model.stats.CalendarMode
 import com.otakup.niriko.data.model.stats.BroadcastMonthState
 import com.otakup.niriko.data.model.stats.BroadcastMonthStatus
+import com.otakup.niriko.data.model.stats.CalendarMode
 import com.otakup.niriko.data.model.stats.StatsUiState
-import com.otakup.niriko.data.remote.BroadcastFetcher
-import com.otakup.niriko.data.remote.SeasonalFetcher
 import com.otakup.niriko.data.refresh.AppForegroundSignals
 import com.otakup.niriko.data.refresh.RefreshCoordinator
 import com.otakup.niriko.data.refresh.RefreshDecision
 import com.otakup.niriko.data.refresh.RefreshKeys
 import com.otakup.niriko.data.refresh.RefreshResource
+import com.otakup.niriko.data.remote.BroadcastFetcher
+import com.otakup.niriko.data.remote.SeasonalFetcher
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.EpisodeRepository
 import com.otakup.niriko.util.AiringStatus
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -49,9 +52,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import java.time.DayOfWeek
-import java.time.LocalDate
-import java.time.YearMonth
 
 private const val TAG = "StatsVM"
 
@@ -73,6 +73,18 @@ class StatsViewModel(
 
     /** 放送日历刷新的单飞槽位：init / 切月 / 手动刷新三路此前都能并发触发。 */
     private var broadcastJob: Job? = null
+
+    /**
+     * 放送日历是否正在刷新（F-05）。
+     *
+     * 只由 [refreshBroadcastSchedule] 置位：自动刷新不需要 pending 态（用户没点），
+     * 手动刷新则在单飞 job 完成（成功/失败/被合并）时复位。UI 用它在刷新胶囊上显示
+     * 「刷新中…」并禁用重复点击，避免「点了完全没反应」。
+     */
+    private val _isBroadcastRefreshing = MutableStateFlow(false)
+
+    /** 供统计页日历卡片消费的 pending 态。 */
+    val isBroadcastRefreshing: StateFlow<Boolean> = _isBroadcastRefreshing.asStateFlow()
 
     /** 放送日历上次成功刷新时间（0 = 从未），供统计页显示陈旧度。 */
     val broadcastLastUpdatedAt: StateFlow<Long> =
@@ -98,10 +110,13 @@ class StatsViewModel(
     private val _broadcastError = MutableStateFlow<String?>(null)
     private val _broadcastMonths = MutableStateFlow<Map<String, BroadcastMonthState>>(emptyMap())
     val broadcastMonths: StateFlow<Map<String, BroadcastMonthState>> = _broadcastMonths.asStateFlow()
+
     /** 按月缓存的季节性放送数据，key="yyyy-MM"。非当季月份使用。 */
     private val _seasonalAiringMap = MutableStateFlow<Map<String, List<AiringSubject>>>(emptyMap())
+
     /** 每集数据（已播状态/热力图）。 */
     private val _episodesBySubject = MutableStateFlow<Map<Long, List<EpisodeInfo>>>(emptyMap())
+
     /** 已预取过的作品 id（避免重复请求）。 */
     private val prefetchedSubjectIds = mutableSetOf<Long>()
 
@@ -112,7 +127,10 @@ class StatsViewModel(
 
     /** 所有上游 Flow 的异常捕获包装。任何 Flow 出错都降级为空数据，绝不崩溃。 */
     private val safeCollectionFlow = collectionRepository.observeAllWithSubject()
-        .catch { Log.e(TAG, "collection flow error", it); emit(emptyList()) }
+        .catch {
+            Log.e(TAG, "collection flow error", it)
+            emit(emptyList())
+        }
 
     val uiState: StateFlow<StatsUiState> = combine(
         listOf(
@@ -145,13 +163,13 @@ class StatsViewModel(
         // 全量统计计算移出主线程（combine 收集器在主线程，computeStats 含双重嵌套循环）
         .flowOn(statsDispatcher)
         .catch { e ->
-        // combine 上游 Flow 抛出异常时，忽略并保持 Flow 活跃
-        Log.e(TAG, "Stats combine caught exception", e)
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = StatsUiState(isLoading = true),
-    )
+            // combine 上游 Flow 抛出异常时，忽略并保持 Flow 活跃
+            Log.e(TAG, "Stats combine caught exception", e)
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = StatsUiState(isLoading = true),
+        )
 
     /** 正在加载中的月份 key 集合：快速翻月时同月只发一次请求（防并发重复大请求）。 */
     private val inflightSeasonal = mutableSetOf<String>()
@@ -265,8 +283,11 @@ class StatsViewModel(
                 val result = withContext(seasonalDispatcher) {
                     seasonalFetcher.fetchSeasonalRangeResult(rangeStart, rangeEnd)
                 }
-                val airingList = if (result.isComplete) result.subjects else
+                val airingList = if (result.isComplete) {
+                    result.subjects
+                } else {
                     (result.subjects + _seasonalAiringMap.value[key].orEmpty()).distinctBy { it.subject.subjectId }
+                }
                 val updated = _seasonalAiringMap.value + (key to airingList)
                 // 只保留最近 6 个月，避免长时间浏览后内存里堆满历史月份
                 _seasonalAiringMap.value = updated.entries.toList().takeLast(MAX_SEASONAL_MONTHS)
@@ -274,15 +295,28 @@ class StatsViewModel(
                 seasonalLoadedAt.keys.retainAll(_seasonalAiringMap.value.keys)
                 if (result.isComplete) seasonalLoadedAt[key] = nowMillis() else seasonalLoadedAt.remove(key)
                 val eventCount = StatsCalculator.computeCalendarEvents(
-                    emptyList(), year, month, CalendarMode.BROADCAST, emptyMap(), mapOf(key to airingList),
+                    emptyList(),
+                    year,
+                    month,
+                    CalendarMode.BROADCAST,
+                    emptyMap(),
+                    mapOf(key to airingList),
                 ).values.sumOf { it.broadcastSubjects.size + it.releaseDateSubjects.size }
-                updateMonth(previous.copy(
-                    status = if (!result.isComplete) BroadcastMonthStatus.ERROR
-                        else if (eventCount == 0) BroadcastMonthStatus.EMPTY else BroadcastMonthStatus.SUCCESS,
-                    lastSuccessAt = if (result.isComplete) seasonalLoadedAt.getValue(key) else previous.lastSuccessAt,
-                    error = if (result.isComplete) null else "$key 部分加载失败（三次元），已保留可用内容，请重试",
-                    isPartial = !result.isComplete, eventCount = eventCount,
-                ))
+                updateMonth(
+                    previous.copy(
+                        status = if (!result.isComplete) {
+                            BroadcastMonthStatus.ERROR
+                        } else if (eventCount == 0) {
+                            BroadcastMonthStatus.EMPTY
+                        } else {
+                            BroadcastMonthStatus.SUCCESS
+                        },
+                        lastSuccessAt = if (result.isComplete) seasonalLoadedAt.getValue(key) else previous.lastSuccessAt,
+                        error = if (result.isComplete) null else "$key 部分加载失败（三次元），已保留可用内容，请重试",
+                        isPartial = !result.isComplete,
+                        eventCount = eventCount,
+                    )
+                )
                 val coverless = airingList.count { it.subject.coverUrl.isNullOrBlank() }
                 Log.d(TAG, "month=$key validDate=${result.subjects.size} eventCount=$eventCount coverlessSubjects=$coverless complete=${result.isComplete}")
                 // 对当季/翻月所有放送作品预取每集数据（限流 + 去重）。
@@ -338,8 +372,11 @@ class StatsViewModel(
                 _broadcastError.value = "暂无连载中的作品"
             }
             coordinator?.let {
-                if (succeeded) it.recordSuccess(RefreshKeys.BROADCAST_CALENDAR)
-                else it.recordFailure(RefreshKeys.BROADCAST_CALENDAR, result.error ?: "暂无连载中的作品")
+                if (succeeded) {
+                    it.recordSuccess(RefreshKeys.BROADCAST_CALENDAR)
+                } else {
+                    it.recordFailure(RefreshKeys.BROADCAST_CALENDAR, result.error ?: "暂无连载中的作品")
+                }
             }
             // 加载当月季节性数据用于封面补充（v0 API 有完整封面）
             val now = today()
@@ -361,7 +398,11 @@ class StatsViewModel(
         seasonalLoadedAt.clear()
         // Keep stale successes visible until replacement succeeds; do not unlock active requests.
         ensureSeasonalForAnchor(_calendarAnchor.value)
+        _isBroadcastRefreshing.value = true
         fetchBroadcastSchedule(force = true)
+        // 单飞：若已有一轮刷新在跑，本次点击会合并进同一个 job —— 所以复位挂在 job 完成上，
+        // 而不是「本次调用 return 之后」。
+        broadcastJob?.invokeOnCompletion { _isBroadcastRefreshing.value = false }
     }
 
     /**
@@ -412,59 +453,68 @@ class StatsViewModel(
         broadcastError: String?,
         episodesBySubject: Map<Long, List<EpisodeInfo>>,
         monthState: BroadcastMonthState,
-    ): StatsUiState {
-        return try {
-            val base = computeBaseStats(items, episodesBySubject)
-            val (rangeStart, rangeEnd) = CalendarRangeCalculator.visibleRange(anchorDate, expanded)
-            val calendarDayEvents = StatsCalculator.computeCalendarEventsForRange(
-                items, rangeStart, rangeEnd, mode, broadcast, seasonal, episodesBySubject,
-            )
-            val anchorMonth = YearMonth.from(anchorDate)
-            val broadcastEvents = if (mode == CalendarMode.BROADCAST && expanded) calendarDayEvents else
-                StatsCalculator.computeCalendarEvents(items, anchorMonth.year, anchorMonth.monthValue, CalendarMode.BROADCAST, broadcast, seasonal, episodesBySubject)
-            val eventCount = broadcastEvents.values.sumOf { it.broadcastSubjects.size + it.releaseDateSubjects.size }
-            val selectedMonth = monthState.copy(
-                eventCount = eventCount,
-                status = if (monthState.status == BroadcastMonthStatus.SUCCESS || monthState.status == BroadcastMonthStatus.EMPTY)
-                    if (eventCount == 0) BroadcastMonthStatus.EMPTY else BroadcastMonthStatus.SUCCESS
-                else monthState.status,
-            )
-            // 「今晚 / 接下来七天 / 漏看 / 健康度」四块都是纯派生：只读 items + 放送缓存 + 每集数据，
-            // 不额外发请求。七天事件与日历共用 computeCalendarEventsForRange，口径不会分叉。
-            val todayDate = today()
-            val upcomingEvents = UpcomingAiringCalculator.events(
-                items = items,
-                today = todayDate,
-                broadcast = broadcast,
-                seasonal = seasonal,
-                episodesBySubject = episodesBySubject,
-            )
-            val lags = CatchUpCalculator.lagging(items, episodesBySubject, todayDate)
-            val tonight = StatsTonightCalculator.tonight(items, todayDate, upcomingEvents, lags, episodesBySubject)
-            val upcomingDays = UpcomingAiringCalculator.days(
-                events = upcomingEvents,
-                items = items,
-                today = todayDate,
-                episodesBySubject = episodesBySubject,
-            )
-            val hygiene = HygieneCalculator.report(items, nowMillis())
-            base.copy(
-                calendarYear = anchorMonth.year, calendarMonth = anchorMonth.monthValue,
-                calendarAnchorDate = anchorDate, calendarExpanded = expanded,
-                calendarDayEvents = calendarDayEvents,
-                calendarMode = mode, broadcastSchedule = broadcast,
-                broadcastError = broadcastError,
-                selectedBroadcastMonth = selectedMonth,
-                episodesBySubject = episodesBySubject,
-                tonight = tonight,
-                upcoming = upcomingDays,
-                lagging = lags,
-                hygiene = hygiene,
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Stats calculation failed", e)
-            StatsUiState(isLoading = false)
+    ): StatsUiState = try {
+        val base = computeBaseStats(items, episodesBySubject)
+        val (rangeStart, rangeEnd) = CalendarRangeCalculator.visibleRange(anchorDate, expanded)
+        val calendarDayEvents = StatsCalculator.computeCalendarEventsForRange(
+            items,
+            rangeStart,
+            rangeEnd,
+            mode,
+            broadcast,
+            seasonal,
+            episodesBySubject,
+        )
+        val anchorMonth = YearMonth.from(anchorDate)
+        val broadcastEvents = if (mode == CalendarMode.BROADCAST && expanded) {
+            calendarDayEvents
+        } else {
+            StatsCalculator.computeCalendarEvents(items, anchorMonth.year, anchorMonth.monthValue, CalendarMode.BROADCAST, broadcast, seasonal, episodesBySubject)
         }
+        val eventCount = broadcastEvents.values.sumOf { it.broadcastSubjects.size + it.releaseDateSubjects.size }
+        val selectedMonth = monthState.copy(
+            eventCount = eventCount,
+            status = if (monthState.status == BroadcastMonthStatus.SUCCESS || monthState.status == BroadcastMonthStatus.EMPTY) {
+                if (eventCount == 0) BroadcastMonthStatus.EMPTY else BroadcastMonthStatus.SUCCESS
+            } else {
+                monthState.status
+            },
+        )
+        // 「今晚 / 接下来七天 / 漏看 / 健康度」四块都是纯派生：只读 items + 放送缓存 + 每集数据，
+        // 不额外发请求。七天事件与日历共用 computeCalendarEventsForRange，口径不会分叉。
+        val todayDate = today()
+        val upcomingEvents = UpcomingAiringCalculator.events(
+            items = items,
+            today = todayDate,
+            broadcast = broadcast,
+            seasonal = seasonal,
+            episodesBySubject = episodesBySubject,
+        )
+        val lags = CatchUpCalculator.lagging(items, episodesBySubject, todayDate)
+        val tonight = StatsTonightCalculator.tonight(items, todayDate, upcomingEvents, lags, episodesBySubject)
+        val upcomingDays = UpcomingAiringCalculator.days(
+            events = upcomingEvents,
+            items = items,
+            today = todayDate,
+            episodesBySubject = episodesBySubject,
+        )
+        val hygiene = HygieneCalculator.report(items, nowMillis())
+        base.copy(
+            calendarYear = anchorMonth.year, calendarMonth = anchorMonth.monthValue,
+            calendarAnchorDate = anchorDate, calendarExpanded = expanded,
+            calendarDayEvents = calendarDayEvents,
+            calendarMode = mode, broadcastSchedule = broadcast,
+            broadcastError = broadcastError,
+            selectedBroadcastMonth = selectedMonth,
+            episodesBySubject = episodesBySubject,
+            tonight = tonight,
+            upcoming = upcomingDays,
+            lagging = lags,
+            hygiene = hygiene,
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Stats calculation failed", e)
+        StatsUiState(isLoading = false)
     }
 
     private companion object {
@@ -508,8 +558,11 @@ class StatsViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(StatsViewModel::class.java)) {
             return StatsViewModel(
-                collectionRepository, broadcastFetcher, seasonalFetcher,
-                episodeRepository, refreshCoordinator,
+                collectionRepository,
+                broadcastFetcher,
+                seasonalFetcher,
+                episodeRepository,
+                refreshCoordinator,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

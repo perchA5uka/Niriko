@@ -46,6 +46,9 @@ import com.otakup.niriko.data.diagnose.summarize
 import com.otakup.niriko.data.diagnose.totalBytes
 import com.otakup.niriko.data.probe.UrlProbe
 import com.otakup.niriko.data.snapshot.SnapshotFile
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.collapseExit
+import com.otakup.niriko.ui.animation.expandEnter
 import com.otakup.niriko.ui.settings.SettingsActionRow
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsInfoRow
@@ -81,11 +84,13 @@ internal object DiagnosticsFormat {
     /** 体检摘要：「8 项检查 · 2 项发现」。读取失败时明确说读不到，不假装干净。 */
     fun healthSummaryLine(summary: HealthSummary?, loading: Boolean, countsUnavailable: Boolean): String = when {
         loading -> "正在采集只读数据…"
+
         summary == null -> "尚未运行体检"
+
         else -> buildString {
             append(summary.checked).append(" 项检查")
             val findings = summary.warnings + summary.errors
-            append(" · ").append(if (findings > 0) "${findings} 项发现" else "全部正常")
+            append(" · ").append(if (findings > 0) "$findings 项发现" else "全部正常")
             if (summary.errors > 0) append(" · ").append(summary.errors).append(" 项错误")
             if (countsUnavailable) append(" · 计数读取失败（收藏类检查已跳过）")
         }
@@ -100,8 +105,7 @@ internal object DiagnosticsFormat {
     }
 
     /** 四类占用条的占比（总量为 0 时全 0，不产出 NaN）。 */
-    fun bucketFraction(bytes: Long, total: Long): Float =
-        if (total <= 0L) 0f else (bytes.toDouble() / total).toFloat().coerceIn(0f, 1f)
+    fun bucketFraction(bytes: Long, total: Long): Float = if (total <= 0L) 0f else (bytes.toDouble() / total).toFloat().coerceIn(0f, 1f)
 
     /** 占用摘要：总计 + 最大的一类。 */
     fun storageSummaryLine(items: List<StorageItem>): String {
@@ -117,18 +121,15 @@ internal object DiagnosticsFormat {
     }
 
     /** 快照时间：yyyy-MM-dd HH:mm（本地时区；测试用 UTC 固定）。 */
-    fun snapshotTime(createdAt: Long, zone: ZoneId = ZoneId.systemDefault()): String =
-        DateTimeFormatter.ofPattern("MM-dd HH:mm", Locale.US)
-            .withZone(zone)
-            .format(Instant.ofEpochMilli(createdAt))
+    fun snapshotTime(createdAt: Long, zone: ZoneId = ZoneId.systemDefault()): String = DateTimeFormatter.ofPattern("MM-dd HH:mm", Locale.US)
+        .withZone(zone)
+        .format(Instant.ofEpochMilli(createdAt))
 
     /** 快照一行：时间 · 大小。 */
-    fun snapshotLine(file: SnapshotFile, zone: ZoneId = ZoneId.systemDefault()): String =
-        snapshotTime(file.createdAt, zone) + " · " + formatBytes(file.bytes)
+    fun snapshotLine(file: SnapshotFile, zone: ZoneId = ZoneId.systemDefault()): String = snapshotTime(file.createdAt, zone) + " · " + formatBytes(file.bytes)
 
     /** 快照摘要：最近 5 份 show 的时间范围。 */
-    fun snapshotSummaryLine(files: List<SnapshotFile>): String =
-        if (files.isEmpty()) "还没有本地快照" else "共 ${files.size} 份 · 最近 ${snapshotLine(files.last())}"
+    fun snapshotSummaryLine(files: List<SnapshotFile>): String = if (files.isEmpty()) "还没有本地快照" else "共 ${files.size} 份 · 最近 ${snapshotLine(files.last())}"
 
     /** 自检摘要：能力矩阵一行。 */
     fun probeSummaryLine(cells: List<ProbeCell>, summary: ProbeSummary?): String = buildString {
@@ -167,8 +168,7 @@ internal object DiagnosticsFormat {
     }
 
     /** 从 GitHub releases/latest 的 JSON 里取 tag_name（无网络时可单测）。 */
-    fun extractTagName(json: String): String? =
-        Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
+    fun extractTagName(json: String): String? = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(json)?.groupValues?.get(1)
 }
 
 /** 一个可折叠 section 的外壳：标题行（点击切换）+ 展开内容。 */
@@ -181,16 +181,22 @@ internal fun DiagnosticsSection(
     onToggle: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    SettingsPageSplitGroup(content = listOf({
-        SettingsActionRow(
-            icon = icon,
-            title = title,
-            description = summary,
-            showChevron = true,
-            onClick = onToggle,
-        )
-    }))
-    AnimatedVisibility(visible = expanded) {
+    SettingsPageSplitGroup(
+        content = listOf({
+            SettingsActionRow(
+                icon = icon,
+                title = title,
+                description = summary,
+                showChevron = true,
+                onClick = onToggle,
+            )
+        })
+    )
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandEnter(LocalReduceMotion.current),
+        exit = collapseExit(LocalReduceMotion.current),
+    ) {
         Column { content() }
     }
 }
@@ -212,23 +218,29 @@ internal fun DiagnosticsHealthSection(
         onToggle = onToggle,
     ) {
         if (findings.isEmpty()) {
-            SettingsPageSplitGroup(content = listOf({
-                SettingsInfoRow(icon = Icons.Outlined.Info, title = "尚未运行", value = "切回本页或点上方标题刷新")
-            }))
-        } else {
-            SettingsPageSplitGroup(content = findings.map { finding ->
-                {
-                    HealthRow(finding)
-                }
-            })
-        }
-        SettingsPageSplitGroup(content = listOf({
-            SettingsInfoRow(
-                icon = Icons.Outlined.Info,
-                title = "一键修复",
-                value = "本轮未接修复执行器：按每条建议手动处理",
+            SettingsPageSplitGroup(
+                content = listOf({
+                    SettingsInfoRow(icon = Icons.Outlined.Info, title = "尚未运行", value = "切回本页或点上方标题刷新")
+                })
             )
-        }))
+        } else {
+            SettingsPageSplitGroup(
+                content = findings.map { finding ->
+                    {
+                        HealthRow(finding)
+                    }
+                }
+            )
+        }
+        SettingsPageSplitGroup(
+            content = listOf({
+                SettingsInfoRow(
+                    icon = Icons.Outlined.Info,
+                    title = "一键修复",
+                    value = "本轮未接修复执行器：按每条建议手动处理",
+                )
+            })
+        )
     }
 }
 
@@ -292,26 +304,32 @@ internal fun DiagnosticsStorageSection(
         onToggle = onToggle,
     ) {
         val usages = summarize(items)
-        SettingsPageSplitGroup(content = usages.map { usage ->
-            {
-                UsageRow(usage.bucket.label, usage.bytes, usage.items, DiagnosticsFormat.bucketFraction(usage.bytes, totalBytes(items)))
+        SettingsPageSplitGroup(
+            content = usages.map { usage ->
+                {
+                    UsageRow(usage.bucket.label, usage.bytes, usage.items, DiagnosticsFormat.bucketFraction(usage.bytes, totalBytes(items)))
+                }
             }
-        })
+        )
         message?.let {
-            SettingsPageSplitGroup(content = listOf({
-                SettingsInfoRow(icon = Icons.Outlined.Info, title = "上次清理", value = it)
-            }))
-        }
-        SettingsPageSplitGroup(content = listOf({
-            SettingsActionRow(
-                icon = Icons.Outlined.RestartAlt,
-                title = "清理 30 天未访问的图片缓存",
-                description = "只清 image_cache，不碰快照/壁纸/备份",
-                isLoading = busy,
-                showChevron = false,
-                onClick = onCleanup,
+            SettingsPageSplitGroup(
+                content = listOf({
+                    SettingsInfoRow(icon = Icons.Outlined.Info, title = "上次清理", value = it)
+                })
             )
-        }))
+        }
+        SettingsPageSplitGroup(
+            content = listOf({
+                SettingsActionRow(
+                    icon = Icons.Outlined.RestartAlt,
+                    title = "清理 30 天未访问的图片缓存",
+                    description = "只清 image_cache，不碰快照/壁纸/备份",
+                    isLoading = busy,
+                    showChevron = false,
+                    onClick = onCleanup,
+                )
+            })
+        )
     }
 }
 
@@ -361,35 +379,43 @@ internal fun DiagnosticsSnapshotSection(
     ) {
         val recent = files.sortedByDescending { it.createdAt }.take(5)
         if (recent.isEmpty()) {
-            SettingsPageSplitGroup(content = listOf({
-                SettingsInfoRow(icon = Icons.Outlined.Info, title = "还没有快照", value = "点下方立即创建；策略保留最近 5 份 + 最近 7 天每天 1 份")
-            }))
+            SettingsPageSplitGroup(
+                content = listOf({
+                    SettingsInfoRow(icon = Icons.Outlined.Info, title = "还没有快照", value = "点下方立即创建；策略保留最近 5 份 + 最近 7 天每天 1 份")
+                })
+            )
         } else {
-            SettingsPageSplitGroup(content = recent.map { file ->
-                {
-                    SettingsInfoRow(
-                        icon = Icons.Outlined.Sync,
-                        title = DiagnosticsFormat.snapshotTime(file.createdAt),
-                        value = formatBytes(file.bytes),
-                    )
+            SettingsPageSplitGroup(
+                content = recent.map { file ->
+                    {
+                        SettingsInfoRow(
+                            icon = Icons.Outlined.Sync,
+                            title = DiagnosticsFormat.snapshotTime(file.createdAt),
+                            value = formatBytes(file.bytes),
+                        )
+                    }
                 }
-            })
+            )
         }
         message?.let {
-            SettingsPageSplitGroup(content = listOf({
-                SettingsInfoRow(icon = Icons.Outlined.Info, title = "上次操作", value = it)
-            }))
-        }
-        SettingsPageSplitGroup(content = listOf({
-            SettingsActionRow(
-                icon = Icons.Outlined.Sync,
-                title = "立即创建快照",
-                description = "导出当前数据并按策略清理旧快照",
-                isLoading = busy,
-                showChevron = false,
-                onClick = onSnapshot,
+            SettingsPageSplitGroup(
+                content = listOf({
+                    SettingsInfoRow(icon = Icons.Outlined.Info, title = "上次操作", value = it)
+                })
             )
-        }))
+        }
+        SettingsPageSplitGroup(
+            content = listOf({
+                SettingsActionRow(
+                    icon = Icons.Outlined.Sync,
+                    title = "立即创建快照",
+                    description = "导出当前数据并按策略清理旧快照",
+                    isLoading = busy,
+                    showChevron = false,
+                    onClick = onSnapshot,
+                )
+            })
+        )
     }
 }
 
@@ -414,39 +440,50 @@ internal fun DiagnosticsProbeSection(
         onToggle = onToggle,
     ) {
         if (capabilities.isEmpty()) {
-            SettingsPageSplitGroup(content = listOf({
-                SettingsInfoRow(icon = Icons.Outlined.Info, title = "没有已注册的数据源", value = "重启应用后重试")
-            }))
+            SettingsPageSplitGroup(
+                content = listOf({
+                    SettingsInfoRow(icon = Icons.Outlined.Info, title = "没有已注册的数据源", value = "重启应用后重试")
+                })
+            )
         } else {
-            SettingsPageSplitGroup(content = capabilities.map { source ->
-                {
-                    ProbeSourceRow(source, cells.filter { it.sourceId == source.sourceId })
+            SettingsPageSplitGroup(
+                content = capabilities.map { source ->
+                    {
+                        ProbeSourceRow(source, cells.filter { it.sourceId == source.sourceId })
+                    }
                 }
-            })
+            )
         }
         if (probes.isNotEmpty()) {
-            SettingsPageSplitGroup(content = probes.map { probe ->
-                {
-                    SettingsInfoRow(
-                        icon = if (probe.error == null && (probe.statusCode ?: 500) < 400) Icons.Outlined.CheckCircle
-                        else Icons.Outlined.ErrorOutline,
-                        title = probe.statusCode?.toString() ?: "失败",
-                        value = probe.url + " · " + probe.elapsedMs + "ms" +
-                            (probe.error?.let { " · $it" } ?: ""),
-                    )
+            SettingsPageSplitGroup(
+                content = probes.map { probe ->
+                    {
+                        SettingsInfoRow(
+                            icon = if (probe.error == null && (probe.statusCode ?: 500) < 400) {
+                                Icons.Outlined.CheckCircle
+                            } else {
+                                Icons.Outlined.ErrorOutline
+                            },
+                            title = probe.statusCode?.toString() ?: "失败",
+                            value = probe.url + " · " + probe.elapsedMs + "ms" +
+                                (probe.error?.let { " · $it" } ?: ""),
+                        )
+                    }
                 }
-            })
-        }
-        SettingsPageSplitGroup(content = listOf({
-            SettingsActionRow(
-                icon = Icons.Outlined.Refresh,
-                title = "运行探测",
-                description = "逐源 HEAD，2s 超时、串行，不解析正文",
-                isLoading = busy,
-                showChevron = false,
-                onClick = onRun,
             )
-        }))
+        }
+        SettingsPageSplitGroup(
+            content = listOf({
+                SettingsActionRow(
+                    icon = Icons.Outlined.Refresh,
+                    title = "运行探测",
+                    description = "逐源 HEAD，2s 超时、串行，不解析正文",
+                    isLoading = busy,
+                    showChevron = false,
+                    onClick = onRun,
+                )
+            })
+        )
     }
 }
 
@@ -464,8 +501,11 @@ private fun ProbeSourceRow(source: SourceCapability, cells: List<ProbeCell>) {
             )
         }
         Text(
-            if (unsupported.isEmpty()) "全部能力已声明"
-            else "不支持：" + unsupported.joinToString("、"),
+            if (unsupported.isEmpty()) {
+                "全部能力已声明"
+            } else {
+                "不支持：" + unsupported.joinToString("、")
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -490,30 +530,32 @@ internal fun DiagnosticsUpdateSection(
         expanded = expanded,
         onToggle = onToggle,
     ) {
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsInfoRow(icon = Icons.Outlined.Info, title = "当前版本", value = "v$currentVersion")
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Refresh,
-                    title = "检查更新",
-                    description = "只查最新 tag 并比较版本，不下载、不安装",
-                    isLoading = busy,
-                    showChevron = false,
-                    onClick = onCheck,
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Info,
-                    title = "打开发布页",
-                    description = "浏览器查看完整 Release Notes",
-                    showChevron = false,
-                    onClick = onOpenReleases,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsInfoRow(icon = Icons.Outlined.Info, title = "当前版本", value = "v$currentVersion")
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Refresh,
+                        title = "检查更新",
+                        description = "只查最新 tag 并比较版本，不下载、不安装",
+                        isLoading = busy,
+                        showChevron = false,
+                        onClick = onCheck,
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Info,
+                        title = "打开发布页",
+                        description = "浏览器查看完整 Release Notes",
+                        showChevron = false,
+                        onClick = onOpenReleases,
+                    )
+                },
+            )
+        )
     }
 }
 

@@ -9,12 +9,113 @@
 | 项目信息 | 值 |
 | --- | --- |
 | 应用名 / 包名 | Niriko · `com.otakup.niriko` |
-| 版本 | 1.2.1（versionCode 4） |
+| 版本 | 1.2.2（versionCode 5） |
 | SDK | minSdk 26 · targetSdk 34 · compileSdk 37 |
 | 技术栈 | Kotlin + Jetpack Compose + Material 3 · 单 Activity |
 | 本地存储 | Room（23 张表，v32） + DataStore Preferences |
-| 单元测试 | 1419 项 JVM 单测（无需设备，当前回归全部通过） |
+| 单元测试 | 1551 项 JVM 单测（无需设备，当前回归全部通过） |
 | 开源许可 | MIT（见 `LICENSE`；第三方组件见 `THIRD-PARTY-NOTICES.md`） |
+
+---
+
+## v1.2.2 更新（2026-10）
+
+> 这一版没有新表、没有迁移：Room 仍是 23 张表 / v32，也没有新增 DataStore 键。主题是「动效与一致性收口」——把 v1.2.1 留下的玻璃观感从「静态好看」推到「按下去有回应、切过去有交代」。
+
+### 控件语言统一（外观四项，A 方案）
+
+- **分段**：唯一实现 `NirikoSegmentedControl`（Pill 容器 + 主色 20% 淡底 + 1dp 描边 + 等宽 + 13sp + 48dp 行高），接线 3 处：统计页日历模式、详情页观看状态、作品库状态计数行（新增 details 第二行计数）；沿用多年却零调用的空壳 `GlassSegmentedContainer` 已删除
+- **chip**：四档语义 `NirikoTagPill`（信息）/ `NirikoFilterPill`（可切换）/ `NirikoSelectionPill`（选集，可长按）/ `NirikoActionPill`（动作）；旧 `TagChip` 删除，`ui/` 下 M3 `FilterChip` / `AssistChip` 归零
+- **菜单**：`NirikoMenu` + `GlassMenuOverlay` 为唯一入口（24dp 玻璃、从锚点缩放展开、退场、Back/Esc、焦点进出与归还）；旧 `GlassAnchoredMenu` 删除、全站 M3 `DropdownMenu` 归零，详情页 5 处双行 `DropdownMenuItem` 刻意保留
+- **统计数字**：`StatNumber`（24sp/w600/tnum，主指标用主色）+ `StatLabel`(13sp) + `StatNote`(11.5sp) + `StatTile`（图标+标签+数字）四处同源；统计页 20/22/26/28/32 五档字号清零，详情评分区/环心/年度统计共用同一档
+
+### 修正
+
+- **设置页横向缩进**：主页标题、分组标题、组卡此前是三种左缘（0 / 16 / 20dp），统一为 16dp；「外观」页里夹着的两档 20dp 分组改回 24dp；设置搜索框由 M3 描边输入框改胶囊玻璃外观，与站内其他搜索入口同一形态
+- **设置行**：行高统一 56 / 72dp、箭头统一 20dp、右侧「当前值」只保留文字（删掉 8dp 小徽标）；禁用项整行降到 38% 不透明（此前与可用项看起来一样）
+- **宽屏设置**：左列分类图标由实心绿圆改半透明圆角底；当前选中项有底色与箭头，不再「糊成一片」
+- **详情页「详细信息」**：标题被 420dp 滚动容器裁掉一半——标题移出滚动区，长 infobox 只滚内容
+- **详情页剧集结论条**：窄屏两行文字串在一起——改为自动换行 + 单行省略
+- **详情页「评分分布」**：柱图从「直接压壁纸」包进玻璃卡，并与紧邻的评分卡左缘对齐
+- **评分刷新失败**：此前失败会把已显示的权威评分清空——现在保留上次结果并给一条提示
+- **分享图**：生成失败会永久停在「生成中…」——现在失败给出提示、留在面板里可重试
+- **加载失败态**：补标题、图标与空态同尺寸、重试按钮改胶囊（此前是全站唯一的 M3 实心按钮）
+- **骨架**：骨架卡圆角 12 → 20dp，加载完成不再看到圆角「跳」一下
+- **输入框**：全站 37 处输入框调用点（`NirikoTextField` 在 15 个页面文件里共 37 次，另 1 处是组件自身定义；感想、标签、绑定的 Token/URL、搜索条件等）此前是 M3 默认描边样式（4dp 直角 + 1dp 描边，与站内胶囊/圆角语言冲突）——现在统一走 `NirikoTextField`（12dp 圆角、半透明填充、聚焦细描边），设置页与详情页不再各长一副面孔
+- **选集 chip**：详情页「选集」13 格此前是 8dp 小矩形 + 描边，与全站胶囊语言不符——改为胶囊 + 半透明底，选中用主色淡底 + 描边
+- **评分数字弹跳**：此前进详情页还没打分就先弹一下（`LaunchedEffect` 首帧也触发）——现在只在真的改分时弹，且「减少动态效果」下静默
+- **圆角令牌**：83 处与令牌取值完全相等的字面量（999 / 24 / 20 / 16 / 12 / 4dp 与 `percent = 50`）改为引用 `NirikoShapes` 的六档令牌，**零像素变化**；剩余 60 处没有对应档位的小圆角保持原样并加了静态护栏测试（第八批再收敛 28dp/8dp 各 1 处，现为 58 处），防止以后又长回字面量
+- **强调色令牌**：11 个在多个文件里各写一份的语义色（评分金、集数蓝、收藏红、状态四色、日历四色）收进 `ui/theme/AccentColors.kt`，**取值不变**；原来「日历角标」与「当日列表」的放送金各写一份，改单边就会分叉，现在只有一个出处
+- **图表小件**：评分分布的柱条从直角改 4dp 圆角（矮柱自动收敛，不会变水滴）；图表标签原来写死 24 像素，改 `8.sp`——3 倍屏完全一致，其它屏幕密度与系统字体放大时才不再错位
+- **收藏概览**：顶部统计胶囊的弱形态从半透明（α0.7，会与壁纸混色、对比度随机）改实底，文字统一过 `ensureReadable`；强调与否改由字重与文字色区分
+- **控件迁移（V-13）**：设置页数值滑块 → `GlassSlider`；搜索筛选面板的 M3 `Switch` → `GlassToggle`、`RangeSlider` → 新 `GlassRangeSlider`（双 thumb 结算走纯函数 `GlassRangeSliderMath`）；B 站同步开关、剧集评分（`GlassRatingSlider`）一并迁移；`ui/` 下 M3 `Switch` / `Slider` / `RangeSlider` 用量归零，由 `ControlSourceTest` 锁死
+- **分区标题（V-15）**：`SectionHeader` 真实调用从 4 处扩到 **43 处**（详情 19 / 人物 5 / 角色 3 / 剧集 4 + 来源·关联·剧集·人物等分区 12），剩余 6 处 `titleMedium + Bold` 是「数值强调」而非标题，按文件锁死计数
+- **drill-in 页标题（V-16）**：6 个二级页（作品/人物/角色/制作人员/剧集/Steam 登录）标题从 `titleLarge`(22sp) 统一到 `headlineSmall`(24sp/w600)，与设置二级页同档
+- **色值归位（V-02）**：`CardRarityMaterial` 的 23 色等值搬进 `ui/theme/RarityPalette.kt`、搜索挡板 2 个绿进 `SearchIndicatorAccents`、`LibraryGalleryCard` 2 色清零；`ui/` 下 `Color(0x…)` 只剩 `theme/`、`share/` 与 `LiquidGlassTokens.kt` 三处合法域，由 `ThemeColorAuditTest` 守住
+- **字号收口（V-03）**：统计/日历/详情的小字全部走 `labelSmall`(11.5sp) / `labelMedium`(13sp)；日历角标改实底 badge（用形状+底色辨识，不再靠 7–9sp 字号差）；`LibraryGalleryCard` 的 9/12/19sp 清零；`fontSize = N.sp` 只剩 `Type.kt`（定义）、`Badges.kt`（压图 10sp 刻意）、`share/**`（隔离域），由 `TypographyLiteralAuditTest` 守住
+
+### 视觉与交互
+
+- **二级设置页横向推入**：进出设置子页改为左右位移 + 淡入（复用 v1.2.1 就写好但零调用的 `enterFromRight/exitToRight`），返回方向相反；顶部四页与封面共享转场不变
+- **设置行按压**：整行矩形高光（α0.08），按下快、松开慢；替换原先的 M3 圆水波
+- **玻璃开关可以拖**：此前只能点、拖到一半松手会弹回去；现在跟手拖动、松手按速度或过半落位，按下 thumb 放大 8%
+- **玻璃滑块**：按下 thumb 放大 10%，高光跟手
+- **卡片受光角度**：倾斜压卡时高光角度随倾斜偏移（±20°），不倾斜时与改动前逐像素一致
+- **折叠区块**：详情页折叠项从「瞬间加减」改成高度展开 + 淡入，箭头 180° 旋转
+- **锚定菜单**：从触发控件位置缩放展开（此前从中心胀大或直接硬切），关闭有退场
+- **非模态面板**：拖动松手带速度惯性、回弹更连续（此前每次 pointer move 起协程，跟手发飘）；把手首次拖动有触感
+- **封面**：加载完成 150ms 淡入；共享元素飞行期间强制不淡入（否则拖影）
+- **多选**：列表视图选中项有描边环（与网格一致）；多选时长按不再误弹状态浮层
+- **全局提示**：收藏 / 发现 / 搜索 / 统计页此前没有 Snackbar 宿主，批量删除、改状态、导出日历都静默——现在窗口层有统一提示条，并给底部 dock 让出 96dp
+- **「减少动态效果」覆盖**：搜索卡展开/收起（12 个过渡值）、筛选面板展开、发现页 tab 底色、顶栏滚动隐藏、底栏重选回顶，此前无视系统设置照常播动画——现在全部降级为瞬时；第二批又补上详情/绑定/同步等 9 处折叠面板的展开收起、详情页材质墙与 chrome 收起、状态分段色、列表与搜索结果的内容尺寸变化。跟手拖拽、按压、一次性触感**刻意保留**（关了动画也仍要「摸得到反馈」）
+- **骨架 → 正文的揭示**：详情页、统计页此前骨架消失与正文出现是同一帧硬切——现在正文有一次 180ms 的淡入包络（详情 0.55、统计 0.55 起）；`false→true`（刷新）不压暗，只在首次进入时播
+- **列表 ↔ 网格切换**：作品库换视图此前整块瞬移——现在内容先压到 60% 亮度再 180ms 回满（呼吸式）；刻意不用 `AnimatedContent`：那会让列表与网格两棵 Lazy 同时组合（双份图片请求），是性能红线
+- **顶/底栏与详情 chrome**：底栏隐藏、顶栏滚动隐藏、详情页 chrome 收起、搜索页顶栏此前各自写 220 / 180ms 字面量——现在统一走 `CHROME_HIDE_DURATION_MS` / `DETAIL_CHROME_DURATION_MS`（**取值一个毫秒未改**），内容尺寸变化的 300ms 也改走既有 `AnimDurationNormal`；新增护栏测试防止以后又写裸数字
+- **四态切换（B-13）**：新 `StateHost`（单实例、0.55→1 淡入包络、180ms、首帧不播、reduceMotion 瞬切）接线 7 屏（人物/角色/制作人员/趋势/发现/搜索结果/作品库首屏）；刻意不用 `AnimatedContent` —— 过渡期会同时组合两棵 Lazy，是性能红线
+- **日历切月（B-15）**：标题改 `AnimatedContent`（只包标题、不引入双 Lazy，`sizeTransform = null`），翻月方向由纯函数判定；切周/月换粒度无方向，只淡入淡出；reduceMotion 下两侧 `None`
+- **筛选面板（B-14）**：面板内补 `animateContentSize`（spatial 档、可降级），两个面板的 8 处手写 spring 收进 `panelEnter` / `panelExit`
+- **搜索结果逐条入场（B-16）**：搜索结果/榜单列表项 `animateItem()` 逐条入场已核实在位，不再整块淡入
+- **搜索卡收口（B-11，未结构重写）**：12 处手写时长/弹簧字面量 → 六档令牌，5 处 reduceMotion 降级；尺寸与位移的读取从组合期移到布局/绘制期（新 `AnimatedLayoutSize.kt` 的 `animatedRequiredSize`、`offset { }`）。**没有做结构重写**（不合并单一 progress、不做 graphicsLayer 尺寸近似）：需真机逐帧调，文件头已写取舍
+- **帧阶段（A.9）**：底栏/宽屏 dock 的隐藏进度改成在 `offset { }` / `graphicsLayer { }` 的 lambda 内读取 + `derivedStateOf`（不再每帧重组整条 kyant 底栏）；时间线页偏移、页面指示器（改 Canvas 自绘）、进度条填充与 range thumb 位移均移到绘制/布局期
+- **预测返回（B-9，真机未验）**：Navigation-Compose 2.8.5 的 NavHost 内部已用 `PredictiveBackHandler + SeekableTransitionState` 对 popEnter/popExit 跟手 seek（用 aar 字节码核实）；新增 `PredictiveBackSupportTest` 钉住版本、清单开关、四条过渡、reduceMotion 分支与 popExit 缩放 ≤12%。**真机边缘滑动逐帧未验证**
+- **封面重播（P2-2）**：进程级 `CoverRevealTracker`（上限 512 FIFO）记录已揭示的封面 URL，列表滚回不再重播 150ms 淡入
+- **刷新 pending（F-05）**：`StatsViewModel.isBroadcastRefreshing` 外露，日历刷新胶囊显示「刷新中…」并禁用，不再点了没反应
+- **剧集行（S02/S03/S04）**：评分徽标移到 meta 下一行（不再把 meta 挤成「2…」）；行尾常驻 chevron（展开旋转、reduceMotion 瞬切）；「全部 N 张」48dp 命中盒
+- **解绑二次确认（S07）**：TMDb / AniList / VNDB 解绑改确认对话框，文案与 VM 行为一致（TMDb 会删来源分集评分）；TMDb 解绑补 snackbar 回执
+- **infobox「打开链接」（S08）**：从 8dp 小矩形改 `NirikoActionPill(OpenInNew)`（48dp 命中壳）
+- **触感与按压补点（F-07/F-08/F-10/F-12/F-14/F-15）**：选集 pill 长按触感；搜索菜单 chip/type cell 按压高亮 + selected 语义；TrendTab 按压 + selected；搜索关闭钮 48dp 外壳（视觉 44 保持）；5 张主卡开启 `pressTilt` 触感；保存回执由 `LongPress` 改 `Confirm`
+- **hero 单击翻面（F-11）**：详情页封面单击即翻面（保留双击）；单击有约 300ms 的双击等待，已记账；未引入 DataStore 首次提示
+
+### 新功能
+
+- 无新功能：本版只做一致性、动效与反馈收口
+
+### 行为变化（可能被误认为 bug）
+
+- 设置二级页现在有左右滑动转场（此前是淡入缩放）；平板两栏布局下同样是推入
+- 设置页所有分组左缘内缩 16dp，内容区略窄
+- 详情页「详细信息」卡在长 infobox 时比原来高约 44dp（标题不再与内容抢 420dp 上限）
+- 玻璃开关支持拖动后，从 thumb 上开始滑动会改变数值（此前纯点击）
+- 「评分分布」卡在玻璃档位为 FULL 时仍是瓷面卡（不加实时折射）：刻意的性能取舍，不是漏改
+- 提示条统一挂在窗口层底部、位于 dock 之上；无底栏的布局不会让出这 96dp
+- 输入框视觉全站换了一副样子（12dp 圆角 + 填充底）：密排表单页（数据源、同步备份）会明显不同
+- 选集 chip 从方角小块变成胶囊，同一行能放下的格数可能变化
+- 进详情页/统计页时正文有一次约 180ms 的淡入（详情页这次淡入与封面共享飞行同期，飞行时长仍是 200ms）；作品库换视图时内容会先压暗一下再回满
+- 详情页/统计页的骨架→正文、作品库的换视图都**没有**用 `AnimatedContent`：这是刻意的性能取舍（两棵 Lazy 同时组合会翻倍图片请求），不是漏做
+- 时长令牌化只是「换引用」，所有动画时长与改动前完全相同：如果你觉得「变快了/变慢了」，那是心理效应
+
+### 本版未做
+
+- **真机验证全部未做**：无设备连接。06-roadmap §7 的 320/360/411/600/840dp × 7 主题 × 3 玻璃档 × reduceMotion × fontScale 矩阵无记录；仓库也没有 roborazzi/paparazzi 之类的截图测试设施，`screenshot/` 仍是 2026-09-25 旧图
+- **同屏 RenderEffect 实测未做**：`GlassRenderEffectBudgetTest` 只数源码构造点（13 个），数不到「同屏运行几个」；FULL 档下分段控件与菜单都走实时折射路径，同屏是否 ≤2 未知
+- **B-11 结构重写**（单一 progress 驱动、尺寸走 graphicsLayer 近似）未做：需真机逐帧调，留待下一版；本轮只做字面量收口、reduceMotion 与帧阶段
+- **V-04 材质分层**：用户 D1 裁决「不收」，`GlassDecision` 不动，只保留「不新增 RenderEffect 构造点」护栏
+- 58 处无对应档位的圆角字面量（0/2/3/6/8/10/11/14/28/48/50dp，小件与 kyant 移植值）保留：`ShapeLiteralPolicyTest` 以**精确相等表**锁值锁次数
+- 详情页 5 处双行 M3 `DropdownMenuItem`：双行副标题没有自定义槽位，`ControlLanguagePolicyTest` 按文件锁死数量
+- `RatingComparisonSection` 的 Canvas 刻度仍是 `8.sp`：要改需同步改图表底部留白，本轮不动
+- 已知取舍：hero 单击翻面有约 300ms 双击等待；剧集评分改为「停止拖动 600ms 落库」（原实现松手即存），可能丢最后一次拖动
+- V-15 剩余 6 处数值强调（`titleMedium + Bold`）：是数据而非分区标题，刻意保留并锁死计数
+- 单处使用的 `Color(0x…)` 不再追缴：`ui/` 下越界已清零，只剩 `theme/`、`share/`、`LiquidGlassTokens.kt` 三个合法域（11 个强调色令牌保留在 `AccentColors.kt`）
 
 ---
 
@@ -106,6 +207,7 @@
 
 ## 目录
 
+- [v1.2.2 更新](#v122-更新2026-10)
 - [v1.2.1 更新](#v121-更新2026-10)
 - [截图](#截图)
 - [功能总览](#功能总览)
@@ -506,6 +608,12 @@ Room 数据库 `NirikoDatabase`：**version 32**，迁移链 `v2 → v32`，使�
 
 # 发布包
 .\gradlew.bat assembleRelease
+
+# 代码格式检查（只校验相对基线的改动，见「开发约定」）
+.\gradlew.bat :app:spotlessCheck
+
+# 自动修复本次改动文件的格式
+.\gradlew.bat :app:spotlessApply
 ```
 
 用 Android Studio 直接打开本目录、等待 Gradle Sync 完成后点运行也可以。Debug 包与正式 Release 包的签名可能不同，不能直接互相覆盖安装；用于保留现有调试安装数据的同证书非 Debug 诊断副本仅供测试，不是正式发布包。
@@ -548,6 +656,7 @@ docs/                            # 设计与调研文档
 - **无 DI 框架**：依赖在 `NirikoApplication` 集中装配，ViewModel 通过手写 Factory 接收
 - **纯函数优先**：统计 / 排序 / 匹配 / 在播判定等逻辑抽成不依赖 Android 的纯函数，便于单测
 - **KDoc 用「」而非反引号**（本工程构建工具链对反引号处理不稳定）
+- **代码格式门禁**：Spotless + ktlint，规则以仓库根 `.editorconfig` 为准（Android Studio 风格、不设行长硬上限、关闭尾逗号规则）。采用 ratchet 策略：本地只检查相对 `HEAD` 的改动，CI 只检查相对 `origin/main` 的 diff——存量文件约 244 个仍有历史格式偏差，按「改到哪个文件就顺手用 `spotlessApply` 修哪个」逐步收敛，不做一次性重排
 - **Room 迁移的 DDL 必须与 `app/schemas` 导出的 `createSql` 逐字一致**——schema 校验只在真机首次开库时执行，编译期不会报错
 - **新增逻辑请补 JVM 单测**：用例覆盖统计、趋势、发现排序、筛选映射、匹配打分、刷新策略、解析器、简介富文本（HTML / BBCode）解析与链接识别、图表分桶与累计、雷达图几何、日历周/月映射与 31 天日期条几何、窗口尺寸类别与折痕分栏、玻璃降级判定、壁纸库编解码与轮换顺延、非模态面板关闭阈值、顶部页面指示器几何、分区 DAO 与备份恢复、详情缓存、分集评价合并、曲目进度、详情部件布局、评分反馈、完成波浪、网点 / CRT、连续顶部渐隐与横滑卡行数规则、顶部控件布局与状态计数、历史月份状态与检索契约、VNDB 实际响应解析、共享浅弧路径与弹性、封面分析缓存等
 - 引入新第三方依赖前先讨论，优先使用平台 API 与已有库实现
@@ -575,6 +684,7 @@ docs/                            # 设计与调研文档
 | `docs/phone-shared-motion-profile.md` | 实机共享海报性能观测与封面分析缓存记录 |
 | `docs/detailed-execution-plan.md` | 功能与修复执行计划、分批实现记录、验证证据及待验收边界 |
 | `docs/fix-and-redesign-plan-round{3,4,5,6}.md` | 各轮问题定位与解决方案（含验收与踩坑记录） |
+| `docs/v1.2.2/` | v1.2.2 的视觉 / 动效 / 反馈审计与实施记录（00 现状地图 → 06 路线图，附 `impl-summary.md` 与 `review-visual.md`） |
 | `docs/ios-port/` | iOS / KMP 移植可行性调研（spike、依赖映射、模块划分等） |
 
 ---

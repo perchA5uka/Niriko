@@ -14,26 +14,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -51,12 +44,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.remote.rating.ExternalRating
 import com.otakup.niriko.ui.common.ImageViewer
+import com.otakup.niriko.ui.components.GlassRatingSlider
+import com.otakup.niriko.ui.components.NirikoActionPill
+import com.otakup.niriko.ui.components.NirikoFilterPill
+import com.otakup.niriko.ui.components.NirikoTextField
+import com.otakup.niriko.ui.components.SectionHeader
 import com.otakup.niriko.ui.subject.formatEpisodeNumber
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.EpisodeDetailViewModel
 import kotlinx.coroutines.delay
 
@@ -103,7 +101,8 @@ fun EpisodeDetailScreen(
                     text = state.episode?.let {
                         "第 " + formatEpisodeNumber(it.ep.takeIf { e -> e > 0 } ?: it.sort) + " 集"
                     } ?: "单集详情",
-                    style = MaterialTheme.typography.titleLarge,
+                    // V-16：drill-in 页标题统一 headlineSmall(24/w600)。
+                    style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.weight(1f),
                 )
                 IconButton(
@@ -198,8 +197,9 @@ private fun EpisodeDetailBody(
         }
 
         // —— 标题 + 元信息 ——
+        // 这是「本集标题」内容标题、不是分区标题，因此用 titleLarge 而不套 SectionHeader。
         val title = episode.nameCn?.takeIf { it.isNotBlank() } ?: episode.name
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(title, style = MaterialTheme.typography.titleLarge)
         if (episode.nameCn?.isNotBlank() == true && episode.name.isNotBlank() && episode.name != episode.nameCn) {
             Text(
                 episode.name,
@@ -225,33 +225,27 @@ private fun EpisodeDetailBody(
         Spacer(Modifier.height(18.dp))
 
         // —— 我的评分 ——
-        Text("我的评分", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
+        // V-15：分区标题统一 SectionHeader；V-13/F15：与收藏编辑页同一套 GlassRatingSlider
+        // （玻璃轨道 + 跨刻度触感 + 满分确认），不再用 M3 Slider —— 同一件事此前在详情/收藏两页两种手感。
+        SectionHeader(title = "我的评分")
         var scoreState by remember(episode.epId) {
             mutableFloatStateOf(state.myScore ?: 0f)
         }
         LaunchedEffect(state.myScore, episode.epId) {
             scoreState = state.myScore ?: 0f
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Slider(
-                value = scoreState,
-                onValueChange = { scoreState = it },
-                onValueChangeFinished = {
-                    onSaveScore(scoreState.takeIf { s -> s > 0f })
-                },
-                valueRange = 0f..10f,
-                steps = 19,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                if (scoreState > 0f) "%.1f".format(scoreState) else "未评分",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
+        // 落库仍是「停止拖动 600ms 后写一次」：GlassRatingSlider 只在拖动中回调 onRatingChange，
+        // 没有 onValueChangeFinished 出口；逐格写库会把主线程打满。
+        LaunchedEffect(scoreState, episode.epId) {
+            if (scoreState != (state.myScore ?: 0f)) {
+                delay(600)
+                onSaveScore(scoreState.takeIf { s -> s > 0f })
+            }
         }
+        GlassRatingSlider(
+            rating = scoreState,
+            onRatingChange = { scoreState = it },
+        )
         Text(
             "拖动滑块到 0 即为清除评分",
             style = MaterialTheme.typography.labelSmall,
@@ -260,8 +254,7 @@ private fun EpisodeDetailBody(
         Spacer(Modifier.height(18.dp))
 
         // —— 我的评价（防抖自动保存） ——
-        Text("我的评价", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(6.dp))
+        SectionHeader(title = "我的评价")
         var commentState by remember(episode.epId) { mutableStateOf(state.myComment) }
         LaunchedEffect(state.myComment, episode.epId) {
             if (state.myComment != commentState) commentState = state.myComment
@@ -273,7 +266,7 @@ private fun EpisodeDetailBody(
                 onSaveComment(commentState)
             }
         }
-        OutlinedTextField(
+        NirikoTextField(
             value = commentState,
             onValueChange = { if (it.length <= 2000) commentState = it },
             placeholder = { Text("写下你对这一集的看法…") },
@@ -291,14 +284,13 @@ private fun EpisodeDetailBody(
 
         // —— 该集的权威评分 ——
         if (state.ratings.isNotEmpty()) {
-            Text("该集评分", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
+            SectionHeader(title = "该集评分")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 state.ratings.values.forEach { rating ->
                     val label = if (rating.sourceId == ExternalRating.SOURCE_IMDB) "IMDb" else "TMDb"
                     Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(NirikoShapes.ControlShape)
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     ) {
@@ -325,8 +317,7 @@ private fun EpisodeDetailBody(
         // —— 本集简介 ——
         val desc = episode.desc
         if (!desc.isNullOrBlank()) {
-            Text("本集简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
+            SectionHeader(title = "本集简介")
             Text(
                 desc,
                 style = MaterialTheme.typography.bodyMedium,
@@ -340,26 +331,19 @@ private fun EpisodeDetailBody(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            AssistChip(
+            NirikoActionPill(
+                text = "看到这里",
                 onClick = onMarkWatched,
-                label = { Text("看到这里", style = MaterialTheme.typography.labelSmall) },
-                leadingIcon = {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                },
+                icon = Icons.Filled.PlayArrow,
             )
-            FilterChip(
+            NirikoFilterPill(
+                text = "二刷",
                 selected = state.rewatch,
                 onClick = onToggleRewatch,
-                label = { Text("二刷", style = MaterialTheme.typography.labelSmall) },
-                leadingIcon = {
-                    if (state.rewatch) {
-                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-                    } else null
-                },
             )
-            AssistChip(
+            NirikoActionPill(
+                text = "Bangumi 章节页",
                 onClick = onOpenBangumi,
-                label = { Text("Bangumi 章节页", style = MaterialTheme.typography.labelSmall) },
             )
         }
         if (!state.isInCollection) {

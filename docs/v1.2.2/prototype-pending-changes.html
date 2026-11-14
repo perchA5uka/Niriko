@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Niriko v1.2.2 · 待确认改动原型（分段 / chip / 菜单 / 统计数字）</title>
+<style>
+  :root{
+    --bg:#07070a; --card:rgba(26,26,30,.62); --card2:rgba(34,34,40,.72);
+    --line:rgba(255,255,255,.075); --txt:#e8e8ea; --dim:rgba(255,255,255,.56); --dim2:rgba(255,255,255,.34);
+    --acc:#a5d6a7; --acc2:#b9dec0; --warn:#f0b36b; --down:#e28383;
+    --glass:rgba(255,255,255,.07);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--txt);font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;padding:28px 20px 80px;display:flex;flex-direction:column;gap:34px;align-items:center;}
+  h1{font-size:19px;letter-spacing:.5px;}
+  .idx{width:100%;max-width:1180px;border:1px solid var(--line);border-radius:18px;padding:16px 18px;background:rgba(255,255,255,.02);}
+  .idx p{font-size:12.5px;color:#8a8a90;line-height:1.75;margin-top:8px;}
+  .idx ol{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px 14px;font-size:12px;padding-left:16px;color:var(--dim);margin-top:10px;}
+  .idx a{color:var(--acc2);text-decoration:none;}
+  .idx a:hover{text-decoration:underline;}
+  .idx b{color:var(--txt);}
+  .sect{width:100%;max-width:1180px;}
+  .sect h2{font-size:16px;margin-bottom:4px;}
+  .sect .lead{font-size:12px;color:#8a8a90;line-height:1.7;max-width:900px;margin-bottom:14px;}
+  .row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;}
+  .unit{display:flex;flex-direction:column;gap:8px;}
+  .cap{font-size:12px;color:var(--dim);max-width:360px;line-height:1.6;}
+  .cap b{color:var(--txt);}
+  .cap .bad{color:var(--down);}
+  .cap .good{color:var(--acc);}
+  .cap ul{margin:6px 0 0 16px;}
+  .cap li{margin:2px 0;}
+  .verdict{margin-top:12px;padding:11px 13px;border-radius:14px;background:rgba(240,179,107,.10);border:1px solid rgba(240,179,107,.22);font-size:12px;color:#f5cd9d;line-height:1.7;}
+  .verdict b{color:#ffd9a8;}
+  .verdict.ok{background:rgba(165,214,167,.09);border-color:rgba(165,214,167,.22);color:#cfe6d2;}
+  .verdict.ok b{color:#e2f3e4;}
+
+  /* ---------- 手机框（沿用 docs/round-ui-prototype.html 的口径） ---------- */
+  .phone{width:360px;height:720px;border-radius:28px;overflow:hidden;position:relative;border:1px solid #2c2c31;background:#0b0b0d;flex-shrink:0;}
+  .phone .tagx{position:absolute;top:8px;right:10px;z-index:9;font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.10);color:var(--dim);}
+  .phone .tagx.now{background:rgba(226,131,131,.16);color:#f0b5b5;border:1px solid rgba(226,131,131,.3);}
+  .phone .tagx.next{background:rgba(165,214,167,.16);color:#cfe6d2;border:1px solid rgba(165,214,167,.34);}
+  .scroll{position:absolute;inset:0;overflow-y:auto;scrollbar-width:none;}
+  .scroll::-webkit-scrollbar{display:none;}
+  .wp{position:absolute;inset:-40px;background:radial-gradient(ellipse 80% 45% at 22% 6%,rgba(110,150,130,.40),transparent 70%),radial-gradient(ellipse 70% 42% at 84% 20%,rgba(90,110,140,.42),transparent 68%),linear-gradient(165deg,#1b2430 0%,#141c24 45%,#0c1013 100%);filter:blur(26px) brightness(.5) saturate(.9);transform:scale(1.15);}
+  .wp.scrim{filter:none;transform:none;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.30),rgba(0,0,0,.55) 60%,rgba(0,0,0,.72));}
+  .top{position:sticky;top:0;z-index:6;padding:14px 14px 8px;display:flex;align-items:center;gap:8px;background:linear-gradient(#000000d0,#00000000);backdrop-filter:blur(6px);}
+  .top .ttl{font-size:17px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.6);}
+  .top .sp{flex:1;}
+  .tb{width:30px;height:30px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--acc);background:rgba(255,255,255,.07);flex-shrink:0;}
+  .nav{position:absolute;left:12px;right:12px;bottom:12px;height:56px;z-index:7;display:flex;align-items:center;justify-content:space-around;border-radius:999px;background:rgba(20,20,24,.72);-webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);border:1px solid rgba(255,255,255,.08);box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.09);}
+  .navi{font-size:10px;color:var(--dim2);display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .navi .g{font-size:15px;}
+  .navi.on{color:var(--acc);font-weight:600;}
+  .pad{padding:0 12px;}
+  .card{margin:0 12px 10px;padding:14px;border-radius:20px;background:var(--card);-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.07);}
+  .card.tight{padding:12px 14px;}
+  .h{font-size:13.5px;font-weight:650;margin-bottom:10px;}
+  .h .dim{font-weight:400;color:var(--dim);font-size:11px;margin-left:6px;}
+  .sub{font-size:11px;color:var(--dim);line-height:1.6;}
+  .hr{height:1px;background:var(--line);margin:12px 0;}
+
+  /* 分段选择器 —— 现状：实心主色胶囊 */
+  .seg-old{margin:0 12px 10px;padding:4px;border-radius:999px;background:rgba(18,18,22,.78);border:1px solid rgba(255,255,255,.07);display:flex;gap:2px;}
+  .seg-old span{flex:1;text-align:center;padding:9px 4px;border-radius:999px;font-size:12px;color:var(--dim);}
+  .seg-old span.on{background:#57b96b;color:#0d1f13;font-weight:700;}
+  /* 分段选择器 —— 提案：玻璃容器 + 主色淡底 + 描边 */
+  .seg-new{margin:0 12px 10px;padding:4px;border-radius:999px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);display:flex;gap:2px;-webkit-backdrop-filter:blur(18px) saturate(1.3);backdrop-filter:blur(18px) saturate(1.3);}
+  .seg-new span{flex:1;text-align:center;padding:9px 4px;border-radius:999px;font-size:13px;color:rgba(255,255,255,.52);border:1px solid transparent;}
+  .seg-new span.on{background:rgba(165,214,167,.20);border-color:rgba(165,214,167,.68);color:#dff3e2;font-weight:650;box-shadow:inset 0 1px 0 rgba(255,255,255,.12);}
+
+  /* chip 家族 */
+  .chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+  .chip{font-size:11.5px;padding:6px 11px;border-radius:999px;color:var(--dim);background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);white-space:nowrap;}
+  .chip.sel{background:rgba(165,214,167,.20);border-color:rgba(165,214,167,.66);color:#dff3e2;font-weight:650;}
+  .chip.ghost{background:transparent;border-color:transparent;color:var(--acc);padding:6px 4px;font-weight:600;}
+  .m3chip{font-size:11.5px;padding:6px 11px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);color:var(--dim);white-space:nowrap;}
+  .m3chip.sel{background:rgba(165,214,167,.16);border-color:rgba(165,214,167,.7);color:#dff3e2;}
+  .assist{font-size:11.5px;padding:6px 11px;border-radius:8px;border:1px solid rgba(255,255,255,.2);color:var(--acc2);}
+  .sel-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;}
+  .sel-grid .s{font-size:11px;padding:8px 6px;border-radius:999px;text-align:center;color:var(--dim);background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sel-grid .s.on{background:rgba(165,214,167,.20);border-color:rgba(165,214,167,.66);color:#dff3e2;font-weight:650;}
+
+  /* 锚定菜单 */
+  .menuwrap{position:relative;margin:0 12px 10px;height:268px;}
+  .anchorbtn{position:absolute;top:2px;right:6px;width:34px;height:34px;border-radius:999px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;color:var(--acc);font-size:14px;}
+  .menu-float{position:absolute;top:44px;right:6px;width:176px;border-radius:24px;padding:6px;background:rgba(32,32,38,.80);-webkit-backdrop-filter:blur(26px) saturate(1.5);backdrop-filter:blur(26px) saturate(1.5);border:1px solid rgba(255,255,255,.10);box-shadow:0 16px 40px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08);transform-origin:top right;}
+  .mi{display:flex;align-items:center;gap:9px;height:44px;padding:0 12px;border-radius:16px;font-size:12.5px;color:var(--txt);}
+  .mi .ic{font-size:14px;color:var(--dim);width:16px;text-align:center;}
+  .mi.danger{color:#eab0b0;}
+  .mi.danger .ic{color:#e28383;}
+  .mi.hl{background:rgba(255,255,255,.06);}
+  .menu-old{position:absolute;top:44px;right:6px;width:176px;border-radius:20px;padding:4px;background:rgba(38,38,44,.96);border:1px solid rgba(255,255,255,.10);box-shadow:0 10px 30px rgba(0,0,0,.5);}
+  .menu-old .mi{height:40px;font-size:12.5px;border-radius:4px;}
+  .scale-note{position:absolute;left:8px;bottom:6px;font-size:10px;color:var(--dim2);}
+
+  /* KPI 三档 */
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+  .kpi{border-radius:14px;padding:11px 12px;background:rgba(255,255,255,.035);border:1px solid var(--line);}
+  .kpi .v{font-size:24px;font-weight:700;letter-spacing:.4px;line-height:1.15;font-variant-numeric:tabular-nums;}
+  .kpi .k{font-size:11px;color:var(--dim);margin-top:3px;}
+  .kpi .d{font-size:10.5px;color:var(--dim2);margin-top:2px;}
+  .kpi.acc .v{color:var(--acc2);}
+  .legendrow{display:flex;gap:8px;flex-wrap:wrap;font-size:10.5px;color:var(--dim2);margin-top:8px;}
+  .legendrow span{padding:3px 8px;border-radius:999px;border:1px solid var(--line);}
+  .oldnums{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;font-variant-numeric:tabular-nums;}
+  .oldnums i{font-style:normal;color:#6d6d75;}
+  .sel-grid.sel-old .s{border-radius:8px;background:rgba(120,200,140,.14);border:1.5px solid rgba(120,200,140,.46);color:#cfe8d2;}
+  .sel-grid.sel-old .s.on{background:rgba(120,200,140,.14);border-color:rgba(120,200,140,.46);color:#cfe8d2;font-weight:400;}
+  .track{height:6px;border-radius:999px;background:rgba(255,255,255,.08);position:relative;margin:14px 2px 8px;}
+  .track .fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:rgba(165,214,167,.85);}
+  .track .thumb{position:absolute;top:-6px;width:18px;height:18px;margin-left:-9px;border-radius:999px;background:#dff3e2;box-shadow:0 2px 6px rgba(0,0,0,.4);}
+  .sw{width:44px;height:26px;border-radius:999px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);position:relative;display:inline-block;}
+  .sw i{position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:999px;background:rgba(255,255,255,.55);}
+  .cal7{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .cal7 .c{height:34px;border-radius:9px;background:rgba(255,255,255,.035);border:1px solid var(--line);position:relative;font-size:9px;color:var(--dim2);padding:3px 4px;}
+  .cal7 .c.on{background:rgba(165,214,167,.16);border-color:rgba(165,214,167,.42);color:#dff3e2;}
+  .cal7 .c::after{content:attr(data-c);position:absolute;bottom:2px;right:3px;font-size:8px;color:var(--acc);}
+</style>
+</head>
+<body>
+
+<div class="idx">
+  <h1>Niriko v1.2.2 · 待确认的外观改动原型</h1>
+  <p class="verdict ok"><b>已实施（v1.2.2，2026-10-31，A 方案）</b>：① 分段 → <code>NirikoSegmentedControl</code>（Pill + 主色 20% 淡底 + 1dp 描边 + 等宽 13sp + 48dp 行高）；② chip → <code>NirikoTagPill</code> / <code>NirikoFilterPill</code> / <code>NirikoSelectionPill</code> / <code>NirikoActionPill</code>；③ 菜单 → <code>NirikoMenu</code> + <code>GlassMenuOverlay</code>（24dp 玻璃 + 锚点缩放 + 退场 + Back/Esc）；④ 统计数字 → <code>StatNumber</code> / <code>StatLabel</code> / <code>StatNote</code> / <code>StatTile</code>。本页保留为历史设计对照，实现状态见 <code>impl-summary.md</code> §6.11。</p>
+  <p>前七批（设置页对齐 / 详情页破相 / 反馈宿主 / 多选 / 动效 / 形状令牌 / reduceMotion）<b>已经写进 APK</b>，可直接在 <code>dist/niriko-v1.2.2-debug.apk</code> 里试。</p>
+  <p>这一份只画 <b>还没动、且会改变控件外观</b>的 4 项——它们不在已批准的 D1–D4 里，需要你先确认方向再动代码。每节左边是「现状」（按 v1.2.1 截图复刻），右边是「提案」，下方红框是需要你拍板的选项。</p>
+  <ol>
+    <li><a href="#s1">① 分段选择器统一（V-11）</a></li>
+    <li><a href="#s2">② chip 五副面孔收敛（V-12）</a></li>
+    <li><a href="#s3">③ 锚定菜单统一（V-14）</a></li>
+    <li><a href="#s4">④ 统计数字三档（V-21）</a></li>
+  </ol>
+</div>
+
+<!-- ============ ① 分段选择器 ============ -->
+<div class="sect" id="s1">
+  <h2>① 分段选择器统一（V-11）</h2>
+  <div class="lead">现状：全站 4 套分段并存——详情页「观看状态」是深底 + <b>实心绿胶囊</b>（12sp 硬编码文字），统计页是玻璃容器 + 实心绿胶囊（宽度随文案不等），设置页/搜索筛选又是别的形态；而写好的 <code>GlassSegmentedContainer</code> 至今 <b>0 个调用点</b>。提案把它变成唯一实现：玻璃容器 + 主色淡底 + 主色描边，文字 13sp、等宽分段。</div>
+  <div class="row">
+    <div class="unit">
+      <div class="phone"><span class="tagx now">现状</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="top"><span class="tb">←</span><span class="ttl">观看状态</span><span class="sp"></span></div>
+        <div class="seg-old"><span>想看</span><span>在看</span><span class="on">看过</span><span>搁置</span><span>抛弃</span></div>
+        <div class="card">
+          <div class="h">我的记录</div>
+          <div class="sub">选中态是实心主色块，压在深底上；文字 12sp 偏小，五段挤在一起。</div>
+        </div>
+        <div class="card tight">
+          <div class="sub" style="margin-bottom:8px;">统计页同一语义的另一种长相：</div>
+          <div class="seg-old" style="margin:0;"><span style="flex:0 0 auto;padding:9px 14px;">个人记录</span><span style="flex:0 0 auto;padding:9px 14px;">放送信息</span><span class="on" style="flex:0 0 auto;padding:9px 18px;">全部显示</span></div>
+        </div>
+
+        <div class="card tight">
+          <div class="h" style="margin-bottom:6px;">我的评分：7.0 / 10</div>
+          <div class="track"><span class="fill" style="width:70%;"></span><span class="thumb" style="left:70%;"></span></div>
+          <div class="sub">跟手拖动、按下 thumb 放大（已在 APK 里）</div>
+        </div>
+        <div class="card tight">
+          <div class="row" style="justify-content:space-between;"><span style="font-size:13px;">私密收藏</span><span class="sw"><i></i></span></div>
+          <div class="hr"></div>
+          <div class="chips"><span class="chip">开始日期 · 未设置</span><span class="chip">完成日期 · 未设置</span></div>
+        </div>
+      </div></div>
+      <div class="cap"><b>现状问题</b><ul><li>实心主色 = 全站「已选中」的最高权重，任何一个分段页都有一块绿砖</li><li>文字 12sp（低于 13sp 下限）</li><li>统计页三段宽度随文案变化，切换时选中态会「跳宽度」</li></ul></div>
+    </div>
+    <div class="unit">
+      <div class="phone"><span class="tagx next">提案</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="top"><span class="tb">←</span><span class="ttl">观看状态</span><span class="sp"></span></div>
+        <div class="seg-new"><span>想看</span><span>在看</span><span class="on">看过</span><span>搁置</span><span>抛弃</span></div>
+        <div class="card">
+          <div class="h">我的记录</div>
+          <div class="sub">选中态 = 主色 20% 淡底 + 1px 主色描边 + 主色文字；未选中只有文字。玻璃容器带 1px 外描边与内侧高光。</div>
+        </div>
+        <div class="card tight">
+          <div class="sub" style="margin-bottom:8px;">统计页同样三段，等宽：</div>
+          <div class="seg-new" style="margin:0;"><span>个人记录</span><span>放送信息</span><span class="on">全部显示</span></div>
+        </div>
+        <div class="card tight">
+          <div class="sub">同一组件落到搜索筛选：</div>
+          <div class="seg-new" style="margin:8px 0 0;"><span>全部</span><span class="on">动画</span><span>书籍</span><span>游戏</span></div>
+        </div>
+
+        <div class="card tight">
+          <div class="h" style="margin-bottom:6px;">我的评分：7.0 / 10</div>
+          <div class="track"><span class="fill" style="width:70%;"></span><span class="thumb" style="left:70%;"></span></div>
+          <div class="sub">跟手拖动、按下 thumb 放大（已在 APK 里）</div>
+        </div>
+        <div class="card tight">
+          <div class="row" style="justify-content:space-between;"><span style="font-size:13px;">私密收藏</span><span class="sw"><i></i></span></div>
+          <div class="hr"></div>
+          <div class="chips"><span class="chip">开始日期 · 未设置</span><span class="chip">完成日期 · 未设置</span></div>
+        </div>
+      </div></div>
+      <div class="cap"><b>提案收益</b><ul><li>一个组件三处复用，分段的「选中」不再抢过内容</li><li>等宽分段 → 切换零位移</li><li>13sp 文字 + 48dp 命中区</li></ul></div>
+    </div>
+  </div>
+  <div class="verdict"><b>需你拍板：</b>A 主色淡底 + 描边（上图，推荐）／ B 纯玻璃高亮（只提亮，不上主色，最克制）／ C 保持现在的实心绿（那我只做尺寸/字号统一，不动颜色）。</div>
+</div>
+
+<!-- ============ ② chip 家族 ============ -->
+<div class="sect" id="s2">
+  <h2>② chip 五副面孔收敛（V-12）</h2>
+  <div class="lead">现状：M3 <code>FilterChip</code>（8dp 小圆角）15 处、<code>AssistChip</code> 7 处、玻璃 <code>TagChip</code>、详情页绿描边选集、还有「抛弃 2 / 搁置 7 / 上次更新 / 刷新」这类<b>裸绿字</b>——同一件事长五副脸。提案收成三档：<b>信息 pill</b>（不可选）／<b>筛选 pill</b>（可选）／<b>选集 pill</b>（详情专用，等宽网格），并给裸绿字也套上 pill。</div>
+  <div class="row">
+    <div class="unit">
+      <div class="phone"><span class="tagx now">现状</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="card">
+          <div class="h">作品库 · 顶部统计</div>
+          <div class="chips"><span class="chip">180 部作品</span><span class="chip">均分 3.5</span><span class="chip">累计 3961 集</span></div>
+          <div class="chips" style="margin-top:7px;"><span class="chip">完成率 65%</span><span class="chip">在看 2</span><span class="chip">看过 117</span><span class="chip">想看 52</span></div>
+          <div class="chips" style="margin-top:7px;"><span class="chip ghost">抛弃 2</span><span class="chip ghost">搁置 7</span></div>
+        </div>
+        <div class="card">
+          <div class="h">筛选行 · M3 FilterChip</div>
+          <div class="chips"><span class="m3chip">搁置</span><span class="m3chip">抛弃</span><span class="m3chip sel">最近修改</span><span class="m3chip">列表</span><span class="m3chip">多选</span></div>
+          <div class="chips" style="margin-top:8px;"><span class="assist">标签 A</span><span class="assist">标签 B</span></div>
+        </div>
+        <div class="card">
+          <div class="h">详情页 · 选集</div>
+          <div class="sel-grid sel-old"><span class="s on">1 东京嘿咻</span><span class="s on">2 三只夜行</span><span class="s on">3 无脑问答</span></div>
+          <div class="sub" style="margin-top:8px;">现状是 8dp 方角小卡片 + 1.5dp 绿描边，与胶囊语言冲突。</div>
+        </div>
+        <div class="card tight"><div class="sub">还有裸绿字：<span style="color:var(--acc);font-weight:600;">上次更新 8 分钟前　刷新</span></div></div>
+        <div class="card">
+          <div class="h">详情页 · 顶部标签</div>
+          <div class="chips"><span class="chip">TV</span><span class="chip">2024</span><span class="chip">13 集</span><span class="chip">已看</span></div>
+          <div class="sub" style="margin-top:8px;">同一屏还有玻璃 TagChip 与裸绿字两种写法。</div>
+        </div>
+      </div></div>
+      <div class="cap"><b>现状问题</b><ul><li>8dp 圆角（M3 默认 small）落在 20/24dp 的玻璃卡里格格不入</li><li>裸绿字既不是按钮也不是标签，命中区只有文字大小</li><li>同一屏出现 3 种 chip 形态，用户读不出「哪些能点」</li></ul></div>
+    </div>
+    <div class="unit">
+      <div class="phone"><span class="tagx next">提案</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="card">
+          <div class="h">作品库 · 顶部统计</div>
+          <div class="chips"><span class="chip">180 部作品</span><span class="chip">均分 3.5</span><span class="chip">累计 3961 集</span></div>
+          <div class="chips" style="margin-top:7px;"><span class="chip">完成率 65%</span><span class="chip">在看 2</span><span class="chip">看过 117</span><span class="chip">想看 52</span></div>
+          <div class="chips" style="margin-top:7px;"><span class="chip">抛弃 2</span><span class="chip">搁置 7</span></div>
+        </div>
+        <div class="card">
+          <div class="h">筛选行 · 统一筛选 pill</div>
+          <div class="chips"><span class="chip">搁置</span><span class="chip">抛弃</span><span class="chip sel">最近修改</span><span class="chip">列表</span><span class="chip">多选</span></div>
+          <div class="chips" style="margin-top:8px;"><span class="chip">标签 A</span><span class="chip">标签 B</span></div>
+        </div>
+        <div class="card">
+          <div class="h">详情页 · 选集 pill</div>
+          <div class="sel-grid"><span class="s on">1 东京嘿咻</span><span class="s on">2 三只夜行</span><span class="s on">3 无脑问答</span></div>
+          <div class="sub" style="margin-top:8px;">胶囊、等宽网格；选中主色淡底 + 描边（未选中是玻璃底）。</div>
+        </div>
+        <div class="card tight"><div class="chips"><span class="chip">上次更新 8 分钟前</span><span class="chip sel">刷新</span></div></div>
+        <div class="card">
+          <div class="h">详情页 · 顶部标签（同一套 pill）</div>
+          <div class="chips"><span class="chip">TV</span><span class="chip">2024</span><span class="chip">13 集</span><span class="chip sel">已看</span></div>
+          <div class="sub" style="margin-top:8px;">信息用 TagPill、可切换用 FilterPill；48dp 命中区。</div>
+        </div>
+      </div></div>
+      <div class="cap"><b>提案收益</b><ul><li>三档语义清楚：信息（玻璃底）／可选（选中主色淡底）／选集（等宽网格）</li><li>裸绿字变 pill → 48dp 命中区、可读性不再靠颜色</li><li>圆角全部走 <code>NirikoShapes.PillShape</code></li></ul></div>
+    </div>
+  </div>
+  <div class="verdict"><b>需你拍板：</b>A 三档（上图，推荐）／ B 两档（选集并入筛选 pill，详情页更省空间）／ C 只统一筛选与标签，选集保持现在的方角（改动面最小）。</div>
+</div>
+
+<!-- ============ ③ 锚定菜单 ============ -->
+<div class="sect" id="s3">
+  <h2>③ 锚定菜单统一（V-14）</h2>
+  <div class="lead">现状：24dp 玻璃 <code>GlassAnchoredMenu</code>、20dp 玻璃 <code>DropdownMenu</code>、20dp 普通菜单三套并存，行高与圆角各不相同。提案统一到 24dp 玻璃 + <b>从锚点缩放</b>（0.92 → 1，180ms，起点在触发按钮上），行高 44–48dp、危险项红字。</div>
+  <div class="row">
+    <div class="unit">
+      <div class="phone"><span class="tagx now">现状</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="top"><span class="ttl">作品库</span><span class="sp"></span><span class="tb">⌕</span><span class="tb">⋯</span></div>
+        <div class="menuwrap">
+          <div class="anchorbtn">⋯</div>
+          <div class="menu-old">
+            <div class="mi hl">排序：最近修改</div>
+            <div class="mi">视图：列表</div>
+            <div class="mi">导出日历</div>
+            <div class="mi" style="color:#eab0b0;">删除所选</div>
+          </div>
+        </div>
+        <div class="card"><div class="h">列表页「更多」</div><div class="sub">20dp 圆角、4dp 内距、行高 40dp、从中心/左上胀出；与详情页 24dp 玻璃菜单不是一套。</div></div>
+        <div class="card" style="display:flex;gap:10px;">
+          <div style="width:62px;height:84px;border-radius:12px;background:linear-gradient(160deg,#3b3b44,#22222a);border:1px solid var(--line);flex:0 0 auto;"></div>
+          <div><div class="h" style="margin:0 0 4px;">少女乐队的呐喊</div><div class="sub">ガールズバンドクライ</div><div class="chips" style="margin-top:8px;"><span class="chip">看过</span><span class="chip">TV</span><span class="chip sel">评分 7.0</span></div></div>
+        </div>
+      </div></div>
+      <div class="cap"><b>现状问题</b><ul><li>圆角 20 vs 24、内距 4 vs 6、行高 40 vs 44</li><li>出现动画：一套从点位缩放、一套从中心/无动画</li><li>危险项只有文字变红，没有图标层级</li></ul></div>
+    </div>
+    <div class="unit">
+      <div class="phone"><span class="tagx next">提案</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="top"><span class="ttl">作品库</span><span class="sp"></span><span class="tb">⌕</span><span class="tb">⋯</span></div>
+        <div class="menuwrap">
+          <div class="anchorbtn">⋯</div>
+          <div class="menu-float">
+            <div class="mi"><span class="ic">⇅</span>排序：最近修改</div>
+            <div class="mi"><span class="ic">▤</span>视图：列表</div>
+            <div class="mi"><span class="ic">▦</span>导出日历</div>
+            <div class="mi danger"><span class="ic">⌫</span>删除所选</div>
+          </div>
+          <div class="scale-note">↖ 从这里缩放展开（0.92 → 1，180ms）</div>
+        </div>
+        <div class="card"><div class="h">同一套用到详情页分享菜单</div><div class="sub">24dp 玻璃、6dp 内距、44dp 行高、起点跟随触发按钮；危险项红字 + 图标。</div></div>
+        <div class="card tight"><div class="h" style="margin-bottom:6px;">打开动画</div><div class="sub">缩放 0.92→1 + 淡入，共用 <code>spatialDefault</code> / <code>effectsFast</code>；“减少动态效果”下瞬开。</div></div>
+        <div class="card" style="display:flex;gap:10px;">
+          <div style="width:62px;height:84px;border-radius:12px;background:linear-gradient(160deg,#3b3b44,#22222a);border:1px solid var(--line);flex:0 0 auto;"></div>
+          <div><div class="h" style="margin:0 0 4px;">少女乐队的呐喊</div><div class="sub">ガールズバンドクライ</div><div class="chips" style="margin-top:8px;"><span class="chip">看过</span><span class="chip">TV</span><span class="chip sel">评分 7.0</span></div></div>
+        </div>
+      </div></div>
+      <div class="cap"><b>提案收益</b><ul><li>一套圆角/行高/内距，视觉上「从一个地方长出来」</li><li>危险操作有图标与色彩双重区分</li></ul></div>
+    </div>
+  </div>
+  <div class="verdict"><b>需你拍板：</b>A 全站统一 24dp 玻璃 + 锚点缩放（上图，推荐）／ B 尺寸统一但动画沿用现状（只改外观）／ C 只统一详情页那几处（顶栏 ⋯ 保持现状）。</div>
+</div>
+
+<!-- ============ ④ 统计数字 ============ -->
+<div class="sect" id="s4">
+  <h2>④ 统计数字三档（V-21）</h2>
+  <div class="lead">现状：统计页数字用了 20 / 22 / 24 / 28 / 32 五档字号，同一屏里「那个大、这个小」没有规律。提案只留三档：页面标题 28（不动）、<b>关键数字 24（statDisplay）</b>、辅助说明 13 / 11。</div>
+  <div class="row">
+    <div class="unit">
+      <div class="phone"><span class="tagx now">现状</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="top"><span class="ttl">收藏统计</span></div>
+        <div class="card">
+          <div class="h">概览</div>
+          <div class="oldnums" style="gap:10px;flex-wrap:wrap;color:var(--dim);">
+            <span style="font-size:20px;font-weight:700;color:#e8e8ea;">180</span>
+            <span style="font-size:22px;font-weight:700;color:#e8e8ea;">3961</span>
+            <span style="font-size:24px;font-weight:700;color:#e8e8ea;">65%</span>
+            <span style="font-size:28px;font-weight:700;color:#e8e8ea;">3.5</span>
+            <span style="font-size:32px;font-weight:700;color:#e8e8ea;">117</span>
+          </div>
+          <div class="sub" style="margin-top:8px;">五档字号并列：读不出哪个是主指标。</div>
+        </div>
+        <div class="card tight"><div class="sub">同一页的其它数字：图表标题 16、图例 10、日历角标 7–9sp。</div></div>
+        <div class="card">
+          <div class="h">放送日历</div>
+          <div class="cal7"><div class="c" data-c="1">续</div><div class="c" data-c="2">续</div><div class="c" data-c="3">续</div><div class="c" data-c="4"></div><div class="c" data-c="5">续</div><div class="c" data-c="6">续</div><div class="c" data-c="7">续</div><div class="c" data-c="8"></div><div class="c" data-c="9">续</div><div class="c" data-c="10">续</div><div class="c" data-c="11">续</div><div class="c" data-c="12"></div><div class="c" data-c="13">续</div><div class="c" data-c="14">续</div><div class="c" data-c="15">续</div><div class="c" data-c="16"></div><div class="c" data-c="17">续</div><div class="c" data-c="18">续</div><div class="c" data-c="19">续</div><div class="c" data-c="20"></div><div class="c" data-c="21">续</div></div>
+        </div>
+      </div></div>
+      <div class="cap"><b>现状问题</b><ul><li>数字大小与信息重要度无关（117 比 3.5 大）</li><li>图例/角标 7–10sp，低于可读下限（且与格宽耦合）</li></ul></div>
+    </div>
+    <div class="unit">
+      <div class="phone"><span class="tagx next">提案</span><div class="scroll">
+        <span class="wp"></span><span class="wp scrim"></span>
+        <div class="top"><span class="ttl">收藏统计</span></div>
+        <div class="card">
+          <div class="h">概览 <span class="dim">24 / 13 / 11 三档</span></div>
+          <div class="kpis">
+            <div class="kpi acc"><div class="v">180</div><div class="k">部作品</div></div>
+            <div class="kpi acc"><div class="v">3961</div><div class="k">累计集数</div></div>
+            <div class="kpi"><div class="v">65%</div><div class="k">完成率</div><div class="d">117 看过 / 2 在看</div></div>
+            <div class="kpi"><div class="v">3.5</div><div class="k">平均评分</div><div class="d">满分 10</div></div>
+          </div>
+          <div class="legendrow"><span>主指标：24sp + 主色</span><span>辅助：13sp 标签</span><span>注释：11sp</span></div>
+        </div>
+        <div class="card tight"><div class="sub">图例 10 → 11sp（保持单行省略）；日历角标仍是 9sp 但改为数字 badge，不依赖字号区分。</div></div>
+        <div class="card">
+          <div class="h">放送日历 <span class="dim">角标改 badge</span></div>
+          <div class="cal7"><div class="c on" data-c="1">续</div><div class="c" data-c="2">续</div><div class="c" data-c="3">续</div><div class="c on" data-c="4"></div><div class="c" data-c="5">续</div><div class="c" data-c="6">续</div><div class="c on" data-c="7">续</div><div class="c" data-c="8"></div><div class="c" data-c="9">续</div><div class="c on" data-c="10">续</div><div class="c" data-c="11">续</div><div class="c" data-c="12"></div><div class="c on" data-c="13">续</div><div class="c" data-c="14">续</div><div class="c" data-c="15">续</div><div class="c on" data-c="16"></div><div class="c" data-c="17">续</div><div class="c" data-c="18">续</div><div class="c on" data-c="19">续</div><div class="c" data-c="20"></div><div class="c" data-c="21">续</div></div>
+          <div class="sub" style="margin-top:8px;">●开始 ○完成 ◆放送 ▲发售 · 图例 11sp 单行省略</div>
+        </div>
+      </div></div>
+      <div class="cap"><b>提案收益</b><ul><li>大小只表达层级：主指标 > 标签 > 注释</li><li>主色只给「关键指标」，不与状态语义抢色</li><li>顺带修掉写死像素的图表标签（第五批已修）</li></ul></div>
+    </div>
+  </div>
+  <div class="verdict"><b>需你拍板：</b>A 24/13/11 三档 + 主指标主色（上图，推荐）／ B 三档但不加主色（全白，最克制）／ C 暂不动统计页（先只做 ①②③）。</div>
+</div>
+
+<div class="idx">
+  <h1>确认之后我会怎么做</h1>
+  <p>①②③④ 每项都对应 <code>docs/v1.2.2/06-roadmap.md</code> 里已记账的工作包，确认后会拆成独立小批、每批都跑 <code>compileDebugKotlin + testDebugUnitTest + spotlessCheck + assembleDebug</code> 再给你新 APK；不改材质分层（D1 仍然生效）。</p>
+  <p style="margin-top:10px;color:#8a8a90;">如果你只想先试已完成的改动，直接装 <code>dist/niriko-v1.2.2-debug.apk</code>（versionName 1.2.2 / versionCode 5）。</p>
+</div>
+
+</body>
+</html>

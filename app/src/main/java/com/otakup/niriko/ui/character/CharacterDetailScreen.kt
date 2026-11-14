@@ -4,12 +4,8 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,44 +16,38 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.remote.CharacterDetailInfo
 import com.otakup.niriko.data.remote.PersonSubjectInfo
-import com.otakup.niriko.data.remote.displayTitle
 import com.otakup.niriko.ui.common.CreditSubjectCard
 import com.otakup.niriko.ui.common.CreditSubjectCardMetrics
-import com.otakup.niriko.ui.components.RichText
 import com.otakup.niriko.ui.components.ErrorContent
 import com.otakup.niriko.ui.components.LoadingContent
+import com.otakup.niriko.ui.components.RichText
+import com.otakup.niriko.ui.components.SectionHeader
+import com.otakup.niriko.ui.components.StateHost
 import com.otakup.niriko.viewmodel.CharacterDetailViewModel
 
 /** 角色详情页。 */
@@ -75,22 +65,36 @@ fun CharacterDetailScreen(
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-                Text("角色详情", style = MaterialTheme.typography.titleLarge)
+                // V-16：drill-in 页标题统一 headlineSmall(24/w600)。
+                Text("角色详情", style = MaterialTheme.typography.headlineSmall)
             }
-            when {
-                state.isLoading -> LoadingContent()
-                state.error != null -> ErrorContent(message = state.error ?: "", onRetry = viewModel::retry)
-                state.detail != null -> {
-                    val detail = state.detail!!
-                    CharacterDetailBody(
-                        detail = detail,
-                        subjects = state.subjects,
-                        onSubjectClick = onSubjectClick,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                    )
+            // B-13：加载 / 错误 / 正文三态换页走 StateHost 的 alpha 包络（正文含 LazyRow，
+            // 不用 AnimatedContent：过渡期双组合会踩 02 文档的双 Lazy 红线）。
+            val detailPhaseKey = when {
+                state.isLoading -> "loading"
+                state.error != null -> "error"
+                state.detail != null -> "ready"
+                else -> "error"
+            }
+            StateHost(stateKey = detailPhaseKey) {
+                when {
+                    state.isLoading -> LoadingContent()
+
+                    state.error != null -> ErrorContent(message = state.error ?: "", onRetry = viewModel::retry)
+
+                    state.detail != null -> {
+                        val detail = state.detail!!
+                        CharacterDetailBody(
+                            detail = detail,
+                            subjects = state.subjects,
+                            onSubjectClick = onSubjectClick,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
+                    }
+
+                    else -> ErrorContent(message = "无法加载角色信息", onRetry = viewModel::retry)
                 }
-                else -> ErrorContent(message = "无法加载角色信息", onRetry = viewModel::retry)
             }
         }
     }
@@ -143,8 +147,8 @@ private fun CharacterDetailBody(
             detail.infoBox.forEach { add(it.key to it.value) }
         }
         if (basicRows.isNotEmpty()) {
-            Text("基本信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
+            // V-15：分区标题统一走 SectionHeader。
+            SectionHeader(title = "基本信息")
             basicRows.forEach { (label, value) ->
                 Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Text(
@@ -184,8 +188,7 @@ private fun CharacterDetailBody(
 
         // 简介
         if (!detail.summary.isNullOrBlank()) {
-            Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
+            SectionHeader(title = "简介")
             RichText(
                 text = detail.summary,
                 style = MaterialTheme.typography.bodyMedium,
@@ -198,8 +201,7 @@ private fun CharacterDetailBody(
         // 出演作品（F01）：由纵向整行大卡改为**固定宽度横滑卡**，与人物页「参与作品」同款同尺寸。
         // 保留：共享元素（cover_{id} → 作品详情封面）、点击语义、返回手势（外层竖向滚动不受影响）。
         if (subjects.isNotEmpty()) {
-            Text("出演作品", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
+            SectionHeader(title = "出演作品")
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(CreditSubjectCardMetrics.railSpacing),
                 // 轨道高度稳定：卡片本身用 heightIn(min) 固定内容下限，横滑时不会有高矮跳变

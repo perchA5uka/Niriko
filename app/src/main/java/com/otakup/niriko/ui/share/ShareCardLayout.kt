@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 分享卡片 · Compose 布局。
@@ -47,7 +48,7 @@ import androidx.compose.ui.unit.sp
  *   - 内边距 padding(上下 44/38, 左右 44)，与原型 .card padding 一致；
  *   - 底部品牌栏前强制插入 Spacer(Modifier.weight(1f))，复刻 CSS margin-top:auto 沉底；
  *   - 头部 Row(horizontalArrangement = spacedBy(24.dp))；
- *     封面固定 Modifier.width(240.dp).aspectRatio(3f/4f).clip(RoundedCornerShape(16.dp))；
+ *     封面固定 Modifier.width(240.dp).aspectRatio(3f/4f).clip(NirikoShapes.SectionShape)；
  *     右侧信息区 Meta 用 Column(Modifier.weight(1f)) 包裹，防止溢出；
  *   - Meta 内按序：类型标签 → Spacer → 标题 → 副标题 → Spacer → 评分行，
  *     不使用 Box 叠放，杜绝重叠；
@@ -70,8 +71,8 @@ object ShareCompose {
     val CoverGradStart = Color(0xFF2E5A36)
     val CoverGradEnd = Color(0xFF0F1F14)
     val CoverText = Color(0xFF9ECBA2)
-    val GlassBg = Color(0x1A81C784)      // 评分对比卡：半透明绿玻璃底
-    val GlassBorder = Color(0x29B8E6B0)  // 评分对比卡：微光描边
+    val GlassBg = Color(0x1A81C784) // 评分对比卡：半透明绿玻璃底
+    val GlassBorder = Color(0x29B8E6B0) // 评分对比卡：微光描边
 }
 
 /** 分享卡数据（作品详情 / 个人收藏共用）。 */
@@ -80,16 +81,16 @@ data class ShareCardData(
     val typeLabel: String = "",
     val primaryTitle: String = "",
     val secondaryTitle: String? = null,
-    val score: Float? = null,          // 我的评分（收藏卡）
+    val score: Float? = null, // 我的评分（收藏卡）
     val communityScore: Float? = null, // Bangumi 社区分（作品卡/收藏卡均为 ratingScore）
-    val ratingTotal: String? = null,   // 评价人数文案，如「2.3 万人」
-    val metaText: String? = null,      // 元信息行：「平台 · 集数/卷数 · 年份」
-    val totalHint: String? = null,     // 保留兼容位（新版不再使用，改用对比卡）
-    val summary: String? = null,       // 作品简介（仅作品详情卡）
+    val ratingTotal: String? = null, // 评价人数文案，如「2.3 万人」
+    val metaText: String? = null, // 元信息行：「平台 · 集数/卷数 · 年份」
+    val totalHint: String? = null, // 保留兼容位（新版不再使用，改用对比卡）
+    val summary: String? = null, // 作品简介（仅作品详情卡）
     val communityTags: List<String> = emptyList(), // 社区标签（仅作品卡，分享时取前 10）
     // ---- 收藏区 ----
-    val statusLabel: String? = null,   // 状态 chip（看过/抛弃…）
-    val progressText: String? = null,  // 「28 / 28 集」
+    val statusLabel: String? = null, // 状态 chip（看过/抛弃…）
+    val progressText: String? = null, // 「28 / 28 集」
     val progressRatio: Float = 0f,
     val tags: List<String> = emptyList(),
     val impressions: String? = null,
@@ -335,14 +336,14 @@ private fun ProgressLine(data: ShareCardData) {
             Modifier
                 .width(132.dp)
                 .height(4.dp)
-                .clip(RoundedCornerShape(50))
+                .clip(NirikoShapes.PillShape)
                 .background(ShareCompose.Line),
         ) {
             Box(
                 Modifier
                     .fillMaxWidth(data.progressRatio.coerceIn(0f, 1f))
                     .height(4.dp)
-                    .clip(RoundedCornerShape(50))
+                    .clip(NirikoShapes.PillShape)
                     .background(ShareCompose.Primary),
             )
         }
@@ -356,7 +357,7 @@ private fun TypeChip(text: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         modifier = Modifier
-            .clip(RoundedCornerShape(50))
+            .clip(NirikoShapes.PillShape)
             .background(ShareCompose.ChipBg)
             .padding(horizontal = 12.dp, vertical = 5.dp),
     ) {
@@ -389,9 +390,9 @@ private fun RatingCompareCard(data: ShareCardData) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(NirikoShapes.SectionShape)
             .background(ShareCompose.GlassBg)
-            .border(1.dp, ShareCompose.GlassBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, ShareCompose.GlassBorder, NirikoShapes.SectionShape)
             .padding(vertical = 14.dp, horizontal = 8.dp),
         horizontalArrangement = if (cols.size == 1) Arrangement.Center else Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,

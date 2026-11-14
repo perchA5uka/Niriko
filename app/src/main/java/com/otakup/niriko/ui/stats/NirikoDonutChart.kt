@@ -3,16 +3,15 @@ package com.otakup.niriko.ui.stats
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.components.StatLabel
+import com.otakup.niriko.ui.components.StatNumber
 import com.patrykandpatrick.vico.compose.common.Fill
 import com.patrykandpatrick.vico.compose.pie.PieChart
 import com.patrykandpatrick.vico.compose.pie.PieChartHost
@@ -73,17 +72,11 @@ fun NirikoDonutChart(
             modifier = Modifier.fillMaxSize(),
         )
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = totalText,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = "总计",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // V-21：环心总数此前是 headlineMedium(28)+Bold —— 正是 "28" 那一档残留，
+            // 而且它和概览卡的「收藏作品」是同一个数，两处字号不同更显得没有层级。
+            // 这里用默认语气（不加主色）：主色已经给了概览卡的主指标，环心重复上色会抢层级。
+            StatNumber(totalText)
+            StatLabel("总计")
         }
     }
 }

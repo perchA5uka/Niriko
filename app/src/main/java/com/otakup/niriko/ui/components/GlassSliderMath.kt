@@ -1,5 +1,6 @@
 package com.otakup.niriko.ui.components
 
+import androidx.compose.ui.graphics.Color
 import kotlin.math.roundToInt
 
 /**
@@ -33,3 +34,18 @@ internal fun offsetToValue(
     // coerceIn 需要 [min, max]；反向范围直接传 (start, endInclusive) 会在运行时抛异常。
     return snapped.coerceIn(minOf(range.start, range.endInclusive), maxOf(range.start, range.endInclusive))
 }
+
+/** 圆钮相对轨道的图形对比度下限（WCAG 非文本图形元素 3:1，不用正文的 4.5:1）。 */
+internal const val GLASS_SLIDER_THUMB_MIN_CONTRAST = 3.0f
+
+/**
+ * 滑块圆钮的底色（P2-3，纯函数便于离线断言对比度）。
+ *
+ * 深色主题：圆钮用**纯白**而不是 surfaceContainerHighest —— 后者与轨道同源（轨道也是
+ * surfaceContainerHighest α0.55），同源色只剩 0.5dp 描边能区分，深色玻璃上圆钮等于消失。
+ * 浅色主题：沿用 surfaceContainerHighest（浅面上白圆钮会与玻璃高光糊在一起，原观感是对的）。
+ *
+ * 为什么返回不透明色而不是 α0.92：半透明会让「圆钮 ∘ 轨道」的实际对比度随轨道颜色漂移，
+ * 而这里要在单测里用一个确切值断言 ≥ [GLASS_SLIDER_THUMB_MIN_CONTRAST]。
+ */
+internal fun glassSliderThumbColor(isDark: Boolean, lightThumb: Color): Color = if (isDark) Color.White else lightThumb

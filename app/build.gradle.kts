@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.spotless)
 }
 
 // 发布签名（计划 B5 · 6-5）：凭据只从本地 keystore.properties 读取，该文件与 keystore 都在 .gitignore 里。
@@ -27,8 +28,8 @@ android {
         applicationId = "com.otakup.niriko"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 5
+        versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -96,6 +97,37 @@ android {
     }
 }
 
+// ── 静态格式门禁（环境体检 2026-10）──
+// 只检查「相对基线改动过的文件」：本地默认基线是 HEAD（即未提交改动），
+// CI 传 -PspotlessRatchetFrom=origin/main，只校验 PR 的 diff，存量代码不一次性重排。
+//   只检查：.\gradlew.bat :app:spotlessCheck
+//   自动修：.\gradlew.bat :app:spotlessApply
+// 规则集见仓库根 .editorconfig（android_studio 风格、行长不设硬上限）。
+spotless {
+    ratchetFrom(providers.gradleProperty("spotlessRatchetFrom").getOrElse("HEAD"))
+    kotlin {
+        target("src/**/*.kt")
+        // 规则集裁剪：ktlint standard 有三条规则与本仓库既定命名口径冲突，必须显式关掉，
+        // 否则只要改到任何一个 Compose 文件，门禁就会变红（ratchetFrom 只检查改动过的文件）。
+        //   1) function-naming：Compose 组合函数按官方约定用 PascalCase（@Composable fun GlassToggle），
+        //      测试函数全仓 500+ 处用中文名（fun 只有带下划线的二级设置页算设置子页()）；
+        //   2) property-naming：常量统一大驼峰（AnimDurationShort / DefaultSmoothing / SettingsRowMinHeight）；
+        //   3) backing-property-naming：ViewModel 用 private val _uiState + asStateFlow() 的标准
+        //      backing 写法，公开名刻意不同名（recordSavedEvents / _recordSaved）。
+        ktlint().editorConfigOverride(
+            mapOf(
+                "ktlint_standard_function-naming" to "disabled",
+                "ktlint_standard_property-naming" to "disabled",
+                "ktlint_standard_backing-property-naming" to "disabled",
+            ),
+        )
+    }
+    kotlinGradle {
+        target("*.gradle.kts")
+        ktlint()
+    }
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -141,7 +173,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
-        // Coil（图片加载，后续作品封面可用）
+    // Coil（图片加载，后续作品封面可用）
     implementation(libs.coil.compose)
 
     // DataStore Preferences（设置持久化）
@@ -218,4 +250,3 @@ dependencies {
     implementation(libs.telephoto.zoomable)
     implementation(libs.telephoto.zoomable.image.coil)
 }
-

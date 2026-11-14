@@ -5,8 +5,8 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,7 +40,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -64,7 +63,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.otakup.niriko.plugin.bilibili.BilibiliSyncPreview
 import com.otakup.niriko.plugin.bilibili.BilibiliWebBridge
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.collapseExit
+import com.otakup.niriko.ui.animation.expandEnter
 import com.otakup.niriko.ui.bilibili.BilibiliJsBridge
+import com.otakup.niriko.ui.components.GlassToggle
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 哔哩哔哩导入工作流页。
@@ -147,7 +151,11 @@ fun BilibiliSyncScreen(
             )
 
             // ===== 可折叠登录 WebView =====
-            AnimatedVisibility(visible = webViewExpanded) {
+            AnimatedVisibility(
+                visible = webViewExpanded,
+                enter = expandEnter(LocalReduceMotion.current),
+                exit = collapseExit(LocalReduceMotion.current),
+            ) {
                 LoginWebView(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -222,6 +230,7 @@ fun BilibiliSyncScreen(
                             text = when (uiState.stage) {
                                 BilibiliSyncStatus.IDLE ->
                                     "在下方网页中登录哔哩哔哩后自动获取追番与评分"
+
                                 else ->
                                     "正在获取数据…"
                             },
@@ -264,7 +273,7 @@ private fun BilibiliSyncStatusBar(
                 Box(
                     modifier = Modifier
                         .size(8.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(NirikoShapes.RowInnerShape)
                         .background(MaterialTheme.colorScheme.primary),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -493,6 +502,7 @@ private fun BilibiliSyncPreviewRow(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+
                 else -> {
                     Text(
                         text = "未匹配 Bangumi 条目（导入时跳过）",
@@ -539,7 +549,10 @@ private fun BilibiliSyncBottomBar(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f),
                 )
-                Switch(
+                // V-13：M3 Switch → 玻璃开关（全站最后 3 处 M3 Switch 之一；设置页/筛选面板已换完）。
+                // 本行只有开关本身可点，没有整行兜底 —— 52×30 的视觉高度是既有欠账，
+                // 这里至少让它与其它开关同材质，命中区问题随「GlassToggle 统一 48dp 触控壳」一起记账。
+                GlassToggle(
                     checked = overwrite,
                     onCheckedChange = onOverwriteChange,
                 )

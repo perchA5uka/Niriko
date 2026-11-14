@@ -4,9 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,9 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,13 +29,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.match.MatchCandidate
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.collapseExit
+import com.otakup.niriko.ui.animation.expandEnter
 import com.otakup.niriko.ui.components.GlassSectionCard
+import com.otakup.niriko.ui.components.NirikoTextField
+import com.otakup.niriko.ui.components.SectionHeader
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 /**
@@ -91,6 +93,9 @@ fun ProviderBindingSection(
     isScrolling: Boolean = false,
 ) {
     val bound = bindingSummary != null
+    // S07：解绑是破坏性动作（入口消失、补充信息清空），先确认再执行。
+    // 文案与 VM 对齐：unbindAnilist / unbindVndb 只清绑定与详情缓存，不删除已写入的评分。
+    var confirmUnbind by remember { mutableStateOf(false) }
 
     GlassSectionCard(
         backdrop = glassBackdrop,
@@ -98,16 +103,31 @@ fun ProviderBindingSection(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
+            // V-15：分区标题统一 SectionHeader；解绑入口放 trailing（S07 会再补二次确认）。
+            SectionHeader(
+                title = title,
+                trailing = {
+                    if (bound) {
+                        TextButton(onClick = { confirmUnbind = true }) { Text("解绑") }
+                    }
+                },
+            )
+
+            if (confirmUnbind) {
+                AlertDialog(
+                    onDismissRequest = { confirmUnbind = false },
+                    title = { Text("解除绑定？") },
+                    text = { Text("解绑后：该数据源的补充信息会从本页移除（已写入的评分与收藏不受影响）。") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirmUnbind = false
+                            onUnbind()
+                        }) { Text("解绑") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { confirmUnbind = false }) { Text("取消") }
+                    },
                 )
-                if (bound) {
-                    TextButton(onClick = onUnbind) { Text("解绑") }
-                }
             }
 
             if (bound) {
@@ -126,7 +146,11 @@ fun ProviderBindingSection(
                     }
                 }
                 if (detailContent != null) {
-                    AnimatedVisibility(visible = expanded) { detailContent() }
+                    AnimatedVisibility(
+                        visible = expanded,
+                        enter = expandEnter(LocalReduceMotion.current),
+                        exit = collapseExit(LocalReduceMotion.current),
+                    ) { detailContent() }
                 }
                 return@Column
             }
@@ -225,17 +249,27 @@ private fun ManualEntry(
     var pasteInput by remember { mutableStateOf("") }
 
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(onClick = { showSearch = !showSearch; if (showSearch) showPaste = false }) {
+        TextButton(onClick = {
+            showSearch = !showSearch
+            if (showSearch) showPaste = false
+        }) {
             Text("搜索", style = MaterialTheme.typography.labelMedium)
         }
-        TextButton(onClick = { showPaste = !showPaste; if (showPaste) showSearch = false }) {
+        TextButton(onClick = {
+            showPaste = !showPaste
+            if (showPaste) showSearch = false
+        }) {
             Text("粘贴 ID / 链接", style = MaterialTheme.typography.labelMedium)
         }
     }
 
-    AnimatedVisibility(visible = showSearch) {
+    AnimatedVisibility(
+        visible = showSearch,
+        enter = expandEnter(LocalReduceMotion.current),
+        exit = collapseExit(LocalReduceMotion.current),
+    ) {
         Column {
-            OutlinedTextField(
+            NirikoTextField(
                 value = searchInput,
                 onValueChange = { searchInput = it },
                 label = { Text("关键词（原文名 / 英文名 / 罗马音）", style = MaterialTheme.typography.labelSmall) },
@@ -249,9 +283,13 @@ private fun ManualEntry(
         }
     }
 
-    AnimatedVisibility(visible = showPaste) {
+    AnimatedVisibility(
+        visible = showPaste,
+        enter = expandEnter(LocalReduceMotion.current),
+        exit = collapseExit(LocalReduceMotion.current),
+    ) {
         Column {
-            OutlinedTextField(
+            NirikoTextField(
                 value = pasteInput,
                 onValueChange = { pasteInput = it },
                 label = { Text(pasteHint, style = MaterialTheme.typography.labelSmall) },
@@ -312,9 +350,11 @@ private fun CandidateRow(
             Text(
                 when {
                     highlight -> "已指定 #${candidate.externalId}"
+
                     // confidence 为 0 表示「没算出来」而不是「算出来是 0」。
                     // AniList 候选曾在界面侧手搓时漏传置信度，于是恒显示「匹配度 0%」。
                     candidate.confidence > 0f -> "匹配度 %.0f%%".format(candidate.confidence * 100f)
+
                     else -> "匹配度未计算"
                 },
                 style = MaterialTheme.typography.labelSmall,

@@ -31,15 +31,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.ui.theme.NirikoShapes
+import com.otakup.niriko.ui.common.LocalNirikoFeedback
 import com.otakup.niriko.ui.settings.SettingsSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
+import com.otakup.niriko.ui.theme.NirikoShapes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 /**
  * 分享预览 Sheet（AniShelf 借鉴）：预览海报风分享卡 + 配置（圆角/评分/进度/标签）+ 分享。
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun SharePreviewSheet(
     context: Context,
@@ -58,22 +60,34 @@ fun SharePreviewSheet(
     var showProgress by remember { mutableStateOf(true) }
     var showTags by remember { mutableStateOf(true) }
     var sharing by remember { mutableStateOf(false) }
+    // F03：全局反馈通道（宿主在 MainActivity 窗口层）。预览/单测里为 null，`?.show` 即跳过。
+    val feedback = LocalNirikoFeedback.current
 
     fun doShare() {
         scope.launch {
             sharing = true
-            val bmp = host.renderPoster(context, data, showRating, showProgress, showTags, rounded)
-            val text = buildString {
-                append(data.primaryTitle)
-                data.statusLabel?.let { append("  ·  " + it) }
-                if (showRating && data.score != null) append("  ·  评分 " + data.score)
-                if (showProgress && data.progressText != null) append("  ·  " + data.progressText)
-                append("\n\n——— 来自 Niriko")
+            // F06：渲染 / 存图 / 起 Chooser 任何一步抛异常，原来会让 sharing 永远停在 true，
+            // 按钮文案卡死在「生成中…」且再也点不动。finally 保证一定复位，catch 给一次回执，
+            // sheet 不关 —— 按钮恢复可点就是天然的重试入口。
+            try {
+                val bmp = host.renderPoster(context, data, showRating, showProgress, showTags, rounded)
+                val text = buildString {
+                    append(data.primaryTitle)
+                    data.statusLabel?.let { append("  ·  " + it) }
+                    if (showRating && data.score != null) append("  ·  评分 " + data.score)
+                    if (showProgress && data.progressText != null) append("  ·  " + data.progressText)
+                    append("\n\n——— 来自 Niriko")
+                }
+                val uri = ShareFlow.saveAndGetUri(context, bmp, "share_" + System.currentTimeMillis() + ".png")
+                context.startActivity(ShareFlow.buildChooser(ShareFlow.buildShareIntent(uri, text), "分享到"))
+                onDismiss()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                feedback?.show("生成分享图失败")
+            } finally {
+                sharing = false
             }
-            val uri = ShareFlow.saveAndGetUri(context, bmp, "share_" + System.currentTimeMillis() + ".png")
-            context.startActivity(ShareFlow.buildChooser(ShareFlow.buildShareIntent(uri, text), "分享到"))
-            sharing = false
-            onDismiss()
         }
     }
 
@@ -81,17 +95,25 @@ fun SharePreviewSheet(
         val card = ratingComparison ?: return
         scope.launch {
             sharing = true
-            val bmp = ShareCardVariants.renderRating(context, host, card)
-            val text = buildString {
-                append("《${data.primaryTitle}》评分对照")
-                card.mine?.let { append(" · 我 ").append("%.1f".format(it)) }
-                card.community?.let { append(" · 社区 ").append("%.1f".format(it)) }
-                append("\n\n——— 来自 Niriko")
+            // F06：同 doShare —— 失败必须复位 loading，否则两个出口都永久卡在「生成中…」。
+            try {
+                val bmp = ShareCardVariants.renderRating(context, host, card)
+                val text = buildString {
+                    append("《${data.primaryTitle}》评分对照")
+                    card.mine?.let { append(" · 我 ").append("%.1f".format(it)) }
+                    card.community?.let { append(" · 社区 ").append("%.1f".format(it)) }
+                    append("\n\n——— 来自 Niriko")
+                }
+                val uri = ShareFlow.saveAndGetUri(context, bmp, "rating_" + System.currentTimeMillis() + ".png")
+                context.startActivity(ShareFlow.buildChooser(ShareFlow.buildShareIntent(uri, text), "分享到"))
+                onDismiss()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                feedback?.show("生成分享图失败")
+            } finally {
+                sharing = false
             }
-            val uri = ShareFlow.saveAndGetUri(context, bmp, "rating_" + System.currentTimeMillis() + ".png")
-            context.startActivity(ShareFlow.buildChooser(ShareFlow.buildShareIntent(uri, text), "分享到"))
-            sharing = false
-            onDismiss()
         }
     }
 
@@ -107,13 +129,17 @@ fun SharePreviewSheet(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
-                .verticalScroll(rememberScrollState()),   // 关键：内容可滚动，防止开关被裁剪/重叠
+                .verticalScroll(rememberScrollState()), // 关键：内容可滚动，防止开关被裁剪/重叠
         ) {
             Text("分享卡预览", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             // 预览（限高，避免撑爆 Sheet 导致下方开关不可见）
             Box(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 SharePosterCard(
-                    data = data, showRating = showRating, showProgress = showProgress, showTags = showTags, rounded = rounded,
+                    data = data,
+                    showRating = showRating,
+                    showProgress = showProgress,
+                    showTags = showTags,
+                    rounded = rounded,
                     modifier = Modifier.fillMaxWidth().height(320.dp),
                 )
             }
@@ -130,44 +156,46 @@ fun SharePreviewSheet(
             Text("自定义", style = MaterialTheme.typography.titleSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             // 与设置页同一套行解剖：圆形/玻璃分组容器 + leading 图标 + 标题 + 描述 + Switch
-            SettingsSplitGroup(content = listOf(
-                {
-                    SettingsSwitchRow(
-                        icon = Icons.Outlined.RoundedCorner,
-                        title = "圆角卡片",
-                        description = "分享卡使用圆角样式",
-                        checked = rounded,
-                        onCheckedChange = { rounded = it },
-                    )
-                },
-                {
-                    SettingsSwitchRow(
-                        icon = Icons.Outlined.Star,
-                        title = "包含评分",
-                        description = "显示我的/Bangumi 评分",
-                        checked = showRating,
-                        onCheckedChange = { showRating = it },
-                    )
-                },
-                {
-                    SettingsSwitchRow(
-                        icon = Icons.Outlined.Timeline,
-                        title = "包含进度",
-                        description = "显示观看进度",
-                        checked = showProgress,
-                        onCheckedChange = { showProgress = it },
-                    )
-                },
-                {
-                    SettingsSwitchRow(
-                        icon = Icons.Outlined.LocalOffer,
-                        title = "包含个人标签",
-                        description = "显示我的标签",
-                        checked = showTags,
-                        onCheckedChange = { showTags = it },
-                    )
-                },
-            ))
+            SettingsSplitGroup(
+                content = listOf(
+                    {
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.RoundedCorner,
+                            title = "圆角卡片",
+                            description = "分享卡使用圆角样式",
+                            checked = rounded,
+                            onCheckedChange = { rounded = it },
+                        )
+                    },
+                    {
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.Star,
+                            title = "包含评分",
+                            description = "显示我的/Bangumi 评分",
+                            checked = showRating,
+                            onCheckedChange = { showRating = it },
+                        )
+                    },
+                    {
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.Timeline,
+                            title = "包含进度",
+                            description = "显示观看进度",
+                            checked = showProgress,
+                            onCheckedChange = { showProgress = it },
+                        )
+                    },
+                    {
+                        SettingsSwitchRow(
+                            icon = Icons.Outlined.LocalOffer,
+                            title = "包含个人标签",
+                            description = "显示我的标签",
+                            checked = showTags,
+                            onCheckedChange = { showTags = it },
+                        )
+                    },
+                )
+            )
             if (ratingComparison != null) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = { doShareRating() }, enabled = !sharing, modifier = Modifier.fillMaxWidth()) {

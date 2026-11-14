@@ -6,7 +6,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -33,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.otakup.niriko.data.remote.steam.SteamOpenIdClient
+import com.otakup.niriko.ui.components.NirikoTextField
 
 /**
  * Steam 登录页。
@@ -55,11 +54,11 @@ fun SteamLoginScreen(
     var manualInput by remember { mutableStateOf("") }
 
     Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        // 标题
+        // 标题（V-16：drill-in 页统一 headlineSmall 24sp/w600；这一档已在 Type.kt 里覆写，
+        // 不再需要调用点手写 Bold —— 手写会把 w600 叠成 w700，与设置二级页又分叉。）
         Text(
             "Steam 登录",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+            style = MaterialTheme.typography.headlineSmall,
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -120,7 +119,7 @@ fun SteamLoginScreen(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 Spacer(Modifier.height(4.dp))
-                OutlinedTextField(
+                NirikoTextField(
                     value = manualInput,
                     onValueChange = { manualInput = it },
                     label = { Text("SteamID64（17 位数字）") },
@@ -324,7 +323,6 @@ private class SteamWebHost {
 }
 
 /** 错误页 HTML（loadData 渲染，纯内联样式，不依赖网络资源）。 */
-private fun steamErrorPageHtml(heading: String, detail: String): String =
-    "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head>" +
-        "<body style=\"font-family:sans-serif;padding:16px;line-height:1.6\">" +
-        "<b>$heading</b><p>$detail</p></body></html>"
+private fun steamErrorPageHtml(heading: String, detail: String): String = "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head>" +
+    "<body style=\"font-family:sans-serif;padding:16px;line-height:1.6\">" +
+    "<b>$heading</b><p>$detail</p></body></html>"

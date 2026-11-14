@@ -24,7 +24,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
-import com.otakup.niriko.ui.animation.clampAmbientLight
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
@@ -40,11 +39,13 @@ import com.otakup.niriko.data.settings.GlassEffectLevel
 import com.otakup.niriko.ui.animation.AnimEasingDefault
 import com.otakup.niriko.ui.animation.LocalReduceMotion
 import com.otakup.niriko.ui.animation.PressTiltLighting
+import com.otakup.niriko.ui.animation.clampAmbientLight
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
-import kotlinx.coroutines.isActive
+import com.otakup.niriko.ui.theme.RarityPalette
 import kotlin.math.abs
 import kotlin.math.min
+import kotlinx.coroutines.isActive
 
 /** Reuses the actual animated tilt, including its spring return, rather than pointer targets. */
 internal fun cardLightDirection(rotationX: Float, rotationY: Float): Offset {
@@ -69,24 +70,27 @@ internal fun cardReflectionAlpha(rarity: CardRarity, engagement: Float, breathin
 /** Static surface budget is separate from the smaller moving specular highlight. */
 internal fun cardSurfaceColors(rarity: CardRarity): List<Color> = when (rarity) {
     CardRarity.STANDARD -> emptyList()
+
     CardRarity.SILVER -> listOf(
-        Color(0xFFAAC6DF).copy(alpha = 0.08f),
-        Color(0xFFD9E6F2).copy(alpha = 0.045f),
-        Color(0xFFD1DEEB).copy(alpha = 0.025f),
-        Color(0xFF8DABC8).copy(alpha = 0.085f),
+        RarityPalette.SilverSurfaceTop.copy(alpha = 0.08f),
+        RarityPalette.SilverSurfaceUpper.copy(alpha = 0.045f),
+        RarityPalette.SilverSurfaceLower.copy(alpha = 0.025f),
+        RarityPalette.SilverSurfaceBottom.copy(alpha = 0.085f),
     )
+
     CardRarity.GOLD -> listOf(
-        Color(0xFFD9AA4B).copy(alpha = 0.09f),
-        Color(0xFFF2D797).copy(alpha = 0.05f),
-        Color(0xFFEDD8AF).copy(alpha = 0.028f),
-        Color(0xFFC89738).copy(alpha = 0.095f),
+        RarityPalette.GoldSurfaceTop.copy(alpha = 0.09f),
+        RarityPalette.GoldSurfaceUpper.copy(alpha = 0.05f),
+        RarityPalette.GoldSurfaceLower.copy(alpha = 0.028f),
+        RarityPalette.GoldSurfaceBottom.copy(alpha = 0.095f),
     )
+
     CardRarity.HOLOGRAPHIC -> listOf(
-        Color(0xFF8DA3E6).copy(alpha = 0.09f),
-        Color(0xFF76D4D1).copy(alpha = 0.065f),
-        Color(0xFFE0DDE8).copy(alpha = 0.028f),
-        Color(0xFFE59ABF).copy(alpha = 0.075f),
-        Color(0xFFE6BF71).copy(alpha = 0.085f),
+        RarityPalette.HoloSurfaceTop.copy(alpha = 0.09f),
+        RarityPalette.HoloSurfaceUpper.copy(alpha = 0.065f),
+        RarityPalette.HoloSurfaceLower.copy(alpha = 0.028f),
+        RarityPalette.HoloSurfaceBottom.copy(alpha = 0.075f),
+        RarityPalette.HoloSurfaceTail.copy(alpha = 0.085f),
     )
 }
 
@@ -95,16 +99,19 @@ internal fun cardReflectionCenter(direction: Offset): Offset = Offset(
     0.28f + direction.y * 0.14f,
 )
 
-internal fun cardSurfaceGradientShift(rarity: CardRarity, direction: Offset): Offset =
-    if (rarity == CardRarity.HOLOGRAPHIC) Offset(direction.x * 0.08f, direction.y * 0.06f)
-    else Offset.Zero
+internal fun cardSurfaceGradientShift(rarity: CardRarity, direction: Offset): Offset = if (rarity == CardRarity.HOLOGRAPHIC) {
+    Offset(direction.x * 0.08f, direction.y * 0.06f)
+} else {
+    Offset.Zero
+}
 
-internal fun cardSurfaceStops(rarity: CardRarity): List<Float> =
-    if (rarity == CardRarity.HOLOGRAPHIC) listOf(0f, 0.28f, 0.5f, 0.76f, 1f)
-    else listOf(0f, 0.26f, 0.52f, 1f)
+internal fun cardSurfaceStops(rarity: CardRarity): List<Float> = if (rarity == CardRarity.HOLOGRAPHIC) {
+    listOf(0f, 0.28f, 0.5f, 0.76f, 1f)
+} else {
+    listOf(0f, 0.26f, 0.52f, 1f)
+}
 
-internal fun perfectHighlightEnabled(material: CardMaterialState, visible: Boolean, reduceMotion: Boolean): Boolean =
-    material.rarity == CardRarity.HOLOGRAPHIC && material.isPerfect && visible && !reduceMotion
+internal fun perfectHighlightEnabled(material: CardMaterialState, visible: Boolean, reduceMotion: Boolean): Boolean = material.rarity == CardRarity.HOLOGRAPHIC && material.isPerfect && visible && !reduceMotion
 
 internal fun cardOutlinePath(outline: Outline): Path = Path().apply {
     when (outline) {
@@ -120,8 +127,7 @@ internal fun DrawScope.drawClippedCardSurface(shape: Shape, content: DrawScope.(
     }
 }
 
-internal fun cardBrightContrast(luminance: Float): Float =
-    ((luminance.takeIf { it.isFinite() } ?: 0.5f) - 0.45f).div(0.55f).coerceIn(0f, 1f)
+internal fun cardBrightContrast(luminance: Float): Float = ((luminance.takeIf { it.isFinite() } ?: 0.5f) - 0.45f).div(0.55f).coerceIn(0f, 1f)
 
 internal fun cardDiffusionCenter(direction: Offset): Offset {
     val safe = clampAmbientLight(direction)
@@ -148,19 +154,26 @@ internal fun cardRarityPainter(
     val surfaceColors = cardSurfaceColors(rarity).map { it.copy(alpha = it.alpha * strength) }
     val surfaceStops = cardSurfaceStops(rarity).zip(surfaceColors).toTypedArray()
     val palette = when (rarity) {
-        CardRarity.SILVER -> listOf(Color(0xFF94B4CE), Color(0xFFF1F7FF), Color(0xFF7597B5))
-        CardRarity.GOLD -> listOf(Color(0xFFD5A342), Color(0xFFFFE3A0), Color(0xFFAF7B29))
-        CardRarity.HOLOGRAPHIC -> listOf(Color(0xFF65C9CF), Color(0xFFE8A0D0), Color(0xFFDAB358))
+        CardRarity.SILVER -> listOf(RarityPalette.SilverEdge, RarityPalette.SilverSpecular, RarityPalette.SilverEdgeDeep)
+        CardRarity.GOLD -> listOf(RarityPalette.GoldEdge, RarityPalette.GoldSpecular, RarityPalette.GoldEdgeDeep)
+        CardRarity.HOLOGRAPHIC -> listOf(RarityPalette.HoloEdge, RarityPalette.HoloSpecular, RarityPalette.HoloEdgeDeep)
         CardRarity.STANDARD -> emptyList()
     }
     val edgeAlpha = (if (dark) 0.60f else 0.48f) * strength
     val edge = Brush.linearGradient(
-        listOf(palette[0].copy(alpha = edgeAlpha), palette[1].copy(alpha = edgeAlpha * 0.80f),
-            palette[2].copy(alpha = edgeAlpha * 0.85f)),
-        start = Offset.Zero, end = Offset(size.width, size.height),
+        listOf(
+            palette[0].copy(alpha = edgeAlpha),
+            palette[1].copy(alpha = edgeAlpha * 0.80f),
+            palette[2].copy(alpha = edgeAlpha * 0.85f)
+        ),
+        start = Offset.Zero,
+        end = Offset(size.width, size.height),
     )
-    val surface = Brush.linearGradient(colorStops = surfaceStops,
-        start = Offset.Zero, end = Offset(size.width, size.height))
+    val surface = Brush.linearGradient(
+        colorStops = surfaceStops,
+        start = Offset.Zero,
+        end = Offset(size.width, size.height)
+    )
     val bright = cardBrightContrast(luminance)
     val shoulderAlpha = (0.018f + bright * 0.042f) * strength
     val radius = min(size.width, size.height).coerceAtLeast(1f) * 0.52f
@@ -169,16 +182,23 @@ internal fun cardRarityPainter(
         val direction = clampAmbientLight(input)
         clipPath(clip) {
             val shift = cardSurfaceGradientShift(rarity, direction)
-            val tint = if (shift == Offset.Zero) surface else Brush.linearGradient(
-                colorStops = surfaceStops,
-                start = Offset(size.width * shift.x, size.height * shift.y),
-                end = Offset(size.width * (1f + shift.x), size.height * (1f + shift.y)),
-            )
+            val tint = if (shift == Offset.Zero) {
+                surface
+            } else {
+                Brush.linearGradient(
+                    colorStops = surfaceStops,
+                    start = Offset(size.width * shift.x, size.height * shift.y),
+                    end = Offset(size.width * (1f + shift.x), size.height * (1f + shift.y)),
+                )
+            }
             drawOutline(outline, tint)
             val diffuseCenter = cardDiffusionCenter(direction)
             val diffusion = Brush.radialGradient(
-                colors = listOf(palette[0].copy(alpha = 0.09f * strength),
-                    palette[2].copy(alpha = 0.045f * strength), Color.Transparent),
+                colors = listOf(
+                    palette[0].copy(alpha = 0.09f * strength),
+                    palette[2].copy(alpha = 0.045f * strength),
+                    Color.Transparent
+                ),
                 center = Offset(size.width * diffuseCenter.x, size.height * diffuseCenter.y),
                 radius = maxOf(size.width, size.height).coerceAtLeast(1f) * 0.60f,
             )
@@ -190,14 +210,20 @@ internal fun cardRarityPainter(
             // A neutral, local shoulder carries luminance contrast on white, without tinting the card.
             val shoulder = Brush.radialGradient(
                 0f to Color.Transparent,
-                0.45f to Color(0xFF43464B).copy(alpha = shoulderAlpha),
+                0.45f to RarityPalette.NeutralShoulder.copy(alpha = shoulderAlpha),
                 1f to Color.Transparent,
-                center = center, radius = radius * 1.16f,
+                center = center,
+                radius = radius * 1.16f,
             )
             val reflection = Brush.radialGradient(
-                colors = listOf(palette[1].copy(alpha = alpha), palette[0].copy(alpha = alpha * 0.65f),
-                    palette[2].copy(alpha = alpha * 0.25f), Color.Transparent),
-                center = center, radius = radius,
+                colors = listOf(
+                    palette[1].copy(alpha = alpha),
+                    palette[0].copy(alpha = alpha * 0.65f),
+                    palette[2].copy(alpha = alpha * 0.25f),
+                    Color.Transparent
+                ),
+                center = center,
+                radius = radius,
             )
             // Draw the gradients in an elliptical frame, but keep clipping in card coordinates.
             scale(1.22f, 0.66f, pivot = center) {
@@ -234,8 +260,15 @@ internal fun rememberCardRaritySurface(
                 cachedSize = size
                 cachedDensity = density
                 cachedLayout = layoutDirection
-                painter = cardRarityPainter(material.rarity, shape.createOutline(size, layoutDirection, this),
-                    size, strength, dark, 2.25.dp.toPx(), luminance)
+                painter = cardRarityPainter(
+                    material.rarity,
+                    shape.createOutline(size, layoutDirection, this),
+                    size,
+                    strength,
+                    dark,
+                    2.25.dp.toPx(),
+                    luminance
+                )
             }
             val direction = reflection.direction()
             painter?.invoke(this, direction, if (reduceMotion || !material.isPerfect) 0f else currentBreathing())
@@ -260,8 +293,15 @@ fun Modifier.cardRarityMaterial(
     val reduceMotion = LocalReduceMotion.current
     val strength = cardReflectionStrength(LocalGlassEffect.current, LocalCardGlassLevel.current)
     return drawWithCache {
-        val painter = cardRarityPainter(material.rarity, shape.createOutline(size, layoutDirection, this),
-            size, strength, dark, 2.25.dp.toPx(), luminance)
+        val painter = cardRarityPainter(
+            material.rarity,
+            shape.createOutline(size, layoutDirection, this),
+            size,
+            strength,
+            dark,
+            2.25.dp.toPx(),
+            luminance
+        )
         onDrawWithContent {
             if (!behindContent) drawContent()
             val direction = reflection.direction()

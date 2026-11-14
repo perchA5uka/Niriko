@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +40,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.components.NirikoTextField
+import com.otakup.niriko.ui.theme.NirikoShapes
 import kotlin.math.roundToInt
 
 /**
@@ -123,7 +124,7 @@ fun ThemeColorPickerDialog(
                 )
 
                 // HEX 输入
-                OutlinedTextField(
+                NirikoTextField(
                     value = hexText,
                     onValueChange = { text ->
                         hexText = text
@@ -150,8 +151,11 @@ fun ThemeColorPickerDialog(
                                 .background(color)
                                 .border(
                                     width = if (selected) 2.5.dp else 1.dp,
-                                    color = if (selected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                    color = if (selected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                                    },
                                     shape = CircleShape,
                                 )
                                 .pointerInput(argb) {
@@ -215,16 +219,22 @@ private fun SatValPanel(
         modifier = Modifier
             .fillMaxWidth()
             .height(180.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(NirikoShapes.ControlShape)
             .background(Brush.horizontalGradient(listOf(Color.White, hueColor)))
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black)))
             .onSizeChanged { panelSize = it }
             .pointerInput(Unit) {
-                detectTapGestures { offset -> updateFrom(offset); onChangeEnd() }
+                detectTapGestures { offset ->
+                    updateFrom(offset)
+                    onChangeEnd()
+                }
             }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDrag = { change, _ -> change.consume(); updateFrom(change.position) },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        updateFrom(change.position)
+                    },
                     onDragEnd = { onChangeEnd() },
                 )
             },
@@ -278,11 +288,17 @@ private fun HueBar(
             .background(hueBrush)
             .onSizeChanged { barSize = it }
             .pointerInput(Unit) {
-                detectTapGestures { offset -> updateFrom(offset.x); onChangeEnd() }
+                detectTapGestures { offset ->
+                    updateFrom(offset.x)
+                    onChangeEnd()
+                }
             }
             .pointerInput(Unit) {
                 detectDragGestures(
-                    onDrag = { change, _ -> change.consume(); updateFrom(change.position.x) },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        updateFrom(change.position.x)
+                    },
                     onDragEnd = { onChangeEnd() },
                 )
             },

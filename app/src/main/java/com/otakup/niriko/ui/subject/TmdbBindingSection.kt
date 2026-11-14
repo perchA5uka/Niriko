@@ -13,14 +13,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,7 +39,13 @@ import coil.compose.AsyncImage
 import com.otakup.niriko.data.local.entity.SubjectExternalIdEntity
 import com.otakup.niriko.data.remote.rating.RatingCandidate
 import com.otakup.niriko.data.remote.tmdb.dto.TmdbTvDetailDto
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.collapseExit
+import com.otakup.niriko.ui.animation.expandEnter
 import com.otakup.niriko.ui.components.GlassSectionCard
+import com.otakup.niriko.ui.components.NirikoSelectionPill
+import com.otakup.niriko.ui.components.NirikoTextField
+import com.otakup.niriko.ui.components.SectionHeader
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 /**
@@ -90,13 +94,8 @@ fun TmdbBindingSection(
     val bound = binding ?: movieBinding
     // 只要 TMDb 覆盖此类型就渲染（不再因「没有候选」而整块消失）
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            "TMDb",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        Spacer(Modifier.height(8.dp))
+        // V-15：分区标题统一走 SectionHeader。
+        SectionHeader(title = "TMDb", modifier = Modifier.padding(horizontal = 16.dp))
         GlassSectionCard(
             backdrop = glassBackdrop,
             isScrolling = isScrolling,
@@ -140,6 +139,9 @@ private fun BoundHeader(
     onSeasonSelect: ((Int) -> Unit)? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // S07：解绑会删掉 TMDb 来源的分集评分（VM 的 unbindTmdb 会 deleteEpisodeRatingsBySource），
+    // 是破坏性动作，必须先确认再执行。
+    var confirmUnbind by remember { mutableStateOf(false) }
     val isMovie = binding.provider == SubjectExternalIdEntity.PROVIDER_TMDB_MOVIE
 
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -170,10 +172,32 @@ private fun BoundHeader(
             }
         }
         TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起" else "详情") }
-        TextButton(onClick = onUnbind) { Text("解绑") }
+        TextButton(onClick = { confirmUnbind = true }) { Text("解绑") }
     }
 
-    AnimatedVisibility(visible = expanded) {
+    if (confirmUnbind) {
+        AlertDialog(
+            onDismissRequest = { confirmUnbind = false },
+            title = { Text("解除 TMDb 绑定？") },
+            // 文案与 VM 实际行为对齐：unbindTmdb 只删 TMDb 来源的分集评分，不动 Bangumi 作品评分。
+            text = { Text("解绑后：从 TMDb 导入的分集评分会被删除；Bangumi 的作品评分与手动奖项不受影响。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmUnbind = false
+                    onUnbind()
+                }) { Text("解绑") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmUnbind = false }) { Text("取消") }
+            },
+        )
+    }
+
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandEnter(LocalReduceMotion.current),
+        exit = collapseExit(LocalReduceMotion.current),
+    ) {
         Column(modifier = Modifier.padding(top = 6.dp)) {
             if (isMovie) {
                 Text(
@@ -200,7 +224,7 @@ private fun BoundHeader(
                 TmdbInfoLine("制作公司", it.take(4).joinToString("、"))
             }
             d.status?.let { TmdbInfoLine("播出状态", statusLabel(it)) }
-            d.episodeRunTime.firstOrNull()?.let { TmdbInfoLine("单集时长", "${it} 分钟") }
+            d.episodeRunTime.firstOrNull()?.let { TmdbInfoLine("单集时长", "$it 分钟") }
             d.originalLanguage?.let { TmdbInfoLine("原始语言", it) }
 
             val ext = d.externalIds
@@ -228,16 +252,11 @@ private fun BoundHeader(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     selectableSeasons.forEach { season ->
-                        FilterChip(
+                        NirikoSelectionPill(
+                            text = "第 ${season.seasonNumber} 季" +
+                                if ((season.episodeCount ?: 0) > 0) "（${season.episodeCount} 集）" else "",
                             selected = currentSeason == season.seasonNumber,
                             onClick = { onSeasonSelect(season.seasonNumber) },
-                            label = {
-                                Text(
-                                    text = "第 ${season.seasonNumber} 季" +
-                                        if ((season.episodeCount ?: 0) > 0) "（${season.episodeCount} 集）" else "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            },
                         )
                     }
                 }
@@ -359,17 +378,27 @@ private fun UnboundEntry(
     Spacer(Modifier.height(6.dp))
 
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(onClick = { showSearch = !showSearch; if (showSearch) showPaste = false }) {
+        TextButton(onClick = {
+            showSearch = !showSearch
+            if (showSearch) showPaste = false
+        }) {
             Text("搜索 TMDb")
         }
-        TextButton(onClick = { showPaste = !showPaste; if (showPaste) showSearch = false }) {
+        TextButton(onClick = {
+            showPaste = !showPaste
+            if (showPaste) showSearch = false
+        }) {
             Text("粘贴 ID / 链接")
         }
     }
 
-    AnimatedVisibility(visible = showSearch) {
+    AnimatedVisibility(
+        visible = showSearch,
+        enter = expandEnter(LocalReduceMotion.current),
+        exit = collapseExit(LocalReduceMotion.current),
+    ) {
         Column {
-            OutlinedTextField(
+            NirikoTextField(
                 value = searchInput,
                 onValueChange = { searchInput = it },
                 label = { Text("关键词（原文名 / 英文名 / 罗马音）") },
@@ -385,9 +414,13 @@ private fun UnboundEntry(
         }
     }
 
-    AnimatedVisibility(visible = showPaste) {
+    AnimatedVisibility(
+        visible = showPaste,
+        enter = expandEnter(LocalReduceMotion.current),
+        exit = collapseExit(LocalReduceMotion.current),
+    ) {
         Column {
-            OutlinedTextField(
+            NirikoTextField(
                 value = pasteInput,
                 onValueChange = { pasteInput = it },
                 label = { Text("如 42509 或 themoviedb.org/tv/42509-...") },
@@ -472,8 +505,7 @@ private fun CandidateRow(
     }
 }
 
-private fun providerLabel(provider: String): String =
-    if (provider == SubjectExternalIdEntity.PROVIDER_TMDB_MOVIE) "电影" else "剧集"
+private fun providerLabel(provider: String): String = if (provider == SubjectExternalIdEntity.PROVIDER_TMDB_MOVIE) "电影" else "剧集"
 
 /** TMDb 的 status 直译对中文用户不友好，映射成「是否还在播」。 */
 private fun statusLabel(raw: String): String = when (raw.lowercase()) {

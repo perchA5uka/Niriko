@@ -2,7 +2,9 @@ package com.otakup.niriko.ui.common
 
 import com.otakup.niriko.data.model.WatchStatus
 import java.io.File
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ApprovedTopControlsTest {
@@ -11,12 +13,14 @@ class ApprovedTopControlsTest {
         assertEquals(listOf("history", "season", "steam"), orderedTopSelectorOptions(options, "history").map { it.key })
         assertEquals(options, orderedTopSelectorOptions(options, "unknown"))
     }
+
     @Test fun libraryCountsShowAllStatusesInsteadOfOnlySelectedStatus() {
         val counts = mapOf(WatchStatus.PLAN_TO_WATCH to 2, WatchStatus.WATCHING to 3, WatchStatus.COMPLETED to 4)
         assertEquals(9, librarySearchStatusCount(counts, null))
         assertEquals(3, librarySearchStatusCount(counts, WatchStatus.WATCHING))
         assertEquals(0, librarySearchStatusCount(counts, WatchStatus.DROPPED))
     }
+
     @Test fun sharedSearchPreservesWidthAndDiscoverWorksPeopleMode() {
         val text = source("ui/common/IosStyleSearchComponent.kt")
         assertTrue(text.contains("(screenW - 32.dp).coerceAtLeast(anchorDp)"))
@@ -24,6 +28,7 @@ class ApprovedTopControlsTest {
         assertTrue(text.contains("SearchMode.CHARACTERS"))
         assertTrue(text.contains("if (filters == null)"))
     }
+
     @Test fun feedsUseTheSamePolicyForPaddingAndStartTheirMaskAtWindowOrigin() {
         // 内距（内容避让）走 TopFadePolicy.feedTopPaddingDp / searchContentTopInsetDp；
         // 遮罩起点是**窗口原点**（屏幕顶部，含状态栏）：三处 hiddenHeight = 0.dp。
@@ -71,8 +76,9 @@ class ApprovedTopControlsTest {
 
     @Test fun topSelectorMenuIsSameWindowOverlay() {
         // B5：Popup 是独立窗口 → 玻璃采样以弹窗原点为基准。选择器必须改走同窗口浮层。
+        // V-14：自绘浮层退役，选择器直接走统一入口 NirikoMenu（内部仍是同窗口 GlassMenuOverlay）。
         val selector = source("ui/common/VerticalTopSelector.kt")
-        assertTrue(selector.contains("GlassMenuOverlay("))
+        assertTrue(selector.contains("NirikoMenu("))
         assertTrue(selector.contains("Popup(").not())
         assertTrue(selector.contains("androidx.compose.ui.window.Popup").not())
         assertTrue(selector.contains("onGloballyPositioned { buttonRect = it.boundsInRoot() }"))

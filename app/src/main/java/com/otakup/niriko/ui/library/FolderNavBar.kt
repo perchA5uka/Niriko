@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.model.collection.LibraryFolderSummary
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 作品库分区导航条（F09）。
@@ -81,13 +82,19 @@ private fun FolderChip(
     leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val background = if (selected) MaterialTheme.colorScheme.primaryContainer
-    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-    else MaterialTheme.colorScheme.onSurfaceVariant
+    val background = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
+            .clip(NirikoShapes.PillShape)
             .background(background)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -129,8 +136,7 @@ private fun FolderChip(
  * @param clicked 被点到的分区
  * @return 新的选中分区（null = 全部）
  */
-fun nextSelectedFolder(current: Long?, clicked: Long): Long? =
-    if (current == clicked) null else clicked
+fun nextSelectedFolder(current: Long?, clicked: Long): Long? = if (current == clicked) null else clicked
 
 /**
  * 分区名字是否可用于新建/改名：去空白后非空。

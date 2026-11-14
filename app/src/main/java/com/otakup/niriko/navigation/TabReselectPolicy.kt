@@ -62,9 +62,11 @@ data class TabReselectSignal(
  */
 fun tabReselectActionFor(page: Int): TabReselectAction = when (page) {
     TopLevelDestination.Discover.ordinal -> TabReselectAction.REFRESH_AT_TOP
+
     TopLevelDestination.Library.ordinal,
     TopLevelDestination.Stats.ordinal,
     -> TabReselectAction.SCROLL_TO_TOP
+
     else -> TabReselectAction.NONE
 }
 
@@ -171,10 +173,15 @@ suspend fun applyTabReselectTo(
     page: Int,
     supportsRefreshAtTop: Boolean,
     listState: LazyListState,
+    // 回顶弹簧要不要降级成瞬时落位。本函数是 suspend 工具、读不到 LocalReduceMotion，
+    // 由调用方（Composable 内）把当前值传进来，默认 false 保持既有行为。
+    // 必须排在 onRefreshAtTop 之前：调用点用尾随 lambda 传刷新动作，
+    // 尾随 lambda 只能落在**最后一个**形参上。
+    reduceMotion: Boolean = false,
     onRefreshAtTop: () -> Unit,
 ) {
     when (decideTabReselect(signal, page, supportsRefreshAtTop, listState)) {
-        TabReselectAction.SCROLL_TO_TOP -> listState.beginScrollToTop()
+        TabReselectAction.SCROLL_TO_TOP -> listState.beginScrollToTop(reduceMotion = reduceMotion)
         TabReselectAction.REFRESH_AT_TOP -> onRefreshAtTop()
         TabReselectAction.NONE -> Unit
     }
@@ -186,10 +193,11 @@ suspend fun applyTabReselectTo(
     page: Int,
     supportsRefreshAtTop: Boolean,
     gridState: LazyGridState,
+    reduceMotion: Boolean = false,
     onRefreshAtTop: () -> Unit,
 ) {
     when (decideTabReselect(signal, page, supportsRefreshAtTop, gridState)) {
-        TabReselectAction.SCROLL_TO_TOP -> gridState.beginScrollToTop()
+        TabReselectAction.SCROLL_TO_TOP -> gridState.beginScrollToTop(reduceMotion = reduceMotion)
         TabReselectAction.REFRESH_AT_TOP -> onRefreshAtTop()
         TabReselectAction.NONE -> Unit
     }

@@ -15,8 +15,7 @@ import org.junit.Test
  */
 class PagerTopBarContractTest {
 
-    private fun source(path: String): String =
-        File("src/main/java/com/otakup/niriko/$path").readText()
+    private fun source(path: String): String = File("src/main/java/com/otakup/niriko/$path").readText()
 
     private val mainPager by lazy { source("navigation/MainPager.kt") }
     private val library by lazy { source("ui/screens/Screens.kt") }
@@ -88,8 +87,11 @@ class PagerTopBarContractTest {
             .joinToString("\n")
         assertTrue("完整滑出用 offset（命中区跟着走）", barCode.contains(".offset {"))
         assertFalse("不得用 translationY（视觉走了、命中区还在）", barCode.contains("translationY"))
-        assertTrue("隐藏态 alpha 归零", bar.contains("alpha = 1f - hideProgress"))
+        // A.9-1：隐藏进度改成「绘制期读 state」，alpha 表达式随之改名（hideFraction.floatValue），
+        // 但语义仍是「完全隐藏 = alpha 0」。
+        assertTrue("隐藏态 alpha 归零", bar.contains("alpha = 1f - hideFraction.floatValue"))
     }
+
     /** B11-Step2：顶栏与 Dock 共用一个隐藏进度，且隐藏用 offset（命中区一起走）。 */
     @Test
     fun topBarExitsWithTheSharedHideProgress() {
@@ -107,9 +109,16 @@ class PagerTopBarContractTest {
         assertTrue(mainPager.contains("floatingControls?.shown"))
         assertTrue(mainPager.contains("animateFloatAsState"))
         // 协调：Dock 与顶栏的显隐都来自同一份状态（Dock 读它的动画输出）
+        // A.9-1：底栏不再在组合期调 bottomBarHideFraction()（那会每帧重组整条 kyant 底栏），
+        // 改为拿 MutableFloatState 并在 offset{}/graphicsLayer{} 内读值 —— 仍是同一份隐藏进度。
+        val barSource = source("navigation/NirikoBottomBar.kt")
         assertTrue(
             "Dock 必须读同一份隐藏进度",
-            source("navigation/NirikoBottomBar.kt").contains("bottomBarHideFraction()"),
+            barSource.contains("LocalBottomBarHideFraction.current"),
+        )
+        assertTrue(
+            "隐藏进度只在绘制/布局期读，不得回到组合期解引用",
+            barSource.contains("hideFraction.floatValue"),
         )
     }
 

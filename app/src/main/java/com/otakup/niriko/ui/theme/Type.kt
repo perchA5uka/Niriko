@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.sp
  * - 列表卡标题 titleSmall：15sp / w600；
  * - 卡片段标题/原名 bodyMedium：14sp / w400 / onSurfaceVariant；
  * - 简介 bodySmall：13sp / w400 / onSurfaceVariant / maxLines 2；
+ * - 胶囊/分段标签 labelMedium：13sp / w500；
  * - 元信息 labelSmall：11.5sp / w500 / tertiary 色。
  * 仅统计大数字 [displayLarge] 显式启用 tabular figures（fontFeatureSettings = "tnum"），
  * 滚动刷新不再跳动；其余层级一律不加 tnum（骨架屏/正文不需要等宽数字）。
@@ -41,6 +42,17 @@ val NirikoTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 28.sp,
         lineHeight = 36.sp,
+        letterSpacing = 0.sp,
+    ),
+    // 二级页标题（24sp / w600）。
+    // v1.2.2 之前这一档没有进 Typography，于是 MaterialTheme.typography.headlineSmall 落回
+    // M3 默认的 24sp / w400 —— 二级设置页标题比主页 headlineMedium 更"淡"，层级反过来（V-16）。
+    // 这里显式补一档 w600 收口（行注释：KDoc 不能写在参数列表里）。
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
         letterSpacing = 0.sp,
     ),
     titleLarge = TextStyle(
@@ -91,6 +103,16 @@ val NirikoTypography = Typography(
         fontSize = 14.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.1.sp,
+    ),
+    // 胶囊/分段/筛选件的文字档（13sp / w500）。
+    // M3 默认 labelMedium 是 12sp，比设计下限 13sp 还小（V-03），因此显式补一档；
+    // 尺寸收敛到单一档位，chip 与分段控件才不会各写各的 12sp / 12.5sp / 13sp。
+    labelMedium = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Medium,
+        fontSize = 13.sp,
+        lineHeight = 18.sp,
+        letterSpacing = 0.2.sp,
     ),
     labelSmall = TextStyle(
         fontFamily = FontFamily.Default,

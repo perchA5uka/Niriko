@@ -14,44 +14,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.findRootCoordinates
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.ui.components.GlassSectionCard
-import com.otakup.niriko.ui.theme.LocalDarkTheme
-import com.otakup.niriko.ui.components.SharedSubjectCover
 import com.otakup.niriko.data.remote.SubjectRelationInfo
 import com.otakup.niriko.data.remote.displayTitle
+import com.otakup.niriko.ui.animation.subjectCoverPresentation
+import com.otakup.niriko.ui.components.GlassSectionCard
+import com.otakup.niriko.ui.components.SectionHeader
+import com.otakup.niriko.ui.components.SharedSubjectCover
+import com.otakup.niriko.ui.theme.NirikoShapes
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 /**
@@ -75,13 +59,8 @@ fun RelationsSection(
     val parentId = com.otakup.niriko.navigation.LocalDetailSubjectId.current
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            "关联条目",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        Spacer(Modifier.height(8.dp))
+        // V-15：分区标题统一走 SectionHeader。
+        SectionHeader(title = "关联条目", modifier = Modifier.padding(horizontal = 16.dp))
         // 阶段 F（复原）：单个横滑卡片列表（与原始效果一致）
         LazyRow(
             state = rememberDetailLazyRailState("relations"),
@@ -131,13 +110,15 @@ private fun RelationCard(
                 boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
             )
         }
-    } else Modifier
+    } else {
+        Modifier
+    }
 
     GlassSectionCard(
         backdrop = glassBackdrop,
         isScrolling = isScrolling,
         modifier = Modifier.width(120.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = NirikoShapes.SectionShape,
         contentPadding = 8.dp,
     ) {
         Box(Modifier.clickable(onClick = onClick)) {

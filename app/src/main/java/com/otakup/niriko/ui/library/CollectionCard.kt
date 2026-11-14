@@ -5,6 +5,7 @@ package com.otakup.niriko.ui.library
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -15,7 +16,9 @@ import com.otakup.niriko.data.model.SubjectCardDisplayModel
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.ui.animation.rememberReturnGlowModifier
+import com.otakup.niriko.ui.components.selectionRing
 import com.otakup.niriko.ui.subject.UniversalSubjectCard
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.util.toCardDisplayModel
 
@@ -39,6 +42,8 @@ fun CollectionCard(
     steam: SteamGameEntity? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
+    /** F01：多选态是否选中。选中时在卡片内缘画一圈主题色描边（零布局位移）。 */
+    selected: Boolean = false,
     sharedElementKey: String? = null,
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
@@ -70,7 +75,15 @@ fun CollectionCard(
         isCollectionCard = true,
         pressTiltEnabled = true,
         // F17：从详情页返回时这张卡扫一次淡光（一次性事件；播完才清口令，避免打断动画）
-        modifier = modifier.then(rememberReturnGlowModifier(subject.subjectId)),
+        // F01：选中描边画在卡片自身边界上（UniversalSubjectCard 的玻璃卡片就是 20dp 圆角 =
+        // NirikoShapes.Card），因此圆角要传同一个令牌，否则描边会在四个角露出白边。
+        modifier = modifier
+            .then(rememberReturnGlowModifier(subject.subjectId))
+            .selectionRing(
+                selected = selected,
+                color = MaterialTheme.colorScheme.primary,
+                cornerRadius = NirikoShapes.Card,
+            ),
     )
 }
 

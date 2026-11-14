@@ -5,6 +5,8 @@ package com.otakup.niriko.ui.components
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
@@ -22,22 +24,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import com.otakup.niriko.nirikoApp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
-import coil.size.Size
 import coil.size.Dimension
+import coil.size.Size
+import com.otakup.niriko.nirikoApp
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.orSnap
+import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import kotlin.math.roundToInt
 
 /**
@@ -89,6 +95,26 @@ fun CoverImage(
     } else {
         Modifier
     }
+    // 图片淡入（P1-5）：Coil 的 crossfade 保持关闭。两个原因——
+    // 1) 共享元素飞行期的形体由 bounds 动画负责，再叠 Coil 淡入会拖影；
+    // 2) CoverFlightPerformanceTest 用源码契约钉住了 .crossfade(false)（禁止逐帧子组合/双重解码）。
+    // 所以改成「首张成功图到达时淡入 alpha」：只改绘制期 alpha，不进组合期，也不碰解码尺寸。
+    val reduceMotion = LocalReduceMotion.current
+    val flightActive = sharedTransitionScope?.isTransitionActive == true
+    // P2-2：remember 的 key 只有 url —— 列表项滚出组合就被销毁，滚回来时 arrived 复位成 false，
+    // 于是每张重新进入视口的封面都重播一次 150ms 淡入（回滚时一屏十几张各闪一下）。
+    // 改问进程级「已揭示」表：见过的封面直接以 alpha=1 起步，只有新区块 / 新数据才淡入。
+    var arrived by remember(effectiveCoverUrl) {
+        mutableStateOf(ProcessCoverRevealTracker.isRevealed(effectiveCoverUrl))
+    }
+    val revealAlpha by animateFloatAsState(
+        targetValue = if (arrived) 1f else 0f,
+        animationSpec = with(NirikoMotionSpecs) {
+            // 飞行期间用 snap：飞行本身已经在动，再叠淡入会像「图飘着变透明」。
+            tween<Float>(COVER_IMAGE_CROSSFADE_MS).orSnap(reduceMotion || flightActive)
+        },
+        label = "coverRevealAlpha",
+    )
     // Decode dimensions stay independent of animated constraints. No per-frame subcomposition.
     Box(
         modifier = modifier
@@ -122,15 +148,25 @@ fun CoverImage(
             AsyncImage(
                 model = request,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize().then(coverContentModifier),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(coverContentModifier)
+                    // 绘制期读 alpha：淡入不会触发本组件重组。
+                    .graphicsLayer { alpha = revealAlpha },
                 contentScale = ContentScale.Crop,
                 onSuccess = { state ->
+                    arrived = true
+                    // 只有真的加载成功才记「已揭示」：失败/占位图不该把一次真实的首次淡入吃掉
+                    ProcessCoverRevealTracker.recordRevealed(effectiveCoverUrl)
                     val id = subjectId ?: sharedElementKey?.removePrefix("cover_")?.toLongOrNull()
                     if (id != null) {
                         failed = false
                         val drawable = state.result.drawable
                         com.otakup.niriko.util.SubjectNavigationSeed.rememberCover(
-                            id, effectiveCoverUrl, drawable.intrinsicWidth, drawable.intrinsicHeight,
+                            id,
+                            effectiveCoverUrl,
+                            drawable.intrinsicWidth,
+                            drawable.intrinsicHeight,
                             state.result.memoryCacheKey,
                         )
                     }
@@ -142,8 +178,7 @@ fun CoverImage(
     }
 }
 
-internal fun coverStableDecodeWidth(screenWidthPx: Float, explicitWidth: Int?): Int =
-    explicitWidth?.coerceAtLeast(1) ?: (screenWidthPx * 2f / 3f).roundToInt().coerceIn(360, 800)
+internal fun coverStableDecodeWidth(screenWidthPx: Float, explicitWidth: Int?): Int = explicitWidth?.coerceAtLeast(1) ?: (screenWidthPx * 2f / 3f).roundToInt().coerceIn(360, 800)
 
 @Composable
 private fun PlaceholderContent() {

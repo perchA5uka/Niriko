@@ -1,0 +1,25 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*.{kt,kts}]
+# 与仓库既有代码风格对齐（Android Studio 默认格式化）；存量文件很长且大量中文长注释，
+# 不设行长硬上限，避免把「格式化」变成整文件重排。
+ktlint_code_style = android_studio
+max_line_length = off
+
+# 尾逗号规则与 Compose DSL 的既有写法不一致，先关闭；需要时再单独收敛。
+ktlint_standard_trailing-comma-on-call-site = disabled
+ktlint_standard_trailing-comma-on-declaration-site = disabled
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

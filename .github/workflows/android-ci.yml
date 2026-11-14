@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # spotless 的 ratchet 需要 origin/main 作为基线，浅克隆拿不到该引用。
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -53,6 +56,11 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      # 只校验「相对 origin/main 改动过的 Kotlin 文件」的格式，避免存量代码一次性重排。
+      # 本地等价：.\gradlew.bat :app:spotlessCheck（默认基线 HEAD = 未提交改动）
+      - name: Spotless (changed files only)
+        run: ./gradlew :app:spotlessCheck -PspotlessRatchetFrom=origin/main --console=plain
 
       - name: Unit tests (pure JVM, no device)
         run: ./gradlew testDebugUnitTest --console=plain

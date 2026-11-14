@@ -3,10 +3,10 @@
 package com.otakup.niriko.ui.stats
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,13 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.otakup.niriko.data.calculator.StatsCalculator
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.CollectionWithSubject
@@ -41,14 +39,16 @@ import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
-import com.otakup.niriko.ui.components.CoverImage
-import com.otakup.niriko.ui.components.NirikoNonModalSheet
-import com.otakup.niriko.ui.theme.NirikoTheme
-import com.otakup.niriko.ui.theme.chartTypeColor
-import com.otakup.niriko.util.TitleResolver
-import com.otakup.niriko.util.AiringStatus
 import com.otakup.niriko.data.model.stats.CalendarDayEvents
 import com.otakup.niriko.data.onair.AirTime
+import com.otakup.niriko.ui.animation.pressTilt
+import com.otakup.niriko.ui.components.CoverImage
+import com.otakup.niriko.ui.components.NirikoNonModalSheet
+import com.otakup.niriko.ui.theme.CalendarAccents
+import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.theme.chartTypeColor
+import com.otakup.niriko.util.AiringStatus
+import com.otakup.niriko.util.TitleResolver
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -78,10 +78,12 @@ fun CalendarDaySheet(
         ) {
             // 标题
             item {
+                // V-16：二级页/浮层标题统一 headlineSmall(24sp / w600)，与设置二级页、其它
+                // drill-in 页同档；改造前这里是 titleLarge(22sp) 再叠 Bold —— 22 恰好是
+                // V-21 要清掉的那几档之一，且「24 比 22 更小」的层级错觉就是这么来的。
                 Text(
                     text = date.format(dateFormat),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
             }
@@ -291,10 +293,14 @@ private fun BroadcastEventItem(
         AiringStatus.AiringPhase.UNKNOWN -> "未知"
     }
     val statusColor = when (AiringStatus.getPhase(subject)) {
-        AiringStatus.AiringPhase.AIRING -> androidx.compose.ui.graphics.Color(0xFFFDD835)
-        AiringStatus.AiringPhase.UPCOMING -> androidx.compose.ui.graphics.Color(0xFF66BB6A)
-        AiringStatus.AiringPhase.COMPLETED -> androidx.compose.ui.graphics.Color(0xFF90A4AE)
-        AiringStatus.AiringPhase.UNKNOWN -> androidx.compose.ui.graphics.Color(0xFF90A4AE)
+        // V-02：与 CalendarCard 的棋盘格使用同一套四色（AccentColors.kt），不再各写一份 0x。
+        AiringStatus.AiringPhase.AIRING -> CalendarAccents.Broadcast
+
+        AiringStatus.AiringPhase.UPCOMING -> CalendarAccents.Release
+
+        AiringStatus.AiringPhase.COMPLETED -> CalendarAccents.Hiatus
+
+        AiringStatus.AiringPhase.UNKNOWN -> CalendarAccents.Hiatus
     }
 
     Column {
@@ -376,10 +382,11 @@ private fun BroadcastEventItem(
                 }
                 // 4.10：角标说明行（延期 X 天 / 停播原定某日未播）
                 adjustment?.let { adjust ->
+                    // V-03：不再是 labelSmall 再叠 9sp —— 那等于在 11.5sp 的注释档上又手写第 7 档，
+                    // 既低于正文下限，也让「延期说明」和相邻元信息行字号不一致。
                     Text(
                         text = adjust.detail,
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 9.sp,
                         color = if (adjust.kind == AiringAdjustKind.DELAYED) DelayColor else HiatusColor,
                         modifier = Modifier.padding(top = 1.dp),
                     )
@@ -434,16 +441,20 @@ private fun SubjectSecondaryInfo(
                 else -> parts.add("集数未知")
             }
         }
+
         SubjectType.BOOK, SubjectType.MANGA -> {
             subject.platform?.let { parts.add(it) }
             subject.volumes?.takeIf { it > 0 }?.let { parts.add("${it}卷") }
         }
+
         SubjectType.GAME -> {
             subject.platform?.let { parts.add(it) }
         }
+
         SubjectType.MUSIC -> {
             subject.platform?.let { parts.add(it) }
         }
+
         SubjectType.REAL -> {
             when {
                 airState.totalCount > 0 -> parts.add("已播 ${airState.airedCount} / ${airState.totalCount}")
@@ -451,6 +462,7 @@ private fun SubjectSecondaryInfo(
                 else -> parts.add("集数未知")
             }
         }
+
         SubjectType.PERSON, SubjectType.OTHER -> {}
     }
     // 放送日期

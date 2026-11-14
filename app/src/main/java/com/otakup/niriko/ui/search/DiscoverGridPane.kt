@@ -19,17 +19,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideogameAsset
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,14 +40,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.snapshotFlow
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
-import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.data.model.search.TrendingMode
 import com.otakup.niriko.navigation.TabReselectSignal
 import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.navigation.applyTabReselectTo
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.common.reportBottomBarScroll
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 发现页「宫格版」首页（第 5 轮 D28）。
@@ -88,6 +90,7 @@ fun DiscoverGridPane(
         snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
             .collect { (index, offset) -> onScrollPosChange(index, offset) }
     }
+    val scrollToTopReduceMotion = LocalReduceMotion.current
     // F11：底栏重选发现页（宫格首页）—— 不在顶部先回顶；已在顶部则刷新。
     LaunchedEffect(tabReselectEventId) {
         if (tabReselectEventId <= 0) return@LaunchedEffect
@@ -97,6 +100,7 @@ fun DiscoverGridPane(
             page = TopLevelDestination.Discover.ordinal,
             supportsRefreshAtTop = true,
             listState = listState,
+            reduceMotion = scrollToTopReduceMotion,
         ) { onRefreshAtTop() }
     }
     LazyColumn(
@@ -173,7 +177,6 @@ fun DiscoverGridPane(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.padding(top = 4.dp),
                             )
-
                         }
                     }
                 }
@@ -205,7 +208,7 @@ private fun GridCell(entry: GridEntry, modifier: Modifier, onClick: () -> Unit) 
     Column(
         modifier = modifier
             .height(84.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(NirikoShapes.SectionShape)
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             .clickable(onClick = onClick),
         verticalArrangement = Arrangement.Center,

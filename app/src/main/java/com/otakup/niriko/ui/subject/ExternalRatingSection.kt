@@ -3,7 +3,6 @@ package com.otakup.niriko.ui.subject
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -20,12 +19,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -44,6 +40,10 @@ import com.otakup.niriko.data.local.entity.ManualAwardEntity
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.remote.rating.ExternalRating
 import com.otakup.niriko.ui.components.GlassSectionCard
+import com.otakup.niriko.ui.components.NirikoActionPill
+import com.otakup.niriko.ui.components.NirikoSelectionPill
+import com.otakup.niriko.ui.components.NirikoTextField
+import com.otakup.niriko.ui.components.SectionHeader
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 /**
@@ -79,21 +79,16 @@ fun ExternalRatingSection(
     var showDialog by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "权威评分",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Filled.Refresh, contentDescription = "刷新权威评分", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        Spacer(Modifier.height(4.dp))
+        // V-15：分区标题统一 SectionHeader；刷新按钮仍走 IconButton（自带 48dp 命中区）。
+        SectionHeader(
+            title = "权威评分",
+            modifier = Modifier.padding(horizontal = 16.dp),
+            trailing = {
+                IconButton(onClick = onRefresh) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "刷新权威评分", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+        )
 
         GlassSectionCard(
             backdrop = glassBackdrop,
@@ -168,10 +163,10 @@ fun ExternalRatingSection(
 
                 if (showManualEntry) {
                     Spacer(Modifier.height(10.dp))
-                    AssistChip(
+                    NirikoActionPill(
+                        text = "录入权威机构成绩",
                         onClick = { showDialog = true },
-                        label = { Text("录入权威机构成绩") },
-                        leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                        icon = Icons.Filled.Add,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -264,16 +259,16 @@ internal fun ManualAwardDialog(
             Column {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     options.forEach { option ->
-                        FilterChip(
+                        NirikoSelectionPill(
+                            text = option.label,
                             selected = selected == option,
                             onClick = { selected = option },
-                            label = { Text(option.label, style = MaterialTheme.typography.labelSmall) },
                         )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 if (selected.kind == AwardKind.SCORE) {
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = scoreText,
                         onValueChange = { scoreText = it },
                         label = { Text("分数（满分 ${selected.max.toInt()}）") },
@@ -282,7 +277,7 @@ internal fun ManualAwardDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = rankText,
                         onValueChange = { rankText = it },
                         label = { Text("榜位（如 12 表示第 12 名）") },
@@ -292,7 +287,7 @@ internal fun ManualAwardDialog(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
+                NirikoTextField(
                     value = noteText,
                     onValueChange = { noteText = it },
                     label = { Text("备注（榜期 / 奖项名，可选）") },
@@ -336,17 +331,20 @@ private fun manualAwardOptionsFor(type: SubjectType): List<ManualAwardOption> = 
         ManualAwardOption("metacritic_manual", "Metacritic", AwardKind.SCORE, 100f),
         ManualAwardOption("other", "其它", AwardKind.SCORE, 100f),
     )
+
     SubjectType.MUSIC -> listOf(
         ManualAwardOption("billboard", "Billboard", AwardKind.RANK, 0f),
         ManualAwardOption("oricon", "Oricon", AwardKind.RANK, 0f),
         ManualAwardOption("metacritic_manual", "Metacritic", AwardKind.SCORE, 100f),
         ManualAwardOption("other", "其它", AwardKind.SCORE, 100f),
     )
+
     SubjectType.BOOK -> listOf(
         ManualAwardOption("douban_manual", "豆瓣读书", AwardKind.SCORE, 10f),
         ManualAwardOption("goodreads_manual", "Goodreads", AwardKind.SCORE, 5f),
         ManualAwardOption("other", "其它", AwardKind.SCORE, 100f),
     )
+
     else -> listOf(
         ManualAwardOption("douban_manual", "豆瓣", AwardKind.SCORE, 10f),
         ManualAwardOption("mal_manual", "MyAnimeList", AwardKind.SCORE, 10f),
@@ -369,12 +367,15 @@ fun manualAwardLabel(sourceId: String): String = when (sourceId) {
 
 private fun ManualAwardEntity.displayValue(): String = when {
     rankPosition != null -> "第 $rankPosition 名"
+
     // 修复 BUG-12：榜位类（Billboard/Oricon）的 scoreMax 存 0，只填分数时会显示成 "8 / 0"
     score != null && scoreMax <= 0f -> "%.1f".format(score)
+
     score != null -> {
         val rounded = if (scoreMax <= 10f) "%.1f".format(score) else score.toInt().toString()
         "$rounded / ${scoreMax.toInt()}"
     }
+
     else -> "—"
 }
 

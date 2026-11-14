@@ -38,10 +38,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.nirikoApp
+import com.otakup.niriko.ui.theme.NirikoShapes
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * 更换封面弹窗（阶段 E）。
@@ -72,7 +73,10 @@ fun CoverPickerDialog(
 
     // 清空覆盖（恢复默认）
     fun clearOverride() {
-        scope.launch { app.coverOverrideStore.clearOverride(subjectId); onDismiss() }
+        scope.launch {
+            app.coverOverrideStore.clearOverride(subjectId)
+            onDismiss()
+        }
     }
 
     val uploadLauncher = rememberLauncherForActivityResult(
@@ -97,7 +101,10 @@ fun CoverPickerDialog(
                     dest.toURI().toString()
                 }
             }.onSuccess { fileUri ->
-                scope.launch { app.coverOverrideStore.setOverride(subjectId, fileUri); onDismiss() }
+                scope.launch {
+                    app.coverOverrideStore.setOverride(subjectId, fileUri)
+                    onDismiss()
+                }
             }.onFailure { }
             saving = false
         }
@@ -215,7 +222,7 @@ data class CoverCandidate(
 @Composable
 private fun CoverThumbnailOrPlaceholder(url: String) {
     androidx.compose.foundation.layout.Box(
-        modifier = Modifier.width(56.dp).aspectRatio(3f / 4f).clip(RoundedCornerShape(12.dp))
+        modifier = Modifier.width(56.dp).aspectRatio(3f / 4f).clip(NirikoShapes.ControlShape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
         coil.compose.AsyncImage(

@@ -7,6 +7,7 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,37 +15,37 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.runtime.CompositionLocalProvider
-import com.kyant.backdrop.backdrops.layerBackdrop
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.kyant.backdrop.backdrops.layerBackdrop
 import com.otakup.niriko.data.model.search.DiscoveryLayout
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.model.search.TrendingMode
 import com.otakup.niriko.navigation.LocalSearchGestureLock
 import com.otakup.niriko.navigation.TabReselectSignal
-import com.otakup.niriko.ui.components.topContentAlphaMask
-import com.otakup.niriko.util.TopFadePolicy
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.orSnap
 import com.otakup.niriko.ui.common.SearchImmersiveCollapsedHeight
 import com.otakup.niriko.ui.common.SearchMenuHeight
 import com.otakup.niriko.ui.common.SearchMode
@@ -52,10 +53,12 @@ import com.otakup.niriko.ui.common.SearchPhase
 import com.otakup.niriko.ui.common.SearchToolbar
 import com.otakup.niriko.ui.common.SearchViewModel
 import com.otakup.niriko.ui.common.searchContentTopInsetDp
+import com.otakup.niriko.ui.components.topContentAlphaMask
 import com.otakup.niriko.ui.search.DiscoverGridPane
 import com.otakup.niriko.ui.search.DiscoverPosterPane
 import com.otakup.niriko.ui.search.SearchResultsPane
 import com.otakup.niriko.ui.search.TrendingSection
+import com.otakup.niriko.util.TopFadePolicy
 import com.otakup.niriko.viewmodel.SubjectSearchViewModel
 import kotlinx.coroutines.launch
 
@@ -119,6 +122,11 @@ fun SubjectSearchScreen(
     // B8：优先用 MainPager 提升的实例；直接组合本页时（预览/测试）退回本地 rememberSaveable。
     val searchVm = hoistedSearchVm ?: rememberSaveable(saver = SearchViewModel.Saver) { SearchViewModel() }
 
+    // V-14：筛选/排序下拉菜单的页面级宿主。面板挂在 LazyColumn item / headerContent 这类
+    // 懒容器里，主轴约束是无限高，菜单拿不到整页尺寸、还会跟着列表滚走；
+    // 因此面板只发出一次「菜单请求」，真正的 NirikoMenu 由本页根 Box 渲染一次。
+    val filterMenuHost = remember { FilterMenuHostState() }
+
     // 系统返回：IMMERSIVE 搜索态先收起回趋势区（清焦收键盘），菜单态收起菜单，
     // COLLAPSED 不拦截（默认路由返回）——避免"搜索结果页手势返回直接退出应用"
     val backPreview = remember { com.otakup.niriko.ui.animation.BackPreviewState() }
@@ -135,7 +143,9 @@ fun SubjectSearchScreen(
                 // 清空已输入内容，避免下次展开残留上次搜索
                 viewModel.clearResults()
             }
+
             SearchPhase.MENU_EXPANDED, SearchPhase.DRAGGING -> searchVm.setMenuExpanded(false)
+
             else -> Unit
         }
     }
@@ -171,7 +181,7 @@ fun SubjectSearchScreen(
             collapsedHeightDp = SearchImmersiveCollapsedHeight.value,
             immersiveCollapsed = immersiveCollapsed,
         ).dp,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween<Dp>(durationMillis = NirikoMotionSpecs.CHROME_HIDE_DURATION_MS).orSnap(LocalReduceMotion.current),
         label = "searchContentTopInset",
     )
 
@@ -194,223 +204,236 @@ fun SubjectSearchScreen(
     val searchWallpaperBackdrop = com.otakup.niriko.ui.components.LocalCardGlassBackdrop.current
     val searchBackdrop = if (searchWallpaperBackdrop != null) {
         com.kyant.backdrop.backdrops.rememberCombinedBackdrop(searchWallpaperBackdrop, searchContentBackdrop)
-    } else searchContentBackdrop
+    } else {
+        searchContentBackdrop
+    }
     CompositionLocalProvider(com.otakup.niriko.ui.components.LocalSearchGlassBackdrop provides searchBackdrop) {
-    Box(modifier = modifier.fillMaxSize().then(Modifier.graphicsLayer {
-        val progress = if (reduceMotion) 0f else backPreview.progress
-        scaleX = 1f - 0.04f * progress
-        scaleY = 1f - 0.04f * progress
-        alpha = 1f - 0.15f * progress
-    })) {
-    // 渐隐上边界 = 窗口原点（屏幕顶部、含状态栏区域）：与 v1.2.0 的发现页一致，不再留 inset + 56dp 的实心台。
-    Box(modifier = Modifier.fillMaxSize().layerBackdrop(searchContentBackdrop).topContentAlphaMask(strength = { topFadeAlpha }, hiddenHeight = 0.dp)) {
-        // ===== 内容区：按阶段切换 =====
-        when (searchVm.phase) {
-            SearchPhase.COLLAPSED,
-            SearchPhase.MENU_EXPANDED,
-            SearchPhase.DRAGGING,
-            -> {
-                // 宫格版首页（第 5 轮 D28）：点入口 → 切到对应 mode 并回到卡片视图看全屏列表。
-                // 这正是 Bangumi-master 的结构：宫格是首页，条目是独立页面。
-                if (state.discoveryLayout == DiscoveryLayout.GRID && query.isBlank()) {
-                    DiscoverGridPane(
-                        state = state,
-                        onPickMode = { mode ->
-                            onSetTrendingMode(mode)
-                            viewModel.setDiscoveryLayout(DiscoveryLayout.CARD)
-                        },
-                        onSubjectClick = onSubjectClick,
-                        modifier = Modifier.fillMaxSize(),
-                        topInset = contentTopInset,
-                        onScrollPosChange = { index, offset -> topScrollOffsetPx = index to offset },
-                        tabReselectEventId = tabReselectEventId,
-                        tabReselect = reselectSignal,
-                        onRefreshAtTop = { if (query.isBlank()) viewModel.refreshTrending() },
-                    )
-                } else {
-                // 趋势区全屏（下拉刷新 + 滚动位置恢复 + 触底分页）；
-                // 菜单展开（MENU/DRAGGING）时顶部避让：contentTopInset 已按卡片高度下移（B3），
-                // 趋势作品卡片因此不会钻进展开卡片下面。
-                Column(Modifier.fillMaxSize()) {
-                    // 卡片视图与海报视图共用的两个回调（第 3 轮参考计划 P0）。
-                    // 两种布局共用同一份 trendingScrollIndex/Offset —— 布局互切后回到同一位置。
-                    val onRetryLoad: () -> Unit = {
-                        if (query.isBlank()) {
-                            scope.launch { viewModel.refreshTrending() }
-                        } else {
-                            viewModel.onQueryChanged(query)
-                        }
-                    }
-                    val onScrollPos: (Int, Int) -> Unit = { index, offset ->
-                        val st = latestState.value
-                        if (st.trendingResults.isNotEmpty()) {
-                            viewModel.saveTrendingScrollPos(st.selectedType, index, offset)
-                        }
-                        // F13：同一份上报同时喂给顶部渐隐 —— 不再为它单独加一套滚动监听
-                        topScrollOffsetPx = index to offset
-                    }
-                    // 历史排名：BrowseFilter 的 9 维度筛选器（第 6 轮 §6.3，「改动即查询」）。
-                    // 关键词搜索的筛选面板（SearchFilterPanel）仍归搜索态使用，两者状态源不同。
-                    val feedHeader: @Composable () -> Unit = {
-                    if (query.isBlank() && state.trendingMode == TrendingMode.ALL_TIME) {
-                        BrowseFilterPanel(
-                            filter = state.browseFilter,
-                            resultCount = state.trendingResults.size,
-                            poolCount = state.browsePoolSize,
-                            isExpanded = state.isFilterPanelExpanded,
-                            nowYear = java.time.Year.now().value,
-                            onToggleExpand = viewModel::toggleFilterPanel,
-                            onArea = viewModel::setBrowseArea,
-                            onVersion = viewModel::setBrowseVersion,
-                            onYear = viewModel::setBrowseYear,
-                            onQuarter = viewModel::setBrowseQuarter,
-                            onStatus = viewModel::setBrowseStatus,
-                            onToggleTag = viewModel::toggleBrowseTag,
-                            onStudio = viewModel::setBrowseStudio,
-                            onSort = viewModel::setBrowseSort,
-                            onHideCollected = viewModel::setBrowseHideCollected,
-                            onRatingRange = viewModel::setBrowseRatingRange,
-                            onRatingCountRange = viewModel::setBrowseRatingCountRange,
-                            onRankRange = viewModel::setBrowseRankRange,
-                            onNsfw = viewModel::setBrowseNsfw,
-                            onClear = viewModel::clearBrowseFilter,
-                        )
-                    }
-                    }
-                    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-                        isRefreshing = state.isLoadingTrending,
-                        onRefresh = {
-                            if (query.isBlank()) {
-                                scope.launch { viewModel.refreshTrending() }
-                            } else if (state.isPersonSearch) {
-                                viewModel.setPersonSearch(true)
-                            } else {
-                                viewModel.onQueryChanged(query)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        // 第 3 轮参考计划 P0（R1 animeko）：海报视图 = 封面优先的无容器网格。
-                        // 仅在 query 为空时生效（与宫格同规则）；搜索态一律走原路径。
-                        if (state.discoveryLayout == DiscoveryLayout.POSTER && query.isBlank()) {
-                            DiscoverPosterPane(
-                                state = state,
-                                query = query,
-                                onLoadMore = viewModel::loadNextTrendingPage,
-                                onSubjectClick = onSubjectClick,
-                                onRetry = onRetryLoad,
-                                onScrollPosChange = onScrollPos,
-                                initialScrollPos = viewModel.getTrendingScrollPos(state.selectedType),
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                lastUpdatedAt = trendingLastUpdatedAt,
-                                onForceRefresh = { viewModel.refreshTrending() },
-                                onOpenAllTime = { onSetTrendingMode(TrendingMode.ALL_TIME) },
-                                tabReselectEventId = tabReselectEventId,
-                                tabReselect = reselectSignal,
-                                topInset = contentTopInset,
-                                headerContent = feedHeader,
-                            )
-                        } else {
-                            TrendingSection(
-                                state = state,
-                                query = query,
-                                onLoadMore = viewModel::loadNextTrendingPage,
-                                onSubjectClick = onSubjectClick,
-                                onRetry = onRetryLoad,
-                                onScrollPosChange = onScrollPos,
-                                initialScrollPos = viewModel.getTrendingScrollPos(state.selectedType),
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                lastUpdatedAt = trendingLastUpdatedAt,
-                                onForceRefresh = { viewModel.refreshTrending() },
-                                // 当季热门空态时的出口：切到历史排名（列表本体的尾部出口已按第 6 轮返工移除）
-                                onOpenAllTime = { onSetTrendingMode(TrendingMode.ALL_TIME) },
-                                tabReselectEventId = tabReselectEventId,
-                                tabReselect = reselectSignal,
-                                topInset = contentTopInset,
-                                headerContent = feedHeader,
-                            )
-                        }
-                    }
+        Box(
+            modifier = modifier.fillMaxSize().then(
+                Modifier.graphicsLayer {
+                    val progress = if (reduceMotion) 0f else backPreview.progress
+                    scaleX = 1f - 0.04f * progress
+                    scaleY = 1f - 0.04f * progress
+                    alpha = 1f - 0.15f * progress
                 }
-                }
-            }
-            SearchPhase.IMMERSIVE_SEARCH -> {
-                // 搜索态：历史 / 建议 / 结果
-                // 点击空白处取消输入框聚焦并收起键盘（不拦截列表滚动与子项点击）
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures {
-                                focusManager.clearFocus()
-                                keyboardController?.hide()
-                            }
-                        },
-                ) {
-                    SearchResultsPane(
-                        state = state,
-                        query = query,
-                        listState = resultListState,
-                        onHistoryClick = { keyword ->
-                            focusManager.clearFocus()
-                            viewModel.onHistoryClick(keyword)
-                        },
-                        onDeleteHistoryItem = viewModel::deleteHistoryItem,
-                        onClearSearchHistory = viewModel::clearSearchHistory,
-                        onSubjectClick = onSubjectClick,
-                        onPersonClick = onPersonClick,
-                        onRetry = { viewModel.onQueryChanged(query) },
-                        onQueryChange = { q ->
-                            searchVm.syncQuery(q)
-                            viewModel.onQueryChanged(q)
-                        },
-                        onClearSuggestions = viewModel::clearSuggestions,
-                        filterDimensions = viewModel.getFilterDimensions(),
-                        onSetSortMode = viewModel::setSortMode,
-                        onSetFilter = { dimKey, option -> viewModel.setFilter(dimKey, option) },
-                        onSetNsfw = viewModel::setNsfw,
-                        onToggleFilterPanel = viewModel::toggleFilterPanel,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        // 顶部避让浮动搜索卡片（历史/建议/筛选/结果不遮挡）
-                        topInset = contentTopInset,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-            }
-        }
-    }
-        // B8：发现页的顶栏由 pager 外层的 [DiscoverTopBar] 渲染（showOwnTopBar=false）；
-        // 独立路由 subject_search 仍由本页自绘，保持原能力不变。
-        if (showOwnTopBar) {
-            SearchToolbar(
-                viewModel = searchVm,
-                trendingMode = state.trendingMode,
-                onSetTrendingMode = onSetTrendingMode,
-                onModeSelected = { mode ->
-                    focusManager.clearFocus()
-                    viewModel.setPersonSearch(mode == SearchMode.CHARACTERS)
-                },
-                onTypeSelected = { type ->
-                    focusManager.clearFocus()
-                    viewModel.setType(type.bangumiType)
-                },
-                onQueryChanged = { q ->
-                    searchVm.syncQuery(q)
-                    viewModel.onQueryChanged(q)
-                },
-                onSearchSubmit = { viewModel.onSearchSubmit(searchVm.query) },
-                onGestureLockChange = { locked -> gestureLock.value = locked },
-                layout = state.discoveryLayout,
-                onToggleLayout = viewModel::toggleDiscoveryLayout,
-                modifier = Modifier.align(Alignment.TopStart)
-                    .padding(top = windowTopInset + 8.dp)
-                    .zIndex(10f),
             )
+        ) {
+            // 渐隐上边界 = 窗口原点（屏幕顶部、含状态栏区域）：与 v1.2.0 的发现页一致，不再留 inset + 56dp 的实心台。
+            Box(modifier = Modifier.fillMaxSize().layerBackdrop(searchContentBackdrop).topContentAlphaMask(strength = { topFadeAlpha }, hiddenHeight = 0.dp)) {
+                // ===== 内容区：按阶段切换 =====
+                when (searchVm.phase) {
+                    SearchPhase.COLLAPSED,
+                    SearchPhase.MENU_EXPANDED,
+                    SearchPhase.DRAGGING,
+                    -> {
+                        // 宫格版首页（第 5 轮 D28）：点入口 → 切到对应 mode 并回到卡片视图看全屏列表。
+                        // 这正是 Bangumi-master 的结构：宫格是首页，条目是独立页面。
+                        if (state.discoveryLayout == DiscoveryLayout.GRID && query.isBlank()) {
+                            DiscoverGridPane(
+                                state = state,
+                                onPickMode = { mode ->
+                                    onSetTrendingMode(mode)
+                                    viewModel.setDiscoveryLayout(DiscoveryLayout.CARD)
+                                },
+                                onSubjectClick = onSubjectClick,
+                                modifier = Modifier.fillMaxSize(),
+                                topInset = contentTopInset,
+                                onScrollPosChange = { index, offset -> topScrollOffsetPx = index to offset },
+                                tabReselectEventId = tabReselectEventId,
+                                tabReselect = reselectSignal,
+                                onRefreshAtTop = { if (query.isBlank()) viewModel.refreshTrending() },
+                            )
+                        } else {
+                            // 趋势区全屏（下拉刷新 + 滚动位置恢复 + 触底分页）；
+                            // 菜单展开（MENU/DRAGGING）时顶部避让：contentTopInset 已按卡片高度下移（B3），
+                            // 趋势作品卡片因此不会钻进展开卡片下面。
+                            Column(Modifier.fillMaxSize()) {
+                                // 卡片视图与海报视图共用的两个回调（第 3 轮参考计划 P0）。
+                                // 两种布局共用同一份 trendingScrollIndex/Offset —— 布局互切后回到同一位置。
+                                val onRetryLoad: () -> Unit = {
+                                    if (query.isBlank()) {
+                                        scope.launch { viewModel.refreshTrending() }
+                                    } else {
+                                        viewModel.onQueryChanged(query)
+                                    }
+                                }
+                                val onScrollPos: (Int, Int) -> Unit = { index, offset ->
+                                    val st = latestState.value
+                                    if (st.trendingResults.isNotEmpty()) {
+                                        viewModel.saveTrendingScrollPos(st.selectedType, index, offset)
+                                    }
+                                    // F13：同一份上报同时喂给顶部渐隐 —— 不再为它单独加一套滚动监听
+                                    topScrollOffsetPx = index to offset
+                                }
+                                // 历史排名：BrowseFilter 的 9 维度筛选器（第 6 轮 §6.3，「改动即查询」）。
+                                // 关键词搜索的筛选面板（SearchFilterPanel）仍归搜索态使用，两者状态源不同。
+                                val feedHeader: @Composable () -> Unit = {
+                                    if (query.isBlank() && state.trendingMode == TrendingMode.ALL_TIME) {
+                                        BrowseFilterPanel(
+                                            filter = state.browseFilter,
+                                            resultCount = state.trendingResults.size,
+                                            poolCount = state.browsePoolSize,
+                                            isExpanded = state.isFilterPanelExpanded,
+                                            nowYear = java.time.Year.now().value,
+                                            onToggleExpand = viewModel::toggleFilterPanel,
+                                            onArea = viewModel::setBrowseArea,
+                                            onVersion = viewModel::setBrowseVersion,
+                                            onYear = viewModel::setBrowseYear,
+                                            onQuarter = viewModel::setBrowseQuarter,
+                                            onStatus = viewModel::setBrowseStatus,
+                                            onToggleTag = viewModel::toggleBrowseTag,
+                                            onStudio = viewModel::setBrowseStudio,
+                                            onSort = viewModel::setBrowseSort,
+                                            onHideCollected = viewModel::setBrowseHideCollected,
+                                            onRatingRange = viewModel::setBrowseRatingRange,
+                                            onRatingCountRange = viewModel::setBrowseRatingCountRange,
+                                            onRankRange = viewModel::setBrowseRankRange,
+                                            onNsfw = viewModel::setBrowseNsfw,
+                                            onClear = viewModel::clearBrowseFilter,
+                                            menuHost = filterMenuHost,
+                                        )
+                                    }
+                                }
+                                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                                    isRefreshing = state.isLoadingTrending,
+                                    onRefresh = {
+                                        if (query.isBlank()) {
+                                            scope.launch { viewModel.refreshTrending() }
+                                        } else if (state.isPersonSearch) {
+                                            viewModel.setPersonSearch(true)
+                                        } else {
+                                            viewModel.onQueryChanged(query)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
+                                    // 第 3 轮参考计划 P0（R1 animeko）：海报视图 = 封面优先的无容器网格。
+                                    // 仅在 query 为空时生效（与宫格同规则）；搜索态一律走原路径。
+                                    if (state.discoveryLayout == DiscoveryLayout.POSTER && query.isBlank()) {
+                                        DiscoverPosterPane(
+                                            state = state,
+                                            query = query,
+                                            onLoadMore = viewModel::loadNextTrendingPage,
+                                            onSubjectClick = onSubjectClick,
+                                            onRetry = onRetryLoad,
+                                            onScrollPosChange = onScrollPos,
+                                            initialScrollPos = viewModel.getTrendingScrollPos(state.selectedType),
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            lastUpdatedAt = trendingLastUpdatedAt,
+                                            onForceRefresh = { viewModel.refreshTrending() },
+                                            onOpenAllTime = { onSetTrendingMode(TrendingMode.ALL_TIME) },
+                                            tabReselectEventId = tabReselectEventId,
+                                            tabReselect = reselectSignal,
+                                            topInset = contentTopInset,
+                                            headerContent = feedHeader,
+                                        )
+                                    } else {
+                                        TrendingSection(
+                                            state = state,
+                                            query = query,
+                                            onLoadMore = viewModel::loadNextTrendingPage,
+                                            onSubjectClick = onSubjectClick,
+                                            onRetry = onRetryLoad,
+                                            onScrollPosChange = onScrollPos,
+                                            initialScrollPos = viewModel.getTrendingScrollPos(state.selectedType),
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            lastUpdatedAt = trendingLastUpdatedAt,
+                                            onForceRefresh = { viewModel.refreshTrending() },
+                                            // 当季热门空态时的出口：切到历史排名（列表本体的尾部出口已按第 6 轮返工移除）
+                                            onOpenAllTime = { onSetTrendingMode(TrendingMode.ALL_TIME) },
+                                            tabReselectEventId = tabReselectEventId,
+                                            tabReselect = reselectSignal,
+                                            topInset = contentTopInset,
+                                            headerContent = feedHeader,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    SearchPhase.IMMERSIVE_SEARCH -> {
+                        // 搜索态：历史 / 建议 / 结果
+                        // 点击空白处取消输入框聚焦并收起键盘（不拦截列表滚动与子项点击）
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectTapGestures {
+                                        focusManager.clearFocus()
+                                        keyboardController?.hide()
+                                    }
+                                },
+                        ) {
+                            SearchResultsPane(
+                                state = state,
+                                query = query,
+                                listState = resultListState,
+                                onHistoryClick = { keyword ->
+                                    focusManager.clearFocus()
+                                    viewModel.onHistoryClick(keyword)
+                                },
+                                onDeleteHistoryItem = viewModel::deleteHistoryItem,
+                                onClearSearchHistory = viewModel::clearSearchHistory,
+                                onSubjectClick = onSubjectClick,
+                                onPersonClick = onPersonClick,
+                                onRetry = { viewModel.onQueryChanged(query) },
+                                onQueryChange = { q ->
+                                    searchVm.syncQuery(q)
+                                    viewModel.onQueryChanged(q)
+                                },
+                                onClearSuggestions = viewModel::clearSuggestions,
+                                filterDimensions = viewModel.getFilterDimensions(),
+                                onSetSortMode = viewModel::setSortMode,
+                                onSetFilter = { dimKey, option -> viewModel.setFilter(dimKey, option) },
+                                onSetNsfw = viewModel::setNsfw,
+                                onToggleFilterPanel = viewModel::toggleFilterPanel,
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                // 顶部避让浮动搜索卡片（历史/建议/筛选/结果不遮挡）
+                                topInset = contentTopInset,
+                                filterMenuHost = filterMenuHost,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+            // B8：发现页的顶栏由 pager 外层的 [DiscoverTopBar] 渲染（showOwnTopBar=false）；
+            // 独立路由 subject_search 仍由本页自绘，保持原能力不变。
+            if (showOwnTopBar) {
+                SearchToolbar(
+                    viewModel = searchVm,
+                    trendingMode = state.trendingMode,
+                    onSetTrendingMode = onSetTrendingMode,
+                    onModeSelected = { mode ->
+                        focusManager.clearFocus()
+                        viewModel.setPersonSearch(mode == SearchMode.CHARACTERS)
+                    },
+                    onTypeSelected = { type ->
+                        focusManager.clearFocus()
+                        viewModel.setType(type.bangumiType)
+                    },
+                    onQueryChanged = { q ->
+                        searchVm.syncQuery(q)
+                        viewModel.onQueryChanged(q)
+                    },
+                    onSearchSubmit = { viewModel.onSearchSubmit(searchVm.query) },
+                    onGestureLockChange = { locked -> gestureLock.value = locked },
+                    layout = state.discoveryLayout,
+                    onToggleLayout = viewModel::toggleDiscoveryLayout,
+                    modifier = Modifier.align(Alignment.TopStart)
+                        .padding(top = windowTopInset + 8.dp)
+                        .zIndex(10f),
+                )
+            }
+
+            // V-14：页面根层的锚定菜单（筛选/排序下拉）。必须是根 Box 的最后一个子节点：
+            // 与正文/顶栏同级 → 拿到整页尺寸与裁剪，且不随懒列表滚动、不随顶栏淡出。
+            FilterMenuHost(state = filterMenuHost)
         }
-    }
     }
 }
 

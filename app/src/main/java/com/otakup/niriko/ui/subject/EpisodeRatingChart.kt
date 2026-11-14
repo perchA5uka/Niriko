@@ -1,15 +1,20 @@
 package com.otakup.niriko.ui.subject
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -31,11 +37,13 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.calculator.EpisodeRatingAnalyzer
 import com.otakup.niriko.data.calculator.TrendDirection
 import com.otakup.niriko.data.settings.CardGlassLevel
 import com.otakup.niriko.ui.components.LocalCardGlassLevel
+import com.otakup.niriko.ui.theme.themeChartPalette
 import com.patrykandpatrick.vico.compose.cartesian.CartesianChartHost
 import com.patrykandpatrick.vico.compose.cartesian.Zoom
 import com.patrykandpatrick.vico.compose.cartesian.axis.HorizontalAxis
@@ -100,9 +108,11 @@ fun EpisodeRatingChart(
     points: List<EpisodeRatingAnalyzer.RatingPoint>,
     modifier: Modifier = Modifier,
     showMovingAverage: Boolean = true,
-    color: Color = MaterialTheme.colorScheme.primary,
+    // V-19：两条实线原来都取自同一色系（primary / secondary），叠在一起分不清谁是谁。
+    // 改用图表色板的前两色：同色板保证换主题时仍协调，同时两色色相拉开（0° / 40°）。
+    color: Color = themeChartPalette()[0],
     averageColor: Color = MaterialTheme.colorScheme.tertiary,
-    movingAverageColor: Color = MaterialTheme.colorScheme.secondary,
+    movingAverageColor: Color = themeChartPalette()[1],
 ) {
     if (points.size < 2) return
     val glassLevel = LocalCardGlassLevel.current
@@ -271,7 +281,7 @@ private fun EpisodeRatingChartVico(
             } else {
                 "第 ${formatEpisodeNumber(point.ep)} 集 · " +
                     "%.1f".format(point.score) +
-                    (point.votes?.let { " · ${it} 票" } ?: "")
+                    (point.votes?.let { " · $it 票" } ?: "")
             }
         }
     }
@@ -349,6 +359,13 @@ private fun EpisodeRatingChartVico(
     )
 
     Column(modifier = modifier) {
+        // V-19：图例必须放在图「上方」—— 空域只有 190dp，放下面会被结论条挤到看不见。
+        EpisodeRatingChartLegend(
+            scoreColor = color,
+            movingAverageColor = movingAverageColor,
+            averageColor = averageColor,
+            showMovingAverage = showMa,
+        )
         Box(modifier = Modifier.fillMaxWidth().height(190.dp)) {
             CartesianChartHost(
                 chart = chart,
@@ -386,6 +403,13 @@ private fun EpisodeRatingChartCanvas(
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     Column(modifier = modifier.fillMaxWidth()) {
+        // V-19：降级路径与 Vico 版共用同一套图例，避免两种实现给出两种「这个颜色是什么」。
+        EpisodeRatingChartLegend(
+            scoreColor = color,
+            movingAverageColor = movingAverageColor,
+            averageColor = averageColor,
+            showMovingAverage = showMovingAverage && stats.movingAverage.size == sorted.size,
+        )
         val scores = sorted.map { it.score }
         val dataMin = scores.min()
         val dataMax = scores.max()
@@ -415,11 +439,9 @@ private fun EpisodeRatingChartCanvas(
                 val chartW = size.width - leftPad - rightPad
                 val chartH = size.height - topPad - bottomPad
 
-                fun xOf(index: Int): Float =
-                    leftPad + if (sorted.size == 1) chartW / 2f else chartW * index / (sorted.size - 1).toFloat()
+                fun xOf(index: Int): Float = leftPad + if (sorted.size == 1) chartW / 2f else chartW * index / (sorted.size - 1).toFloat()
 
-                fun yOf(score: Float): Float =
-                    topPad + chartH * (1f - (score - yMin) / span)
+                fun yOf(score: Float): Float = topPad + chartH * (1f - (score - yMin) / span)
 
                 // ① 参考网格（3 条）
                 for (i in 0..2) {
@@ -484,7 +506,13 @@ private fun EpisodeRatingChartCanvas(
                     val pointCenter = Offset(xOf(index), yOf(point.score))
                     val isExtreme = point.epId == stats.max?.epId || point.epId == stats.min?.epId
                     val isSelected = selectedIndex == index
-                    val r = if (isSelected) 9f else if (isExtreme) 7f else 4.5f
+                    val r = if (isSelected) {
+                        9f
+                    } else if (isExtreme) {
+                        7f
+                    } else {
+                        4.5f
+                    }
                     drawCircle(color = surfaceVariant, radius = r + 2f, center = pointCenter)
                     drawCircle(
                         color = if (isExtreme) averageColor else color,
@@ -529,7 +557,14 @@ private class EpisodeRatingPointProvider(
     override fun getLargestPoint(extraStore: ExtraStore): LineCartesianLayer.Point = extremePoint
 }
 
-/** 选中集的标题行 + 平均/最高/最低/趋势/波动/集数结论条（两条实现共用）。 */
+/**
+ * 选中集的标题行 + 平均/最高/最低/趋势/波动/集数结论条（两条实现共用）。
+ *
+ * V-18：结论条长期用横排 [Row] —— 一旦「最高/最低」带上 EP 号，或者在窄屏 / 大字号下，
+ * 三个统计项就会顶出容器互相叠字。改用 [FlowRow] 后按可用宽度自动换行；
+ * 每个统计项内部再限制单行 + 省略号，保证「宁可截断也不叠着画」。
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EpisodeRatingChartFooter(
     sorted: List<EpisodeRatingAnalyzer.RatingPoint>,
@@ -558,7 +593,7 @@ private fun EpisodeRatingChartFooter(
             Spacer(Modifier.width(6.dp))
             Text(
                 text = "%.1f".format(selected.score) +
-                    (selected.votes?.let { " · ${it} 票" } ?: ""),
+                    (selected.votes?.let { " · $it 票" } ?: ""),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = color,
@@ -573,13 +608,19 @@ private fun EpisodeRatingChartFooter(
     }
 
     Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         ChartStat("平均", "%.2f".format(stats.average))
         stats.max?.let { ChartStat("最高", "%.1f".format(it.score) + " (EP${formatEpisodeNumber(it.ep)})") }
         stats.min?.let { ChartStat("最低", "%.1f".format(it.score) + " (EP${formatEpisodeNumber(it.ep)})") }
     }
     Spacer(Modifier.height(4.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         ChartStat("趋势", trendLabel(stats.direction) + " " + "%+.2f".format(stats.slope) + "/集")
         ChartStat(
             "波动",
@@ -593,7 +634,10 @@ private fun EpisodeRatingChartFooter(
     val worstEpisode = highlights.second.firstOrNull()
     if (bestEpisode != null || worstEpisode != null) {
         Spacer(Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             bestEpisode?.let {
                 ChartStat("高光回", "EP${formatEpisodeNumber(it.ep)} · %.1f".format(it.score))
             }
@@ -611,12 +655,63 @@ private fun ChartStat(label: String, value: String) {
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            // V-18：单行 + 省略号；父级 FlowRow 负责「装不下就换行」，
+            // 单项自己不再抢权重（weight 会把同类项拉成等宽，窄屏下反而先挤扁文案）。
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.width(4.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * 图表图例（V-19）：色点 + 文案。
+ *
+ * 为什么必须有：分数线与移动平均线原来都取自同一色族（primary / secondary），
+ * 只靠颜色区分等于没有区分；图例把「线 → 含义」显式写出来，减少一次猜测。
+ * 平均线是虚线，但图例里只用实心点表示颜色归属，不复制线型，避免图例抢视觉。
+ */
+@Composable
+private fun EpisodeRatingChartLegend(
+    scoreColor: Color,
+    movingAverageColor: Color,
+    averageColor: Color,
+    showMovingAverage: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LegendItem(label = "分数", color = scoreColor)
+        if (showMovingAverage) LegendItem(label = "移动平均", color = movingAverageColor)
+        LegendItem(label = "平均线", color = averageColor)
+    }
+}
+
+@Composable
+private fun LegendItem(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
     }
 }
@@ -628,5 +723,4 @@ private fun trendLabel(direction: TrendDirection): String = when (direction) {
 }
 
 /** 集号展示：整数不带小数点，半集（如 5.5）保留一位。 */
-fun formatEpisodeNumber(ep: Double): String =
-    if (abs(ep - ep.toInt()) < 0.01) ep.toInt().toString() else "%.1f".format(ep)
+fun formatEpisodeNumber(ep: Double): String = if (abs(ep - ep.toInt()) < 0.01) ep.toInt().toString() else "%.1f".format(ep)

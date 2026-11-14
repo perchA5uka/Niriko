@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.theme.NirikoShapes
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -38,9 +39,10 @@ import kotlin.math.tan
 /**
  * 全应用圆角令牌。
  *
- * 现状（收敛前的散落字面量）：统计区块 `RoundedCornerShape(20.dp)`、日历 `MaterialTheme.shapes.medium`、
+ * 现状（收敛前的散落字面量）：统计区块 `NirikoShapes.CardShape`、日历 `MaterialTheme.shapes.medium`、
  * 开关轨道 `RoundedCornerShape(trackHeight / 2)`、胶囊 `RoundedCornerShape(999.dp)`。
- * 收敛后只保留四档：[Card] / [Section] / [Pill] / [Control]，组件里禁止再写圆角魔数。
+ * 收敛后保留六档：[Card] / [Section] / [Sheet] / [Control] / [RowInner] / [Pill]（[ChipShape] 是胶囊的语义别名），
+ * 组件里禁止再写圆角魔数；v1.2.2 的 WP6 已把 171 处 `RoundedCornerShape` 里的 83 处等值字面量换成令牌。
  *
  * 注意：令牌取值与收敛前的既有取值逐一相等（20 / 16 / 999 / 12 dp），
  * 因此把既有组件切到令牌**不会改变手机端观感**。
@@ -85,6 +87,12 @@ object NirikoShapes {
     /** 分区档 Shape。 */
     val SectionShape: Shape get() = rounded(Section)
 
+    /** 弹层 / 菜单档 Shape（与 [Sheet] 同值，供非「仅顶部圆角」的整块浮层使用）。 */
+    val SheetShape: Shape get() = rounded(Sheet)
+
+    /** 组内行档 Shape（与 [RowInner] 同值；标签、小徽标、行内小块）。 */
+    val RowInnerShape: Shape get() = rounded(RowInner)
+
     /**
      * 胶囊档 Shape。
      *
@@ -95,6 +103,16 @@ object NirikoShapes {
 
     /** 小控件档 Shape。 */
     val ControlShape: Shape get() = rounded(Control)
+
+    /**
+     * 标签 / 筛选 / 选集胶囊档 Shape。
+     *
+     * 取值与 [PillShape] 相同，**语义不同**：Pill 是按钮、底栏、dock 的容器形；
+     * Chip 是「标签、筛选条件、选集」这类可点小件。仍然单独给一个名字，是因为
+     * 标签在改造前有 5 副面孔（M3 FilterChip 8dp、AssistChip 8dp、TagChip 999dp、
+     * 8dp 小胶囊、实心绿描边选集）——收敛时每一处都该先问「这是 chip 吗」。
+     */
+    val ChipShape: Shape get() = PillShape
 
     /** 按高度派生的胶囊（开关轨道等）：等价既有 `RoundedCornerShape(height / 2)`。 */
     fun capsule(height: Dp): Shape = RoundedCornerShape(height / 2)
@@ -108,8 +126,7 @@ object NirikoShapes {
      * 供后续批次按需选用（B2 竖向 dock / B6 截图矩阵）；默认平滑度为 [DefaultSmoothing]，
      * 传 `smoothing = 0f` 时与 [rounded] 逐点等价。
      */
-    fun squircle(radius: Dp, smoothing: Float = DefaultSmoothing): Shape =
-        SquircleCornerShape(radius = radius, smoothing = smoothing)
+    fun squircle(radius: Dp, smoothing: Float = DefaultSmoothing): Shape = SquircleCornerShape(radius = radius, smoothing = smoothing)
 }
 
 /**

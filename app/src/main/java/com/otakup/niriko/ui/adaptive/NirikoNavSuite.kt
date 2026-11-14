@@ -1,6 +1,7 @@
 package com.otakup.niriko.ui.adaptive
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -21,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -28,22 +30,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.otakup.niriko.navigation.NirikoBottomBar
 import com.otakup.niriko.navigation.TopLevelDestination
 import com.otakup.niriko.ui.animation.AnimDurationShort
-import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.bottombar.LiquidVerticalDock
-import com.otakup.niriko.ui.bottombar.LocalLiquidBottomTabScale
 import com.otakup.niriko.ui.bottombar.LocalLiquidBottomTabInteractive
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.semantics.Role
-import com.otakup.niriko.ui.common.bottomBarHideFraction
-import kotlinx.coroutines.launch
+import com.otakup.niriko.ui.bottombar.LocalLiquidBottomTabScale
+import com.otakup.niriko.ui.common.LocalBottomBarHideFraction
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * 导航宿主（计划书 §三 B2 / 5a）：按 [NirikoWindowLayout] 在
@@ -97,11 +98,14 @@ private fun VerticalDockSlot(
     // B11-Step1：与手机端共用同一个隐藏进度（方向状态机给出），动画已在 MainActivity 单源完成。
     // 宽屏裁决：不做完整滑出（dock 与内容起始 inset 绑定，完整滑出会重排），
     // 只做「向左 24dp + alpha→0 + 隐藏态禁交互」。
-    val hideProgress = bottomBarHideFraction().coerceIn(0f, 1f)
+    // A.9-2：与手机端底栏同一修法——隐藏进度只在 offset/graphicsLayer 的 lambda 里读，
+    // 组合期只订阅「是否隐藏过半」这个布尔量（dock 隐藏 24dp + alpha 归零期间不再每帧重组）。
+    val hideFraction = LocalBottomBarHideFraction.current
     val motion = motionEnabled()
     val specs = NirikoMotionSpecs
-    val dockAlpha = 1f - hideProgress
-    val dockInteractive = hideProgress < 0.5f
+    val dockInteractive by remember(hideFraction) {
+        derivedStateOf { hideFraction.floatValue < 0.5f }
+    }
 
     // 出现动画：切到宽屏（旋转 / 自由缩放）时淡入 + 轻微左移入场；reduceMotion 时跳过
     val appearance = remember { Animatable(0f) }
@@ -114,68 +118,91 @@ private fun VerticalDockSlot(
             )
         }
     }
-    val slideIn = 1f - appearance.value
-
     Box(
         modifier = modifier
-            .offset { IntOffset(-(24f * hideProgress).dp.toPx().roundToInt(), 0) }
+            .offset {
+                IntOffset(
+                    (-(24f * hideFraction.floatValue.coerceIn(0f, 1f))).dp.toPx().roundToInt(),
+                    0,
+                )
+            }
             .graphicsLayer {
-                alpha = dockAlpha * appearance.value
-                translationX = -16f.dp.toPx() * slideIn
+                // 两个每帧量（隐藏进度 / 入场进度）都在绘制期读，不进组合。
+                alpha = (1f - hideFraction.floatValue.coerceIn(0f, 1f)) * appearance.value
+                translationX = -16f.dp.toPx() * (1f - appearance.value)
             },
         contentAlignment = Alignment.CenterStart,
     ) {
         // 隐藏过半即禁交互：宽屏只位移 24dp，必须显式关掉 tab 点击（命中区还在屏内）
         CompositionLocalProvider(LocalLiquidBottomTabInteractive provides dockInteractive) {
-        LiquidVerticalDock(
-            selectedTabIndex = selectedTabIndex,
-            onTabSelected = { page ->
-                val handler = onDestinationSelected
-                if (handler != null) handler(page)
-                else scope.launch { pagerState.animateScrollToPage(page) }
-            },
-            onTabReselected = { page -> onTabReselected?.invoke(page) },
-            backdrop = backdrop,
-            tabsCount = TopLevelDestination.entries.size,
-            modifier = Modifier
-                .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(start = 14.dp, top = 12.dp, bottom = 12.dp),
-        ) {
-            val tabScale = LocalLiquidBottomTabScale.current
-            val interactive = LocalLiquidBottomTabInteractive.current
-            TopLevelDestination.entries.forEach { destination ->
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .clickable(enabled = interactive, role = Role.Tab) {
-                            if (pagerState.targetPage == destination.ordinal) onTabReselected?.invoke(destination.ordinal)
-                            else if (onDestinationSelected != null) onDestinationSelected(destination.ordinal)
-                            else scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
-                        }
-                        .graphicsLayer { scaleX = tabScale(); scaleY = tabScale() },
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    val selected = pagerState.currentPage == destination.ordinal
-                    Icon(
-                        imageVector = if (selected) destination.selectedIcon
-                        else destination.unselectedIcon,
-                        contentDescription = stringResource(destination.titleRes),
-                        tint = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(destination.titleRes),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+            LiquidVerticalDock(
+                selectedTabIndex = selectedTabIndex,
+                onTabSelected = { page ->
+                    val handler = onDestinationSelected
+                    if (handler != null) {
+                        handler(page)
+                    } else {
+                        scope.launch { pagerState.animateScrollToPage(page) }
+                    }
+                },
+                onTabReselected = { page -> onTabReselected?.invoke(page) },
+                backdrop = backdrop,
+                tabsCount = TopLevelDestination.entries.size,
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.systemBars)
+                    .padding(start = 14.dp, top = 12.dp, bottom = 12.dp),
+            ) {
+                val tabScale = LocalLiquidBottomTabScale.current
+                val interactive = LocalLiquidBottomTabInteractive.current
+                TopLevelDestination.entries.forEach { destination ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .clickable(enabled = interactive, role = Role.Tab) {
+                                if (pagerState.targetPage == destination.ordinal) {
+                                    onTabReselected?.invoke(destination.ordinal)
+                                } else if (onDestinationSelected != null) {
+                                    onDestinationSelected(destination.ordinal)
+                                } else {
+                                    scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
+                                }
+                            }
+                            .graphicsLayer {
+                                scaleX = tabScale()
+                                scaleY = tabScale()
+                            },
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        val selected = pagerState.currentPage == destination.ordinal
+                        Icon(
+                            imageVector = if (selected) {
+                                destination.selectedIcon
+                            } else {
+                                destination.unselectedIcon
+                            },
+                            contentDescription = stringResource(destination.titleRes),
+                            tint = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(22.dp),
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = stringResource(destination.titleRes),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
             }
-        }
         }
     }
 }

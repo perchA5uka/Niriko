@@ -5,15 +5,17 @@ package com.otakup.niriko.ui.stats
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,18 +23,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,46 +40,52 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.Color
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.otakup.niriko.data.calculator.ChartSeriesCalculator
 import com.otakup.niriko.data.calculator.StatsNarratives
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
-import com.otakup.niriko.ui.animation.RevealOnScroll
+import com.otakup.niriko.data.model.stats.CalendarMode
+import com.otakup.niriko.data.model.stats.MonthlyStats
+import com.otakup.niriko.data.model.stats.RatingComparison
+import com.otakup.niriko.data.model.stats.RatingDistribution
+import com.otakup.niriko.data.model.stats.StatsUiState
+import com.otakup.niriko.data.model.stats.StatusDistItem
+import com.otakup.niriko.data.model.stats.TagStat
+import com.otakup.niriko.data.model.stats.TypeDistItem
+import com.otakup.niriko.data.model.stats.YearlyStats
+import com.otakup.niriko.navigation.LocalSearchGestureLock
+import com.otakup.niriko.navigation.TabReselectSignal
+import com.otakup.niriko.navigation.TopLevelDestination
+import com.otakup.niriko.ui.animation.LocalReduceMotion
 import com.otakup.niriko.ui.common.reportBottomBarScroll
+import com.otakup.niriko.ui.components.GlassProgressBar
+import com.otakup.niriko.ui.components.StatLabel
+import com.otakup.niriko.ui.components.StatNumber
+import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.ui.theme.chartBarAccentColor
 import com.otakup.niriko.ui.theme.chartBarDefaultColor
 import com.otakup.niriko.ui.theme.chartStatusColor
 import com.otakup.niriko.ui.theme.chartTypeColor
 import com.otakup.niriko.ui.theme.themeChartPalette
-import com.otakup.niriko.data.model.stats.CalendarDayEvents
-import com.otakup.niriko.data.model.stats.CalendarMode
-import com.otakup.niriko.data.model.stats.MonthlyStats
-import com.otakup.niriko.data.model.stats.RatingComparison
-import com.otakup.niriko.data.model.stats.RatingDistribution
-import com.otakup.niriko.data.model.stats.StatsUiState
-import com.otakup.niriko.ui.components.GlassProgressBar
-import com.otakup.niriko.ui.components.appleGlassCard
-import com.otakup.niriko.viewmodel.StatsViewModel
-import com.otakup.niriko.data.model.stats.StatusDistItem
-import com.otakup.niriko.data.model.stats.TagStat
-import com.otakup.niriko.data.model.stats.TimelineEvent
-import com.otakup.niriko.data.model.stats.TypeDistItem
-import com.otakup.niriko.data.model.stats.YearlyStats
-import com.otakup.niriko.navigation.LocalSearchGestureLock
-import com.otakup.niriko.navigation.TabReselectSignal
-import com.otakup.niriko.navigation.TopLevelDestination
+import com.otakup.niriko.util.PHASE_REVEAL_DIM_ALPHA
+import com.otakup.niriko.util.PHASE_REVEAL_DURATION_MS
 import com.otakup.niriko.util.beginScrollToTop
+import com.otakup.niriko.util.phaseRevealStartAlpha
+import com.otakup.niriko.util.shouldPlayPhaseReveal
+import com.otakup.niriko.viewmodel.StatsViewModel
 import java.time.LocalDate
 
 // ==================== 图表颜色方案（主题派生，P0a） ====================
@@ -110,7 +116,11 @@ fun StatsScreen(
     tabReselect: TabReselectSignal = TabReselectSignal.None,
     modifier: Modifier = Modifier,
 ) {
-    val state by viewModel.uiState.collectAsState()
+    // 本次改到的收集行顺手切到 lifecycle-aware 版本（规范：不为此做全仓批量替换）。
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // F-05：手动刷新放送日历的 pending 态。此前按钮点下去没有任何反应，
+    // 用户不知道是「在刷」还是「没点上」。
+    val isBroadcastRefreshing by viewModel.isBroadcastRefreshing.collectAsStateWithLifecycle()
     // The selected month owns its freshness; /calendar success does not refresh history.
     var selectedDay by remember { mutableStateOf<LocalDate?>(null) }
     // 日历横滑会与顶级页 Pager 抢手势：手指落在日历上时锁住 Pager（与搜索页共用同一把锁）。
@@ -125,6 +135,7 @@ fun StatsScreen(
             onSwitchMode = viewModel::switchCalendarMode,
             onDayClick = { selectedDay = it },
             onRefreshBroadcast = viewModel::refreshBroadcastSchedule,
+            isBroadcastRefreshing = isBroadcastRefreshing,
             onSwitchView = viewModel::switchCalendarView,
             onAnchorDateChange = viewModel::setCalendarAnchor,
             gestureLock = searchGestureLock,
@@ -166,6 +177,8 @@ private fun StatsContent(
     onSwitchMode: (CalendarMode) -> Unit = {},
     onDayClick: (LocalDate) -> Unit = {},
     onRefreshBroadcast: () -> Unit = {},
+    /** F-05：放送日历是否正在刷新（驱动「刷新中…」禁用态）。 */
+    isBroadcastRefreshing: Boolean = false,
     /** 日历视图粒度：true = 月视图，false = 周视图。 */
     onSwitchView: (Boolean) -> Unit = {},
     /** 日历锚点变化（手势翻页回写）。 */
@@ -183,25 +196,42 @@ private fun StatsContent(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val scrollToTopReduceMotion = LocalReduceMotion.current
     // F11：底栏重选统计页 —— 不在顶部则回顶。统计页没有「重选即刷新」语义（顶部重选无操作），
     // 它的刷新入口是日历卡片自己的刷新按钮与下拉。
     LaunchedEffect(tabReselectEventId) {
         if (tabReselectEventId <= 0 || tabReselect.id <= 0) return@LaunchedEffect
         if (tabReselect.page != TopLevelDestination.Stats.ordinal) return@LaunchedEffect
-        listState.beginScrollToTop()
+        listState.beginScrollToTop(reduceMotion = scrollToTopReduceMotion)
+    }
+    // B-6：骨架 → 正文的首次揭示不再同帧硬切，给 LazyColumn 一次 alpha 包络。
+    // 结构上骨架与正文是同一个 LazyColumn 的不同 item 分支，无法用 Crossfade 包外层
+    // （两份分支各是一棵 Lazy = 双组合），所以走包络；见 util/PhaseRevealPolicy.kt 顶部说明。
+    val phaseReduceMotion = LocalReduceMotion.current
+    var previousLoading by remember { mutableStateOf<Boolean?>(null) }
+    val phaseRevealAlpha = remember { Animatable(1f) }
+    LaunchedEffect(state.isLoading) {
+        if (shouldPlayPhaseReveal(previousLoading, state.isLoading, phaseReduceMotion)) {
+            val start = phaseRevealStartAlpha(PHASE_REVEAL_DIM_ALPHA, phaseReduceMotion)
+            phaseRevealAlpha.snapTo(start)
+            phaseRevealAlpha.animateTo(1f, tween(PHASE_REVEAL_DURATION_MS))
+        }
+        previousLoading = state.isLoading
     }
     // LazyColumn：区块懒组合，预组合成本大降（修复 Pager 滑动掉帧）
     LazyColumn(
         state = listState,
-        modifier = modifier.fillMaxSize().reportBottomBarScroll(),
+        modifier = modifier.fillMaxSize().reportBottomBarScroll().graphicsLayer { alpha = phaseRevealAlpha.value },
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 140.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         item(key = "title") {
+            // P2-5：不再手写 fontWeight = Bold 覆盖 token。
+            // headlineMedium 本身是 28sp / w600（ui/theme/Type.kt），而设置页同名标题走同一 token；
+            // 这里叠一次 Bold 会让「收藏统计」比「设置」更粗，同一层级的页面标题出现两种字重（review P2-5）。
             Text(
                 text = "收藏统计",
                 style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
             )
         }
 
@@ -211,9 +241,11 @@ private fun StatsContent(
                 // 形状按真实版面排序；reduceMotion / 玻璃档位 OFF 时由 SkeletonBlock 自动退成静态灰块。
                 StatsLoadingSkeleton()
             }
+
             state.totalCount == 0 -> item(key = "empty") {
                 EmptyStatsPlaceholder(onNavigateToDiscover = onNavigateToDiscover)
             }
+
             else -> {
                 // 0a. 今晚看什么（P0）：打开统计页先给结论——今天更新 / 落后了几集
                 if (state.tonight.isNotEmpty()) {
@@ -249,6 +281,7 @@ private fun StatsContent(
                         onSwitchView = onSwitchView,
                         onAnchorDateChange = onAnchorDateChange,
                         onRefreshBroadcast = onRefreshBroadcast,
+                        isRefreshing = isBroadcastRefreshing,
                         broadcastLastUpdatedAt = state.selectedBroadcastMonth.lastSuccessAt,
                         broadcastMonthState = state.selectedBroadcastMonth,
                         gestureLock = gestureLock,
@@ -331,12 +364,17 @@ private fun StatsContent(
 private fun EmptyStatsPlaceholder(onNavigateToDiscover: () -> Unit = {}) {
     Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("还没有收藏数据", style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "还没有收藏数据",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(4.dp))
-            Text("添加一些作品收藏后，这里将展示有趣的统计数据",
+            Text(
+                "添加一些作品收藏后，这里将展示有趣的统计数据",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(16.dp))
             OutlinedButton(onClick = onNavigateToDiscover) {
                 Text("去发现页搜索作品")
@@ -463,8 +501,7 @@ private fun TypeBarRow(
  * 口味雷达取图规则：只要「有值」的标签，最多 [MAX_RADAR_AXES] 个
  * （[StatsUiState.tagStats] 本身已按出现次数降序）。
  */
-private fun tasteRadarTags(state: StatsUiState): List<TagStat> =
-    state.tagStats.filter { it.count > 0 }.take(MAX_RADAR_AXES)
+private fun tasteRadarTags(state: StatsUiState): List<TagStat> = state.tagStats.filter { it.count > 0 }.take(MAX_RADAR_AXES)
 
 /**
  * 口味雷达：题材标签分布换个形状看——词云看「最热的几个」，雷达看「口味形状」。
@@ -537,7 +574,6 @@ private fun TasteRadarSection(state: StatsUiState) {
 
 // ==================== 4. 月度趋势 ====================
 
-
 @Composable
 private fun MonthlyTrendSection(state: StatsUiState) {
     StatsSectionCard {
@@ -557,8 +593,11 @@ private fun MonthlyTrendSection(state: StatsUiState) {
             }
         }
         if (state.monthlyTrend.isEmpty()) {
-            Text("暂无月度数据", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "暂无月度数据",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             return@StatsSectionCard
         }
         // 月度增量柱 + 累计折线；累计值由 ChartSeriesCalculator 纯函数计算（有单测）
@@ -604,8 +643,11 @@ private fun RatingDistributionSection(state: StatsUiState) {
         val hasMine = state.myRatingDistribution.isNotEmpty()
         val hasBangumi = state.bangumiRatingDistribution.isNotEmpty()
         if (!hasMine && !hasBangumi) {
-            Text("暂无评分数据", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "暂无评分数据",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             return@StatsSectionCard
         }
         // 个人与 Bangumi 合并到同一坐标系做分组柱；分桶合并 / 排序走纯函数（有单测）。
@@ -652,11 +694,10 @@ private fun YearlySummarySection(state: StatsUiState) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    text = "${yearly.year} 年",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
+                // V-21：年份也是"大数字"，走 StatNumber + unit（24sp + 13sp 年），
+                // 顺带清掉统计页最后一处 titleLarge(22sp) —— 五档字号残留至此归零。
+                // 用 unit 参数而不是拼进字符串：单位要 13sp，不能跟着 24sp 一起放大。
+                StatNumber("${yearly.year}", unit = "年")
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -669,15 +710,21 @@ private fun YearlySummarySection(state: StatsUiState) {
                 }
             }
         } ?: run {
-            Text("今年还没有收藏记录", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "今年还没有收藏记录",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         // 往年列表
         if (state.yearlyStats.size > 1) {
             Spacer(Modifier.height(12.dp))
-            Text("历年统计", style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "历年统计",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(8.dp))
             state.yearlyStats.reversed().forEach { yearStat ->
                 YearlyRow(yearStat = yearStat)
@@ -690,9 +737,10 @@ private fun YearlySummarySection(state: StatsUiState) {
 @Composable
 private fun YearlyStatItem(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text(label, style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // V-21：年度四项也是统计数值，和概览卡同一档（24sp/w600/tnum），
+        // 不再用 titleMedium(16)+Bold —— 那等于"年度里的数字比概览里的数字小两档"。
+        StatNumber(value)
+        StatLabel(label)
     }
 }
 
@@ -706,18 +754,26 @@ private fun YearlyRow(yearStat: YearlyStats) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("${yearStat.year}", style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold)
-            Text("${yearStat.totalAdded} 部  ·  已完成 ${yearStat.completedCount} 部",
+            Text(
+                "${yearStat.year}",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                "${yearStat.totalAdded} 部  ·  已完成 ${yearStat.completedCount} 部",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${yearStat.totalEpisodes} 集",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "${yearStat.totalEpisodes} 集",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             if (yearStat.averageRating > 0) {
-                Text("均分 %.1f".format(yearStat.averageRating),
+                Text(
+                    "均分 %.1f".format(yearStat.averageRating),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -778,8 +834,11 @@ private fun RatingComparisonSection(state: StatsUiState) {
     StatsSectionCard {
         SectionTitle("评分对比（个人 vs Bangumi）")
         if (rows.isEmpty()) {
-            Text("暂无评分对比数据", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "暂无评分对比数据",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             return@StatsSectionCard
         }
         // 对柱（个人 / Bangumi）+ 差值折线；差值走纯函数（有单测）。
@@ -839,12 +898,17 @@ private fun RatingComparisonRow(item: RatingComparison) {
         Text(
             text = myRatingText,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
+            // P2-5 的验收口径是「StatsScreen 里不再出现 font-weight Bold 覆盖」：
+            // token 体系里强调是 w600（SemiBold），Bold(w700) 属于另一套粗度。
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.width(8.dp))
-        Text("/", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            "/",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.width(8.dp))
         // Bangumi 评分
         val bgmText = item.bangumiRating?.let { "%.1f".format(it) } ?: "-"
@@ -898,7 +962,7 @@ private fun SectionTitle(title: String) {
 @Composable
 private fun StatsSectionCard(content: @Composable () -> Unit) {
     Box(
-        modifier = Modifier.fillMaxWidth().appleGlassCard(shape = RoundedCornerShape(20.dp)),
+        modifier = Modifier.fillMaxWidth().appleGlassCard(shape = NirikoShapes.CardShape),
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
             content()
@@ -935,7 +999,7 @@ private fun LegendRow(
         Text(
             text = "$animatedCount",
             style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
+            fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.width(4.dp))
         Text(

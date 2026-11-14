@@ -7,8 +7,7 @@ import org.junit.Test
 
 /** Static wiring guards; shared frames still require device verification. */
 class SharedSubjectCoverContractTest {
-    private fun source(path: String): String =
-        File("src/main/java/com/otakup/niriko/$path").readText()
+    private fun source(path: String): String = File("src/main/java/com/otakup/niriko/$path").readText()
 
     @Test fun directEntrancesRegisterLoadedCoversWithoutChangingBounds() {
         for (path in listOf("ui/subject/RelationsSection.kt", "ui/common/CreditSubjectCard.kt", "ui/library/LibraryGalleryCard.kt")) {
@@ -20,7 +19,8 @@ class SharedSubjectCoverContractTest {
         assertTrue(adapter.contains("coverOverrideStore.overrideFor(subjectId)"))
         assertTrue(adapter.contains("onSuccess ="))
         assertTrue(adapter.contains("SubjectNavigationSeed.rememberCover("))
-        assertTrue(adapter.contains("drawable.intrinsicWidth, drawable.intrinsicHeight"))
+        // 同上：格式门会把过长的实参拆成两行，断言按空白归一化后匹配单个实参列表。
+        assertTrue(adapter.replace(Regex("\\s+"), " ").contains("drawable.intrinsicWidth, drawable.intrinsicHeight"))
         assertTrue(adapter.contains("state.result.memoryCacheKey"))
         assertFalse(adapter.contains("aspectRatio("))
         assertFalse(adapter.contains("SubjectNavigationSeed.prepare("))

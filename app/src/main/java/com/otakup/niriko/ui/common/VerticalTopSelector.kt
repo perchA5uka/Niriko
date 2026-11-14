@@ -1,5 +1,4 @@
 package com.otakup.niriko.ui.common
-
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.snap
@@ -7,17 +6,32 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -29,17 +43,21 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.otakup.niriko.ui.animation.LocalReduceMotion
-import com.otakup.niriko.ui.components.GlassMenuOverlay
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.components.NirikoMenu
+import com.otakup.niriko.ui.components.NirikoMenuItem
 import com.otakup.niriko.ui.components.searchGlassSurface
+import com.otakup.niriko.ui.theme.NirikoShapes
 import kotlin.math.roundToInt
 
 data class TopSelectorOption(
@@ -49,8 +67,7 @@ data class TopSelectorOption(
 )
 
 /** Current item first; all other entries keep their original order. */
-fun orderedTopSelectorOptions(options: List<TopSelectorOption>, selectedKey: String): List<TopSelectorOption> =
-    options.filter { it.key == selectedKey } + options.filter { it.key != selectedKey }
+fun orderedTopSelectorOptions(options: List<TopSelectorOption>, selectedKey: String): List<TopSelectorOption> = options.filter { it.key == selectedKey } + options.filter { it.key != selectedKey }
 
 /**
  * 左上分区 / 趋势选择器（作品库与发现页共用）。
@@ -88,7 +105,8 @@ fun VerticalTopSelector(
         val widthLimit = maxWidth.coerceAtLeast(56.dp)
         val transition = updateTransition(currentLabel, label = "topSelector")
         val width by transition.animateDp(
-            transitionSpec = { if (reduceMotion) snap() else spring(dampingRatio = 0.8f, stiffness = 400f) },
+            // A.8：原 spring(0.8, 400) 字面量 → spatialDefault（0.9/700）。胶囊宽度是形体变化（spatial）。
+            transitionSpec = { if (reduceMotion) snap() else NirikoMotionSpecs.spatialDefault<Dp>() },
             label = "labelWidth",
         ) { label ->
             (with(density) { measurer.measure(AnnotatedString(label), textStyle).size.width.toDp() } + 52.dp)
@@ -97,7 +115,9 @@ fun VerticalTopSelector(
         Row(
             Modifier.width(width).height(56.dp)
                 .onGloballyPositioned { buttonRect = it.boundsInRoot() }
-                .searchGlassSurface(RoundedCornerShape(28.dp))
+                // V-14：触发按钮与菜单面统一到 Sheet 档（24dp）。改造前按钮 28dp / 菜单 24dp，
+                // 是「六档圆角」之外的两档手写值；V-14 收口要求全站菜单与触发器同一档。
+                .searchGlassSurface(NirikoShapes.SheetShape)
                 .semantics { stateDescription = if (expanded) "已展开" else "已收起" }
                 .clickable(role = Role.Button) { expanded = !expanded }
                 .padding(horizontal = 16.dp),
@@ -110,51 +130,60 @@ fun VerticalTopSelector(
             val triangleColor = MaterialTheme.colorScheme.onSurfaceVariant
             Canvas(Modifier.size(10.dp, 9.dp)) {
                 val path = Path().apply {
-                    moveTo(0f, 0f); lineTo(size.width, 0f)
-                    lineTo(size.width / 2f, size.height); close()
+                    moveTo(0f, 0f)
+                    lineTo(size.width, 0f)
+                    lineTo(size.width / 2f, size.height)
+                    close()
                 }
                 drawPath(path, triangleColor)
             }
         }
-        if (expanded) {
-            val menuWidth = widthLimit.coerceAtMost(280.dp)
-            GlassMenuOverlay(
-                anchorInRoot = buttonRect,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier
-                    // requiredSize 让浮层无视 56dp 的父约束；负 offset 把它移到窗口左上角，
-                    // 于是浮层内的坐标就是根坐标（采样与触摸都按窗口算）。
-                    .requiredSize(screenWidth, screenHeight)
-                    .offset { IntOffset(-boxOrigin.x.roundToInt(), -boxOrigin.y.roundToInt()) }
-                    .zIndex(20f),
-                gap = 4.dp,
-                maxMenuWidth = menuWidth,
-                maxMenuHeight = 360.dp,
-                alignRight = false,
-                safePadding = WindowInsets.safeDrawing.asPaddingValues(),
-                columnModifier = Modifier
-                    .width(menuWidth)
-                    .searchGlassSurface(RoundedCornerShape(24.dp))
-                    .verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
-            ) {
-                orderedTopSelectorOptions(options, selectedKey).forEach { option ->
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .clickable(role = Role.RadioButton) { expanded = false; option.onSelect() }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(option.label, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (option.key == selectedKey) Icon(Icons.Default.Check, "已选中", Modifier.size(18.dp))
-                    }
-                }
-                if (actions.isNotEmpty()) {
-                    androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    actions.forEach { action ->
-                        Text(action.label, Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .clickable(role = Role.Button) { expanded = false; action.onSelect() }
-                            .padding(horizontal = 16.dp, vertical = 14.dp))
-                    }
+        // V-14：自绘菜单退役。改造前这里直接调 GlassMenuOverlay 并自己画 Row 选项 —— 它是
+        // LibraryTopBar（NirikoMenu）之外的「第二套写手」，行高/内距/选中勾都得各维护一份。
+        // 现在统一走 NirikoMenu + NirikoMenuItem：24dp 玻璃面、从锚点缩放、带回退场（keepAlive）。
+        // 不在外面写 if (expanded)：退场动画需要组合树活到播完，生命周期由组件内部 keepAlive 管。
+        val menuWidth = widthLimit.coerceAtMost(280.dp)
+        NirikoMenu(
+            expanded = expanded,
+            anchorInRoot = buttonRect,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+                // requiredSize 让浮层无视 56dp 的父约束；负 offset 把它移到窗口左上角，
+                // 于是浮层内的坐标就是根坐标（采样与触摸都按窗口算）。
+                // zIndex(20f) 必须比菜单默认的 10f 大：本选择器在组合顺序上早于右侧搜索卡，
+                // 同 zIndex 会被搜索卡盖住（见 NirikoMenu 里 modifier 追加顺序的说明）。
+                .requiredSize(screenWidth, screenHeight)
+                .offset { IntOffset(-boxOrigin.x.roundToInt(), -boxOrigin.y.roundToInt()) }
+                .zIndex(20f),
+            alignRight = false,
+            maxMenuHeight = 360.dp,
+            safePadding = WindowInsets.safeDrawing.asPaddingValues(),
+            // 宽度沿用「与触发胶囊等宽」的既有观感；长列表在宿主内滚动而不是撑破屏幕。
+            columnModifier = Modifier
+                .width(menuWidth)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            orderedTopSelectorOptions(options, selectedKey).forEach { option ->
+                NirikoMenuItem(
+                    text = option.label,
+                    onClick = {
+                        expanded = false
+                        option.onSelect()
+                    },
+                    // 「已选中」用前置勾（NirikoMenuItem 只有行首 icon 槽）
+                    icon = if (option.key == selectedKey) Icons.Default.Check else null,
+                )
+            }
+            if (actions.isNotEmpty()) {
+                androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                actions.forEach { action ->
+                    NirikoMenuItem(
+                        text = action.label,
+                        onClick = {
+                            expanded = false
+                            action.onSelect()
+                        },
+                    )
                 }
             }
         }

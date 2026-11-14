@@ -10,12 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import com.otakup.niriko.ui.components.LocalCardReflectionLighting
-import com.otakup.niriko.ui.components.rememberCardReflectionLighting
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import com.otakup.niriko.ui.animation.LocalAmbientTiltDemand
-import com.otakup.niriko.data.model.CardRarity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,18 +33,21 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.model.CardMaterialState
+import com.otakup.niriko.data.model.CardRarity
 import com.otakup.niriko.ui.animation.AnimDurationNormal
 import com.otakup.niriko.ui.animation.AnimEasingDefault
+import com.otakup.niriko.ui.animation.LocalAmbientTiltDemand
 import com.otakup.niriko.ui.animation.LocalReduceMotion
 import com.otakup.niriko.ui.animation.PressTiltLighting
 import com.otakup.niriko.ui.animation.pressTilt
+import com.otakup.niriko.ui.components.LocalCardReflectionLighting
 import com.otakup.niriko.ui.components.cardRarityMaterial
+import com.otakup.niriko.ui.components.rememberCardReflectionLighting
 import com.otakup.niriko.ui.components.rememberDetailCardHighlight
 
 internal fun detailCardShowsBack(rotation: Float): Boolean = rotation.isFinite() && rotation > 90f
 
-internal fun detailCardCounterRotation(showBack: Boolean, reduceMotion: Boolean): Float =
-    if (showBack && !reduceMotion) 180f else 0f
+internal fun detailCardCounterRotation(showBack: Boolean, reduceMotion: Boolean): Float = if (showBack && !reduceMotion) 180f else 0f
 
 /** One physical frame and one press source; only the detail poster can flip. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -84,49 +83,79 @@ internal fun DetailPosterCard(
     val flipLabel = if (flipped) "翻到海报正面" else "翻到个人收藏卡背"
     val flip = { flipped = !flipped }
     val interaction = if (record != null) {
-        Modifier.pressTilt(interactionSource, lighting = lighting)
-            .combinedClickable(interactionSource = interactionSource, indication = null,
-                onClick = {}, onDoubleClick = flip)
+        // F-14：详情 hero 是页面主卡，按下去给一次轻微倾斜 + 触感。
+        Modifier.pressTilt(interactionSource, lighting = lighting, hapticEnabled = true)
+            // F11：单击此前是空 lambda（「点一下没反应」，也就永远不会发现双击能翻面）。
+            // 现在单击/双击都翻面（双击仍只触发一次，combinedClickable 会等双击超时后再走单击），
+            // 翻面本身就是可见反馈，不再需要额外的「双击翻面」提示文案，也不与共享元素/返回手势冲突
+            // （封面没有其它点击语义）。
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClickLabel = flipLabel,
+                onClick = flip,
+                onDoubleClick = flip
+            )
             .onPreviewKeyEvent {
                 if (it.key == Key.Enter || it.key == Key.NumPadEnter || it.key == Key.Spacebar) {
                     if (it.type == KeyEventType.KeyUp) flip()
                     true
-                } else false
+                } else {
+                    false
+                }
             }
             .semantics {
                 stateDescription = if (showBack) "个人收藏卡背" else "作品海报正面"
-                customActions = listOf(CustomAccessibilityAction(flipLabel) { flip(); true })
+                customActions = listOf(
+                    CustomAccessibilityAction(flipLabel) {
+                        flip()
+                        true
+                    }
+                )
             }
-    } else if (hasCover) Modifier.pressTilt(lighting = lighting) else Modifier
+    } else if (hasCover) {
+        Modifier.pressTilt(lighting = lighting, hapticEnabled = true)
+    } else {
+        Modifier
+    }
     CompositionLocalProvider(LocalCardReflectionLighting provides reflection) {
-    Box(
-        modifier = modifier.then(interaction)
-            .then(highlight.visibilityModifier)
-            .graphicsLayer {
-                rotationY = if (reduceMotion) 0f else rotation.value.coerceIn(0f, 180f)
-                cameraDistance = 12f * density
-            }
-            .clip(shape)
-            .then(if (hasCover) Modifier.shadow(10.dp, shape) else Modifier),
-        contentAlignment = Alignment.Center,
-    ) {
         Box(
-            modifier = Modifier.matchParentSize()
+            modifier = modifier.then(interaction)
+                .then(highlight.visibilityModifier)
                 .graphicsLayer {
-                    // Counter-rotate the back content; it must never appear as mirrored text.
-                    rotationY = detailCardCounterRotation(showBack, reduceMotion)
+                    rotationY = if (reduceMotion) 0f else rotation.value.coerceIn(0f, 180f)
                     cameraDistance = 12f * density
                 }
-                .cardRarityMaterial(
-                    if (showBack) CardMaterialState() else material, shape, lighting,
-                ) { highlight.amount.value },
+                .clip(shape)
+                .then(if (hasCover) Modifier.shadow(10.dp, shape) else Modifier),
             contentAlignment = Alignment.Center,
         ) {
-            if (showBack && record != null) {
-                DetailCardBack(record, shape, material = material, lighting = lighting,
-                    breathing = { highlight.amount.value })
-            } else front()
+            Box(
+                modifier = Modifier.matchParentSize()
+                    .graphicsLayer {
+                        // Counter-rotate the back content; it must never appear as mirrored text.
+                        rotationY = detailCardCounterRotation(showBack, reduceMotion)
+                        cameraDistance = 12f * density
+                    }
+                    .cardRarityMaterial(
+                        if (showBack) CardMaterialState() else material,
+                        shape,
+                        lighting,
+                    ) { highlight.amount.value },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (showBack && record != null) {
+                    DetailCardBack(
+                        record,
+                        shape,
+                        material = material,
+                        lighting = lighting,
+                        breathing = { highlight.amount.value }
+                    )
+                } else {
+                    front()
+                }
+            }
         }
-    }
     }
 }

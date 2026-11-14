@@ -1,10 +1,12 @@
 package com.otakup.niriko.ui.common
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -16,6 +18,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,8 +30,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -70,13 +72,26 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.NirikoPressSpecs
+import com.otakup.niriko.ui.animation.orSnap
+import com.otakup.niriko.ui.components.NirikoFilterPill
+import com.otakup.niriko.ui.components.animatedRequiredSize
 import com.otakup.niriko.ui.components.searchGlassSurface
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.theme.SearchIndicatorAccents
 import com.otakup.niriko.util.TopFadePolicy
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -96,10 +111,16 @@ internal val SearchMenuHeight = 200.dp
 /** 沉浸搜索但未编辑 / 未展开筛选行时的卡片高度（dp）。 */
 internal val SearchImmersiveCollapsedHeight = 68.dp
 
-/** 沉浸态绿条变暗后的底色（原型 rgba(46,125,50,.16)）。 */
-private val IndicatorDim = Color(0x292E7D32)
-/** 拖拽态绿条亮绿（原型 #43A047）。 */
-private val IndicatorBright = Color(0xFF43A047)
+/**
+ * 关闭钮的命中区边长（F12）。
+ *
+ * 视觉圆钮仍是 44dp（与锚点同一枚玻璃圆钮），命中区补到 Material 的 48dp 下限：
+ * 沉浸态里这颗 X 是「退出搜索」的唯一出口，44dp 单手够不到是真实的可用性缺陷。
+ */
+private val SearchCloseTouchTarget = 48.dp
+
+// 绿条两色已迁到 ui/theme/RarityPalette.kt 的 SearchIndicatorAccents（V-02）：
+// 色值逐位不变，只是不再以 0x 字面量留在组件里（换主题/扫描护栏都能看见它）。
 
 /**
  * iOS 风格搜索组件 —— 对齐 HTML 原型的 4 状态状态机。
@@ -141,25 +162,31 @@ fun IosStyleSearchComponent(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val searchFocusRequester = remember { FocusRequester() }
+    // 入场/状态切换类动画统一降级；拖拽跟手（dragOffsetX）不经过这里，保持 1:1。
+    val reduceMotion = LocalReduceMotion.current
 
     val phase = viewModel.phase
     val query = viewModel.query
-    val progress = viewModel.dragProgress
+    // dragProgress 刻意**不在这里读**：它每帧变化，读在组合期会让整张搜索卡每帧重组。
+    // 它只被两处消费 —— 锚点的 offset lambda（布局期）与绿条 Canvas（绘制期）。
     val filterExpanded = viewModel.filterRowExpanded
 
     // ===== 尺寸常量（dp，与原型一致） =====
-    val anchorDp = 56.dp            // COLLAPSED 表面/锚点尺寸
-    val menuH = expandedHeight              // 菜单/沉浸展开高度
+    val anchorDp = 56.dp // COLLAPSED 表面/锚点尺寸
+    val menuH = expandedHeight // 菜单/沉浸展开高度
     val collapsedH = SearchImmersiveCollapsedHeight // 滚动折叠后高度（仅留搜索框）
     val colPad = 8.dp
     val trackH = 56.dp
-    val anchorSmall = 44.dp         // 菜单/沉浸态锚点（滑块）尺寸
+    val anchorSmall = 44.dp // 菜单/沉浸态锚点（滑块）尺寸
 
     // ===== 展开卡片尺寸（仅在 phase 切换时动画，非手势帧 → 无卡顿） =====
     val isCollapsed = phase == SearchPhase.COLLAPSED
     val isImmersive = phase == SearchPhase.IMMERSIVE_SEARCH
     val immersiveCollapsed = isImmersive && !viewModel.editing && !filterExpanded
-    val cardSpring = spring<Dp>(dampingRatio = 0.8f, stiffness = 400f) // Apple 质感：顺滑不过弹
+    // B-11：这里原来是 spring<Dp>(0.8f, 400f) 的字面量，与卡内 5 处其它动画各写一套数值。
+    // 尺寸走 spatialDefault（0.9/700，比原值略快一点收尾）、透明度走 effectsFast，
+    // 收敛后整张卡只有「一组」物理口径，末段不再出现各行错位的对齐抖动。
+    val cardSpring = NirikoMotionSpecs.spatialDefault<Dp>()
 
     BoxWithConstraints(modifier = modifier) {
         // 卡片全宽 = 屏幕宽 - 左右 16dp 边距，改用真实屏幕宽驱动：
@@ -168,9 +195,11 @@ fun IosStyleSearchComponent(
         val screenW = with(LocalConfiguration.current) { screenWidthDp.dp }
         val fullW = (screenW - 32.dp).coerceAtLeast(anchorDp)
         val cardWTarget = if (isCollapsed) anchorDp else fullW
-        val cardW by animateDpAsState(
+        // 尺寸 State 不在组合期读（见下方 requiredWidth 的替换）：交给 animatedRequiredSize 在布局期读，
+        // 展开的这 200~300ms 里不再每帧重组整张卡片（含行 2-4 的子内容）。
+        val cardW = animateDpAsState(
             targetValue = cardWTarget,
-            animationSpec = cardSpring,
+            animationSpec = cardSpring.orSnap(reduceMotion),
             label = "cardW",
         )
         val cardHTarget = when {
@@ -178,34 +207,39 @@ fun IosStyleSearchComponent(
             immersiveCollapsed -> collapsedH
             else -> menuH
         }
-        val cardH by animateDpAsState(
+        val cardH = animateDpAsState(
             targetValue = cardHTarget,
-            animationSpec = cardSpring,
+            animationSpec = cardSpring.orSnap(reduceMotion),
             label = "cardH",
         )
         // 尺寸动画是否还在跑：期间行 2–4 会跟着长/缩，手指落点不可预测（B4）。
-        val surfaceAnimating = cardW != cardWTarget || cardH != cardHTarget
+        // derivedStateOf：动画每帧都会改 cardW/cardH，但这里只在「是否还在跑」翻转时才让上层重组。
+        val surfaceAnimating by remember(cardWTarget, cardHTarget) {
+            derivedStateOf { cardW.value != cardWTarget || cardH.value != cardHTarget }
+        }
 
         // 卡片浮现：右上角锚点缩放 + 透明度（transformOrigin = (1, 0)）
         val reveal by animateFloatAsState(
             targetValue = if (isCollapsed) 0f else 1f,
-            animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
+            animationSpec = NirikoMotionSpecs.spatialDefault<Float>().orSnap(reduceMotion),
             label = "reveal",
         )
         // 行内容交错出现
+        // 三处透明度统一 effectsFast（原 tween 240/220/220 是「同一件事三种时长」）；
+        // 位移属 spatial 类，走 spatialFast。全部只在 graphicsLayer 里读值，不进组合期。
         val contentAlpha by animateFloatAsState(
             targetValue = if (isCollapsed) 0f else 1f,
-            animationSpec = tween(240),
+            animationSpec = NirikoMotionSpecs.effectsFast<Float>().orSnap(reduceMotion),
             label = "contentAlpha",
         )
         val rowsAlpha by animateFloatAsState(
             targetValue = if (immersiveCollapsed) 0f else 1f,
-            animationSpec = tween(220),
+            animationSpec = NirikoMotionSpecs.effectsFast<Float>().orSnap(reduceMotion),
             label = "rowsAlpha",
         )
         val rowsShift by animateFloatAsState(
             targetValue = if (immersiveCollapsed) -10f else 0f,
-            animationSpec = tween(220),
+            animationSpec = NirikoMotionSpecs.spatialFast<Float>().orSnap(reduceMotion),
             label = "rowsShift",
         )
 
@@ -216,28 +250,32 @@ fun IosStyleSearchComponent(
         val trackW = fullW - colPad * 2f
         val maxTravelDp = trackW - anchorSmall
         // 锚点基础 X（MENU=右端 / IMMERSIVE=最左 / COLLAPSED=填满；DRAGGING 停在右端）
-        val anchorX by animateDpAsState(
+        // 三个锚点动画同样不读 value：交给 offset{} / animatedRequiredSize 在布局期读（B-11 帧阶段）。
+        val anchorX = animateDpAsState(
             targetValue = when (phase) {
                 SearchPhase.COLLAPSED -> 0.dp
                 SearchPhase.MENU_EXPANDED, SearchPhase.DRAGGING -> fullW - colPad - anchorSmall
                 SearchPhase.IMMERSIVE_SEARCH -> colPad + 6.dp
             },
-            animationSpec = cardSpring,
+            animationSpec = cardSpring.orSnap(reduceMotion),
             label = "anchorX",
         )
-        // 拖拽位移（布局级 offset 叠加，非动画）：DRAGGING 时 = -progress*maxTravel，
-        // 与手势 progress 严格 1:1 同步；其余状态为 0（由 anchorX 收敛）
-        val dragOffsetX = if (phase == SearchPhase.DRAGGING) -maxTravelDp * progress else 0.dp
-        val anchorY by animateDpAsState(
+        // 拖拽位移（布局级 offset 叠加，非动画）：DRAGGING 时 = -progress*maxTravel，与手势严格 1:1。
+        // 用 lambda 而不是组合期求值：dragProgress 每帧变化，读在组合期会让整张卡片每帧重组。
+        // 这里直接读 viewModel（普通对象 + Compose State 字段）：lambda 在布局期执行，读取只在布局阶段登记。
+        val dragOffsetDp: () -> Dp = {
+            if (viewModel.phase == SearchPhase.DRAGGING) -maxTravelDp * viewModel.dragProgress else 0.dp
+        }
+        val anchorY = animateDpAsState(
             // 垂直居中于 56dp 轨道：轨道 Box 在卡片内 colPad(8dp) 之下，轨道中心 = 8+28=36dp；
             // 锚点高 44dp → y = 36-22 = 14dp = colPad + (trackH-anchorSmall)/2（COLLAPSED 填满卡片为 0）
             targetValue = if (isCollapsed) 0.dp else colPad + (trackH - anchorSmall) / 2,
-            animationSpec = cardSpring,
+            animationSpec = cardSpring.orSnap(reduceMotion),
             label = "anchorY",
         )
-        val anchorSize by animateDpAsState(
+        val anchorSize = animateDpAsState(
             targetValue = if (isCollapsed) anchorDp else anchorSmall,
-            animationSpec = cardSpring,
+            animationSpec = cardSpring.orSnap(reduceMotion),
             label = "anchorSize",
         )
 
@@ -248,7 +286,6 @@ fun IosStyleSearchComponent(
         val trackHPx = with(density) { (trackH - 8.dp).toPx() }
 
         val phaseState = rememberUpdatedState(phase)
-        val progressState = rememberUpdatedState(progress)
         val vm = rememberUpdatedState(viewModel)
         val lockChanged = rememberUpdatedState(onGestureLockChange)
 
@@ -275,8 +312,10 @@ fun IosStyleSearchComponent(
                 .wrapContentSize(align = Alignment.TopEnd, unbounded = true)
                 // required*：无视父约束强制尺寸——SearchToolbar 的 56dp Box 会把普通 width/height
                 // clamp 到 56dp，导致 MENU 只展开成一条搜索栏、行 2-4 不可见（用户反馈根因）
-                .requiredWidth(cardW)
-                .requiredHeight(cardH)
+                // 布局期读尺寸 State（B-11）：requiredWidth(cardW) 会在组合期求值，
+                // 展开期间每帧重组整张卡片；animatedRequiredSize 把读取推迟到测量阶段，
+                // 几何与 required* 完全一致（忽略父约束、强制固定尺寸）。
+                .animatedRequiredSize(cardW, cardH)
                 .graphicsLayer {
                     // 纯物理尺寸展开：无 scale/transformOrigin（避免缩放原点在容器外造成"上顶"），
                     // 仅保留内容淡入；尺寸由 requiredWidth/Height + animateDpAsState 驱动
@@ -294,7 +333,10 @@ fun IosStyleSearchComponent(
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 // 锚点命中区：COLLAPSED 锚点填满整卡(56dp)；MENU/DRAGGING 为右侧 anchorSmall
                                 if (vm.value.phase != SearchPhase.COLLAPSED &&
-                                    down.position.y > with(density) { (colPad + trackH).toPx() }) return@awaitEachGesture
+                                    down.position.y > with(density) { (colPad + trackH).toPx() }
+                                ) {
+                                    return@awaitEachGesture
+                                }
                                 val anchorZone = if (vm.value.phase == SearchPhase.COLLAPSED) size.width.toFloat() else anchorSmallPx
                                 if (down.position.x < size.width.toFloat() - anchorZone) return@awaitEachGesture
                                 lockChanged.value(true)
@@ -327,7 +369,10 @@ fun IosStyleSearchComponent(
                                             break
                                         }
 
-                                        if (change.isConsumed) { ended = true; break }
+                                        if (change.isConsumed) {
+                                            ended = true
+                                            break
+                                        }
 
                                         // 按下即拖：移动超过 touchSlop 立即进入拖拽
                                         if (!dragging) {
@@ -369,7 +414,9 @@ fun IosStyleSearchComponent(
                                 }
                             }
                         }
-                    } else Modifier
+                    } else {
+                        Modifier
+                    }
                 ),
         ) {
             // ===== 展开态的不透明底（B3） =====
@@ -403,7 +450,7 @@ fun IosStyleSearchComponent(
                     // 假输入框背景（COLLAPSED/MENU/DRAGGING 可见；IMMERSIVE 淡出）
                     val fakeAlpha by animateFloatAsState(
                         targetValue = if (isImmersive) 0f else 1f,
-                        animationSpec = tween(200),
+                        animationSpec = NirikoMotionSpecs.effectsFast<Float>().orSnap(reduceMotion),
                         label = "fakeAlpha",
                     )
                     Box(
@@ -411,7 +458,7 @@ fun IosStyleSearchComponent(
                             .fillMaxSize()
                             .padding(vertical = 4.dp)
                             .graphicsLayer { alpha = fakeAlpha }
-                            .searchGlassSurface(shape = RoundedCornerShape(24.dp)),
+                            .searchGlassSurface(shape = NirikoShapes.SheetShape),
                     )
                     // 假输入框占位文字（仅非沉浸态）：提示左划解锁
                     if (!isImmersive) {
@@ -429,7 +476,7 @@ fun IosStyleSearchComponent(
                     // ---- 绿条指示器：Canvas 绘制，绝不修改布局尺寸 ----
                     val indSettle by animateFloatAsState(
                         targetValue = if (isImmersive) 1f else 0f,
-                        animationSpec = tween(260),
+                        animationSpec = NirikoMotionSpecs.effectsFast<Float>().orSnap(reduceMotion),
                         label = "indSettle",
                     )
                     Canvas(Modifier.fillMaxSize()) {
@@ -438,7 +485,8 @@ fun IosStyleSearchComponent(
                         if (!visible) return@Canvas
                         // 滑块中心（轨道坐标）：初始在轨道右端（右缘 - 滑块半宽），随 progress 左移 1:1
                         val thumbHalf = anchorSmallPx / 2f
-                        val sliderCenter = size.width - thumbHalf - progressState.value * maxTravelPx
+                        // 绘制期读拖拽进度：Canvas 不重组、只重绘（每帧只画一条圆角矩形）
+                        val sliderCenter = size.width - thumbHalf - vm.value.dragProgress * maxTravelPx
                         // 绿色区域：始终从滑块位置延伸到轨道右缘（左端=滑块，右端=轨道右缘，无空缺、完全贴合）
                         val w = if (phaseState.value == SearchPhase.IMMERSIVE_SEARCH) {
                             size.width * indSettle
@@ -447,9 +495,9 @@ fun IosStyleSearchComponent(
                         }
                         if (w <= 0f) return@Canvas
                         val color = if (phaseState.value == SearchPhase.IMMERSIVE_SEARCH) {
-                            IndicatorDim
+                            SearchIndicatorAccents.ImmersiveDim
                         } else {
-                            IndicatorBright
+                            SearchIndicatorAccents.Bright
                         }
                         drawRoundRect(
                             color = color,
@@ -463,7 +511,7 @@ fun IosStyleSearchComponent(
                     if (isImmersive) {
                         val inputAlpha by animateFloatAsState(
                             targetValue = 1f,
-                            animationSpec = tween(260),
+                            animationSpec = NirikoMotionSpecs.effectsFast<Float>().orSnap(reduceMotion),
                             label = "inputAlpha",
                         )
                         BasicTextField(
@@ -509,17 +557,25 @@ fun IosStyleSearchComponent(
                             .fillMaxWidth()
                             .height(40.dp)
                             .padding(top = 4.dp)
-                            .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                            .graphicsLayer {
+                                alpha = rowsAlpha
+                                translationY = rowsShift
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         if (filters == null) {
-                            Chip(
-                                "作品", viewModel.mode == SearchMode.WORKS,
+                            // V-12：这两枚模式胶囊改造前是自绘的（实心 primary + indication = null），
+                            // 与筛选行的玻璃胶囊是两套长相，按下去也没有反馈。统一到 NirikoFilterPill：
+                            // 淡底 + 描边、48dp 触控壳、默认水波（F08）。
+                            NirikoFilterPill(
+                                text = "作品",
+                                selected = viewModel.mode == SearchMode.WORKS,
                                 onClick = { onModeSelected(SearchMode.WORKS) },
                             )
-                            Chip(
-                                "人物", viewModel.mode == SearchMode.CHARACTERS,
+                            NirikoFilterPill(
+                                text = "人物",
+                                selected = viewModel.mode == SearchMode.CHARACTERS,
                                 onClick = { onModeSelected(SearchMode.CHARACTERS) },
                             )
                         }
@@ -534,7 +590,10 @@ fun IosStyleSearchComponent(
                         modifier = Modifier
                             .height(18.dp)
                             .padding(top = 4.dp, start = 12.dp)
-                            .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                            .graphicsLayer {
+                                alpha = rowsAlpha
+                                translationY = rowsShift
+                            },
                     )
                     // ---- 行 4：类型（含「全部」；横向可滚动） ----
                     // 第 5 轮 D21/D22：
@@ -552,26 +611,31 @@ fun IosStyleSearchComponent(
                             .fillMaxWidth()
                             .height(58.dp)
                             .padding(top = 4.dp)
-                            .graphicsLayer { alpha = rowsAlpha; translationY = rowsShift },
+                            .graphicsLayer {
+                                alpha = rowsAlpha
+                                translationY = rowsShift
+                            },
                         horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (filters != null) {
                             filters()
-                        } else SELECTABLE_CONTENT_TYPES.forEach { type ->
-                            TypeCell(
-                                label = type.label,
-                                type = type,
-                                selected = viewModel.contentType == type,
-                                onClick = {
-                                    // 「全部」本身就是合法选择；其余类型再点一次取消 → 回到「全部」
-                                    if (type != ContentType.ALL && viewModel.contentType == type) {
-                                        onTypeSelected(ContentType.ALL)
-                                    } else {
-                                        onTypeSelected(type)
-                                    }
-                                },
-                            )
+                        } else {
+                            SELECTABLE_CONTENT_TYPES.forEach { type ->
+                                TypeCell(
+                                    label = type.label,
+                                    type = type,
+                                    selected = viewModel.contentType == type,
+                                    onClick = {
+                                        // 「全部」本身就是合法选择；其余类型再点一次取消 → 回到「全部」
+                                        if (type != ContentType.ALL && viewModel.contentType == type) {
+                                            onTypeSelected(ContentType.ALL)
+                                        } else {
+                                            onTypeSelected(type)
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -593,9 +657,14 @@ fun IosStyleSearchComponent(
             // ===== 锚点（放大镜）：唯一手势入口（COLLAPSED 短按 ⇄ 菜单） =====
             Box(
                 modifier = Modifier
-                    // 布局级叠加：baseAnchorX(动画收敛) + dragOffsetX(拖拽 1:1 跟手)
-                    .offset(x = anchorX + dragOffsetX, y = anchorY)
-                    .size(anchorSize)
+                    // 布局级叠加：baseAnchorX(动画收敛) + 拖拽位移(1:1 跟手)，两个值都在布局期读
+                    .offset {
+                        IntOffset(
+                            x = (anchorX.value + dragOffsetDp()).roundToPx(),
+                            y = anchorY.value.roundToPx(),
+                        )
+                    }
+                    .animatedRequiredSize(anchorSize)
                     .graphicsLayer {
                         // 细胞分裂：放大镜从右端滑到左端。
                         // 位置完全由 anchorX（progress 直接驱动）负责，此处不再叠加 translationX，
@@ -605,7 +674,7 @@ fun IosStyleSearchComponent(
                     // 凸起玻璃按钮：MENU/DRAGGING 态与 fake-track 拉出层级差
                     .then(
                         if (!isCollapsed && !isImmersive) {
-                            Modifier.searchGlassSurface(shape = RoundedCornerShape(24.dp))
+                            Modifier.searchGlassSurface(shape = NirikoShapes.SheetShape)
                         } else {
                             Modifier.clip(RoundedCornerShape(if (isCollapsed) 18.dp else 24.dp))
                         }
@@ -625,17 +694,27 @@ fun IosStyleSearchComponent(
                 visible = phase == SearchPhase.IMMERSIVE_SEARCH,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    // 垂直居中于 56dp 轨道：X 高 44dp → y = colPad + (56-44)/2 = 14dp，与锚点中轴线一致
-                    .offset(x = -colPad - 6.dp, y = colPad + (trackH - anchorSmall) / 2),
-                enter = fadeIn(tween(160)) +
-                    slideInHorizontally(animationSpec = spring(dampingRatio = 0.7f, stiffness = 420f)) { it },
-                exit = fadeOut(tween(140)) +
-                    slideOutHorizontally(animationSpec = tween(200)) { it },
+                    // F12：视觉仍是 44dp 玻璃圆钮，命中区补到 48dp。外壳对齐 TopEnd，尺寸 44→48 后
+                    // 内侧圆钮的中心会跟着右下移 2dp，所以 offset 各回退 2dp，让玻璃圆钮**留在原位**
+                    // （对位关系与原「44dp 同时当视觉与命中区」逐像素一致）。
+                    .offset(x = -colPad - 4.dp, y = colPad + (trackH - SearchCloseTouchTarget) / 2),
+                enter = if (reduceMotion) {
+                    EnterTransition.None
+                } else {
+                    fadeIn(animationSpec = NirikoMotionSpecs.effectsFast<Float>()) +
+                        slideInHorizontally(animationSpec = NirikoMotionSpecs.spatialFast<IntOffset>()) { it }
+                },
+                exit = if (reduceMotion) {
+                    ExitTransition.None
+                } else {
+                    fadeOut(animationSpec = NirikoMotionSpecs.effectsFast<Float>()) +
+                        slideOutHorizontally(animationSpec = NirikoMotionSpecs.spatialFast<IntOffset>()) { it }
+                },
             ) {
+                // 命中壳 48dp，视觉圆钮 44dp：手势挂外壳，否则外壳只是「占位」，点边缘仍然没反应
                 Box(
                     modifier = Modifier
-                        .size(anchorSmall)
-                        .searchGlassSurface(shape = RoundedCornerShape(anchorSmall / 2))
+                        .size(SearchCloseTouchTarget)
                         .clickable {
                             focusManager.clearFocus()
                             // 清空已输入内容（同步 SubjectSearchViewModel 与 SearchViewModel 镜像），
@@ -645,41 +724,23 @@ fun IosStyleSearchComponent(
                         },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "关闭搜索",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(18.dp),
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(anchorSmall)
+                            .searchGlassSurface(shape = RoundedCornerShape(anchorSmall / 2)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭搜索",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
     }
-}
-
-/** 小胶囊（菜单内模式选项）。 */
-@Composable
-private fun Chip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                else Color.Transparent
-            )
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-    )
 }
 
 /** 类型项（图标 + 文字，一行 5 个）。 */
@@ -692,13 +753,29 @@ private fun TypeCell(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val reduceMotion = LocalReduceMotion.current
+    // F08：改造前 indication = null 且没有任何替代按压通道 —— 按下期间零反馈，只有松手后底色才变；
+    // 读屏也听不出「已选中」。这里用按压高亮（与列表行 .08 同值同族）而不是水波：
+    // 玻璃面上的矩形水波会破坏材质，这是本仓既有的取舍（列表行同样用 nirikoRowIndication）。
+    val background by animateColorAsState(
+        targetValue = when {
+            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+            pressed -> MaterialTheme.colorScheme.onSurface.copy(alpha = NirikoPressSpecs.ROW_PRESS_ALPHA)
+            else -> Color.Transparent
+        },
+        animationSpec = if (reduceMotion) snap() else NirikoMotionSpecs.effectsFast<Color>(),
+        label = "typeCellBackground",
+    )
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                else Color.Transparent
-            )
+            .clip(NirikoShapes.SectionShape)
+            .background(background)
+            // 类型格是「一组里选一个」：读屏需要 selected + 角色，否则只会念出五个互不相干的文字
+            .semantics {
+                this.selected = selected
+                role = Role.Tab
+            }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -742,11 +819,12 @@ private fun IosStyleSearchComponentPreview() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // 预览底色走主题（原先是两个 0x 字面量；预览不需要固定品牌色，V-02 收口时顺手去掉）
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFFE6EEE0),
-                            Color(0xFFC8D5C0),
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            MaterialTheme.colorScheme.surface,
                         )
                     )
                 ),
@@ -785,7 +863,7 @@ private fun IosStyleSearchComponentPreview() {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(12.dp)
-                        .clip(RoundedCornerShape(999.dp))
+                        .clip(NirikoShapes.PillShape)
                         .background(Color.White.copy(alpha = 0.7f))
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 )
@@ -813,8 +891,7 @@ private fun phaseName(phase: SearchPhase): String = when (phase) {
  * @param surfaceAnimating 收起动画进行中仍保留行 2–4，让它们随卡片一起淡出/缩小；
  *   这段时间由透明挡板吃掉点击（[shouldEnableToolRow]）。
  */
-internal fun shouldComposeMenuRows(phase: SearchPhase, surfaceAnimating: Boolean = false): Boolean =
-    phase != SearchPhase.COLLAPSED || surfaceAnimating
+internal fun shouldComposeMenuRows(phase: SearchPhase, surfaceAnimating: Boolean = false): Boolean = phase != SearchPhase.COLLAPSED || surfaceAnimating
 
 /**
  * 工具行（行 2 里的 [tools] 内容）是否可点（B4）。
@@ -822,8 +899,7 @@ internal fun shouldComposeMenuRows(phase: SearchPhase, surfaceAnimating: Boolean
  * 展开 / 收起动画期间卡片正在长缩，行 2 的落点逐帧变化，此刻的点击必须丢弃：
  * 用户按的是"刚点开的按钮"，不该由一颗还在移动的按钮来接收。
  */
-internal fun shouldEnableToolRow(isCollapsed: Boolean, surfaceAnimating: Boolean): Boolean =
-    !isCollapsed && !surfaceAnimating
+internal fun shouldEnableToolRow(isCollapsed: Boolean, surfaceAnimating: Boolean): Boolean = !isCollapsed && !surfaceAnimating
 
 /**
  * 搜索表面展开后内容区的顶部让位（B3）。

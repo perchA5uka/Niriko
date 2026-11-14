@@ -12,12 +12,11 @@ import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.StarHalf
 import androidx.compose.material.icons.outlined.SportsEsports
+import androidx.compose.material.icons.outlined.StarHalf
 import androidx.compose.material.icons.outlined.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.remote.rating.RatingSourceRegistry
 import com.otakup.niriko.data.remote.tmdb.TmdbClient
 import com.otakup.niriko.data.settings.AppSettings
+import com.otakup.niriko.ui.components.NirikoTextField
 import com.otakup.niriko.viewmodel.SettingsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,10 +93,10 @@ fun RatingSourceSettingsGroup(
             onClick = { editTarget = KeyField.TMDB_URLS },
         )
     }
-        // 第 4 轮 C：TMDb 覆盖范围开关。
-        // 改造前 TmdbRatingSource 只声明 ANIME/REAL/OTHER，GAME/BOOK/MUSIC 连候选都渲染不出来
-        // （用户反馈「部分作品没有 TMDb 匹配」）。TMDb 对这三类覆盖确实差，因此**默认关**，
-        // 由用户显式打开（打开后走 TMDb movie 端点）。
+    // 第 4 轮 C：TMDb 覆盖范围开关。
+    // 改造前 TmdbRatingSource 只声明 ANIME/REAL/OTHER，GAME/BOOK/MUSIC 连候选都渲染不出来
+    // （用户反馈「部分作品没有 TMDb 匹配」）。TMDb 对这三类覆盖确实差，因此**默认关**，
+    // 由用户显式打开（打开后走 TMDb movie 端点）。
     rows.add {
         SettingsSwitchRow(
             icon = Icons.Outlined.Category,
@@ -151,7 +151,7 @@ fun RatingSourceSettingsGroup(
             onClick = { editTarget = KeyField.DISCOGS },
         )
     }
-        // ===== 豆瓣剧照（阶段 E：灰色通道，默认关） =====
+    // ===== 豆瓣剧照（阶段 E：灰色通道，默认关） =====
     rows.add {
         SettingsSwitchRow(
             icon = Icons.Outlined.PhotoLibrary,
@@ -285,7 +285,7 @@ private fun KeyEditDialog(
         text = {
             Column {
                 labels.forEachIndexed { index, label ->
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = values.getOrElse(index) { "" },
                         onValueChange = { input ->
                             values = values.toMutableList().also { it[index] = input }
@@ -305,10 +305,14 @@ private fun KeyEditDialog(
                         KeyField.TMDB_URLS ->
                             "TMDb 的 API 与图片是两个域名（api.themoviedb.org / image.tmdb.org），" +
                                 "国内均不可直连。请填写你自建的镜像地址，两个都必须填。"
+
                         KeyField.TMDB_KEY -> "与 TMDb 官网「API Key (v3 auth)」一致，注意不是 Read Access Token。"
+
                         KeyField.OMDB_KEY -> "免费额度 1,000 次/天；内容为 CC BY-NC 4.0，不可用于商业用途。"
+
                         KeyField.DOUBAN_REFERER ->
                             "豆瓣图床有防盗链，图片 Referer 必须与访问页面匹配；接口被拦截时可尝试调整这两个值。"
+
                         else -> "留空即关闭该数据源。"
                     },
                     style = MaterialTheme.typography.labelSmall,
@@ -341,12 +345,14 @@ private suspend fun validateAndSave(
         }
         if (ok) "TMDb API Key 有效，已保存" else "TMDb 校验失败：Key 无效或网络不可达（国区请先配置镜像地址）"
     }
+
     KeyField.TMDB_URLS -> {
         val api = values.getOrElse(0) { "" }.trim()
         val image = values.getOrElse(1) { "" }.trim()
         viewModel.setTmdbUrls(api, image)
         if (api.isEmpty() && image.isEmpty()) "已恢复 TMDb 官方域名" else "已保存 TMDb 镜像地址"
     }
+
     KeyField.OMDB_KEY -> {
         val key = values.getOrElse(0) { "" }.trim()
         viewModel.setOmdbApiKey(key)
@@ -360,22 +366,27 @@ private suspend fun validateAndSave(
         }
         if (ok) "OMDb API Key 有效，已保存" else "OMDb 校验失败：Key 无效或网络不可达"
     }
+
     KeyField.IGDB -> {
         viewModel.setIgdbCredentials(values.getOrElse(0) { "" }, values.getOrElse(1) { "" })
         "已保存 IGDB 凭据"
     }
+
     KeyField.RAWG -> {
         viewModel.setRawgApiKey(values.getOrElse(0) { "" })
         "已保存 RAWG API Key"
     }
+
     KeyField.DISCOGS -> {
         viewModel.setDiscogsToken(values.getOrElse(0) { "" })
         "已保存 Discogs Token"
     }
+
     KeyField.OPENCRITIC -> {
         viewModel.setOpenCriticApiKey(values.getOrElse(0) { "" })
         "已保存 OpenCritic API Key"
     }
+
     KeyField.DOUBAN_REFERER -> {
         viewModel.setDoubanReferers(values.getOrElse(0) { "" }, values.getOrElse(1) { "" })
         "已保存豆瓣 Referer"

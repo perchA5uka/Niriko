@@ -3,28 +3,24 @@ package com.otakup.niriko.ui.library
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.LocalIndication
-import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.Alignment
-import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -33,16 +29,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.otakup.niriko.ui.components.SharedSubjectCover
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
-import com.otakup.niriko.ui.components.cardRarityMaterial
 import com.otakup.niriko.data.model.cardMaterialFromRating
+import com.otakup.niriko.ui.animation.pressTilt
+import com.otakup.niriko.ui.animation.subjectCoverPresentation
 import com.otakup.niriko.ui.components.FavoriteBadge
+import com.otakup.niriko.ui.components.LocalCardGlassLevel
 import com.otakup.niriko.ui.components.RatingBadge
+import com.otakup.niriko.ui.components.SharedSubjectCover
 import com.otakup.niriko.ui.components.StatusBadge
+import com.otakup.niriko.ui.components.cardRarityMaterial
+import com.otakup.niriko.ui.theme.GlassChipTokens
 import com.otakup.niriko.ui.theme.LocalDarkTheme
+import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.NirikoShapes
 import java.time.LocalDate
 
 /**
@@ -73,12 +74,14 @@ fun LibraryGalleryCard(
                 boundsTransform = com.otakup.niriko.ui.animation.NirikoMotionSpecs.subjectCoverPathBounds(androidx.compose.ui.platform.LocalDensity.current.density),
             )
         }
-    } else Modifier
+    } else {
+        Modifier
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(24.dp)) else Modifier)
+            .clip(NirikoShapes.SheetShape)
+            .then(if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, NirikoShapes.SheetShape) else Modifier)
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current, onClick = onClick),
         contentAlignment = Alignment.BottomStart,
     ) {
@@ -89,8 +92,9 @@ fun LibraryGalleryCard(
             contentDescription = subject.displayTitle,
             modifier = Modifier.fillMaxWidth().height(340.dp).then(sharedModifier)
                 .subjectCoverPresentation(animatedVisibilityScope)
-                .pressTilt(interactionSource, lighting = lighting)
-                .cardRarityMaterial(cardMaterialFromRating(collection.rating), RoundedCornerShape(24.dp), lighting),
+                // F-14：画廊视图的主卡（整张卡是详情入口）才给按压触感，与 PosterGridCard 同口径。
+                .pressTilt(interactionSource, lighting = lighting, hapticEnabled = true)
+                .cardRarityMaterial(cardMaterialFromRating(collection.rating), NirikoShapes.SheetShape, lighting),
             contentScale = ContentScale.Crop,
         )
         // 底部渐变（保证标题可读）
@@ -126,11 +130,13 @@ fun LibraryGalleryCard(
                 .fillMaxWidth()
                 .padding(16.dp),
         ) {
+            // V-03：19sp 手写字号收口到排版层级。画廊大卡是整页的主视觉，用 titleLarge(22/w600)
+            // 而不是 titleMedium(16)，避免标题在这张 340dp 高的卡上显得太小。
             Text(
                 text = subject.displayTitle,
+                style = MaterialTheme.typography.titleLarge,
+                // 压在封面图上：只能用固定白色，不能跟随主题（浅色主题文字会是深色）。
                 color = Color.White,
-                fontSize = 19.sp,
-                fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -147,19 +153,27 @@ fun LibraryGalleryCard(
 @Composable
 private fun GalleryDateChip(label: String, date: LocalDate?, modifier: Modifier = Modifier) {
     val isDark = LocalDarkTheme.current
+    val glassEnabled = GlassChipTokens.glassEnabled(LocalGlassEffect.current, LocalCardGlassLevel.current)
+    // V-02 / V-12：压图胶囊底色与描边走 GlassChipTokens，与海报徽标、页面标签同一族材质；
+    // 改造前这里是两组手写色值（0xFF4a4f47 / 0xFF1a1c19），换主题/深色档位不会跟着变。
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (isDark) Color.Black.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.72f))
+            .clip(NirikoShapes.PillShape)
+            .background(GlassChipTokens.onImageBackground(isDark = isDark, glassEnabled = glassEnabled))
             .padding(horizontal = 10.dp, vertical = 5.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, fontSize = 9.sp, color = if (isDark) Color.White.copy(0.7f) else Color(0xFF4a4f47))
+            // V-03：9sp 低于 11sp 可读下限，收口到 labelSmall(11.5sp)。
             Text(
-                date?.let { "${it.year}/${it.monthValue}/${it.dayOfMonth}" } ?: "—",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isDark) Color.White else Color(0xFF1a1c19),
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isDark) Color.White.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = date?.let { "${it.year}/${it.monthValue}/${it.dayOfMonth}" } ?: "—",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface,
             )
         }
     }

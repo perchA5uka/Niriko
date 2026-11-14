@@ -20,7 +20,6 @@ import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.WifiOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.animation.LocalReduceMotion
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.valentinilk.shimmer.ShimmerBounds
 import com.valentinilk.shimmer.rememberShimmer
 import com.valentinilk.shimmer.shimmer
@@ -91,8 +91,7 @@ fun Modifier.skeletonShimmer(): Modifier {
 
 /** 骨架静态底色（M3 surfaceVariant 同族，半透明以适配玻璃卡片背景）。 */
 @Composable
-internal fun skeletonBaseColor(): Color =
-    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+internal fun skeletonBaseColor(): Color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
 
 /**
  * 通用骨架块（B4 新增）。
@@ -105,7 +104,7 @@ internal fun skeletonBaseColor(): Color =
 fun SkeletonBlock(
     width: Dp? = null,
     height: Dp,
-    shape: Shape = RoundedCornerShape(12.dp),
+    shape: Shape = NirikoShapes.ControlShape,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -143,7 +142,10 @@ fun SkeletonList(
 private fun SkeletonCard(
     height: Dp,
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    // V-25：骨架必须与真实列表卡同一个圆角（Card = 20dp）。
+    // 此前这里是 12dp，加载完成的一瞬间圆角会"跳"一下，是加载态拼贴感最强的来源。
+    val cardRadius = NirikoShapes.Card
+    val shape = RoundedCornerShape(cardRadius)
     val lineColor = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         modifier = Modifier
@@ -157,7 +159,7 @@ private fun SkeletonCard(
             modifier = Modifier
                 .width(height * 0.75f)
                 .fillMaxSize()
-                .clip(RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
+                .clip(RoundedCornerShape(topStart = cardRadius, bottomStart = cardRadius))
                 .background(lineColor.copy(alpha = 0.20f))
                 .skeletonShimmer(),
         )
@@ -184,7 +186,7 @@ private fun SkeletonLine(
         modifier = Modifier
             .fillMaxWidth(fraction)
             .height(height)
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(NirikoShapes.RowInner))
             .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
             .skeletonShimmer(),
     )
@@ -217,7 +219,8 @@ fun SkeletonCircle(
 fun SkeletonSubjectCard(
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    // 骨架卡必须用与真实卡相同的 20dp 令牌；此前骨架 12dp、真实卡 20dp，加载完成的瞬间圆角会跳一下。
+    val shape = NirikoShapes.CardShape
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -230,7 +233,7 @@ fun SkeletonSubjectCard(
         SkeletonBlock(
             width = 80.dp,
             height = 80.dp * 4f / 3f,
-            shape = RoundedCornerShape(12.dp),
+            shape = NirikoShapes.ControlShape,
         )
         Column(
             modifier = Modifier
@@ -257,6 +260,7 @@ fun SkeletonSubjectCard(
 fun ErrorContent(
     message: String,
     onRetry: (() -> Unit)? = null,
+    title: String = "加载失败",
     modifier: Modifier = Modifier,
     icon: ImageVector = Icons.Outlined.CloudOff,
 ) {
@@ -272,9 +276,18 @@ fun ErrorContent(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
-                modifier = Modifier.size(56.dp),
+                modifier = Modifier.size(64.dp),
             )
             Spacer(Modifier.height(16.dp))
+            Text(
+                // 错误态原来只有一行正文、没有标题，与空态的「标题 + 说明」结构不对称；
+                // 补一个标题把两种状态拉成同一形态，图标尺寸也一并对齐 64dp。
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(6.dp))
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyLarge,
@@ -283,15 +296,13 @@ fun ErrorContent(
             )
             if (onRetry != null) {
                 Spacer(Modifier.height(20.dp))
-                Button(onClick = onRetry) {
-                    Icon(
-                        imageVector = Icons.Outlined.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text("重试")
-                }
+                // 原来是全站唯一的 M3 实心 Button（绿底白字），与「实心绿只表示已选中」的
+                // 语义冲突；换成胶囊弱底按钮，形状/命中区都回归 Niriko 语言。
+                NirikoPillButton(
+                    text = "重试",
+                    onClick = onRetry,
+                    icon = Icons.Outlined.Refresh,
+                )
             }
         }
     }
@@ -379,7 +390,7 @@ fun SearchEmptyContent(
 ) {
     EmptyContent(
         icon = Icons.Outlined.SearchOff,
-        title = "未找到「${query}」相关作品",
+        title = "未找到「$query」相关作品",
         subtitle = "试试其他关键词或调整筛选条件",
         modifier = modifier,
     )

@@ -3,56 +3,59 @@ package com.otakup.niriko.navigation
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.fillMaxSize
-import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.otakup.niriko.ui.adaptive.NirikoNavSuite
-import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.otakup.niriko.nirikoApp
-import com.otakup.niriko.ui.screens.LibraryScreen
-import com.otakup.niriko.ui.screens.LibraryTopBar
-import com.otakup.niriko.ui.subject.DiscoverTopBar
+import com.otakup.niriko.ui.adaptive.NirikoNavSuite
+import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.orSnap
 import com.otakup.niriko.ui.bottombar.LibraryControlsState
 import com.otakup.niriko.ui.bottombar.PagerTopBar
+import com.otakup.niriko.ui.bottombar.floatingBarRestoreOnBlankTap
 import com.otakup.niriko.ui.bottombar.topBarSlotFor
+import com.otakup.niriko.ui.common.LocalFloatingControls
+import com.otakup.niriko.ui.common.SearchPhase
 import com.otakup.niriko.ui.common.SearchViewModel
 import com.otakup.niriko.ui.components.LocalSearchGlassBackdrop
-import com.otakup.niriko.ui.common.LocalFloatingControls
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import com.otakup.niriko.ui.common.SearchPhase
-import com.otakup.niriko.ui.bottombar.floatingBarRestoreOnBlankTap
+import com.otakup.niriko.ui.screens.LibraryScreen
+import com.otakup.niriko.ui.screens.LibraryTopBar
 import com.otakup.niriko.ui.screens.StatsScreen
 import com.otakup.niriko.ui.settings.SettingsScreen
+import com.otakup.niriko.ui.subject.DiscoverTopBar
 import com.otakup.niriko.ui.subject.SubjectSearchScreen
 import com.otakup.niriko.viewmodel.CollectionViewModel
 import com.otakup.niriko.viewmodel.CollectionViewModelFactory
 import com.otakup.niriko.viewmodel.SubjectSearchViewModel
 import com.otakup.niriko.viewmodel.SubjectSearchViewModelFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 顶层四页 HorizontalPager（对齐 SukiSU-Ultra MainPagerState 架构）。
@@ -146,9 +149,12 @@ fun MainPager(
     // 读取在重组时序上不稳），改为直接由**同一个** FloatingControlsState.shown 驱动本地位移动画；
     // 源仍是同一份状态，只多一个 220ms 的呈现动画（与 MainActivity 的同参数，视觉同步）。
     val floatingControls = LocalFloatingControls.current
+    // 顶栏滚动隐藏不是 1:1 跟手：shown 变化后整条顶栏走 220ms 位移，属「状态切换」。
+    // 底栏（MainActivity）在 reduceMotion 下已硬落位，顶栏不降级就会出现「底栏瞬切、顶栏滑 220ms」。
+    val reduceMotion = LocalReduceMotion.current
     val topBarHideProgress by animateFloatAsState(
         targetValue = if (floatingControls?.shown != false) 0f else 1f,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween<Float>(durationMillis = NirikoMotionSpecs.CHROME_HIDE_DURATION_MS).orSnap(reduceMotion),
         label = "pagerTopBarHide",
     )
     val searchExpanded = librarySearchVm.phase != SearchPhase.COLLAPSED ||
@@ -157,132 +163,135 @@ fun MainPager(
     LaunchedEffect(searchExpanded) { floatingControls?.forceShown(searchExpanded) }
 
     Box(modifier = modifier.fillMaxSize()) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            // Step3：点空白恢复（Final-pass 观察，不消费事件、无全屏透明层）
-            .floatingBarRestoreOnBlankTap { floatingControls?.restore() }
-            .layerBackdrop(pageBackdrop),
-    ) {
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize(),
-        userScrollEnabled = !searchGestureLock.value,
-        // 预组合相邻页（=1）：滑动时目标页已组合好，避免滑动中实时全量组合（更卡）。
-        // 预组合成本已通过 Stats 图表静态化 + crossfade 移除 + Paint 复用降低。
-        beyondViewportPageCount = 1,
-    ) { page ->
-        val destination = TopLevelDestination.entries[page]
-        val context = LocalContext.current
-        val app = context.nirikoApp
-        // 共享元素仅当前可见页生效：非当前页 scope=null → 卡片不加 sharedElement，
-        // 避免 Pager 页间同 key 冲突（闪烁/overlay 残留）
-        val pageSharedScope = if (page == pagerState.currentPage) sharedTransitionScope else null
-        when (destination) {
-            TopLevelDestination.Library -> {
-                LibraryScreen(
-                    windowTopInset = contentTopInset,
-                    viewModel = libraryViewModel,
-                    controls = libraryControls,
-                    searchVm = librarySearchVm,
-                    ambientActive = pagerState.settledPage == page && !pagerState.isScrollInProgress,
-                    onNavigateToSearch = { navController.navigate("subject_search") },
-                    onSubjectClick = openSubject,
-                    onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
-                    sharedTransitionScope = pageSharedScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    // F11：作品库在顶部重选 = 无操作，不在顶部则回顶
-                    tabReselectEventId = tabReselectEventId,
-                    tabReselect = tabReselect,
-                )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                // Step3：点空白恢复（Final-pass 观察，不消费事件、无全屏透明层）
+                .floatingBarRestoreOnBlankTap { floatingControls?.restore() }
+                .layerBackdrop(pageBackdrop),
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = !searchGestureLock.value,
+                // 预组合相邻页（=1）：滑动时目标页已组合好，避免滑动中实时全量组合（更卡）。
+                // 预组合成本已通过 Stats 图表静态化 + crossfade 移除 + Paint 复用降低。
+                beyondViewportPageCount = 1,
+            ) { page ->
+                val destination = TopLevelDestination.entries[page]
+                val context = LocalContext.current
+                val app = context.nirikoApp
+                // 共享元素仅当前可见页生效：非当前页 scope=null → 卡片不加 sharedElement，
+                // 避免 Pager 页间同 key 冲突（闪烁/overlay 残留）
+                val pageSharedScope = if (page == pagerState.currentPage) sharedTransitionScope else null
+                when (destination) {
+                    TopLevelDestination.Library -> {
+                        LibraryScreen(
+                            windowTopInset = contentTopInset,
+                            viewModel = libraryViewModel,
+                            controls = libraryControls,
+                            searchVm = librarySearchVm,
+                            ambientActive = pagerState.settledPage == page && !pagerState.isScrollInProgress,
+                            onNavigateToSearch = { navController.navigate("subject_search") },
+                            onSubjectClick = openSubject,
+                            onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
+                            sharedTransitionScope = pageSharedScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            // F11：作品库在顶部重选 = 无操作，不在顶部则回顶
+                            tabReselectEventId = tabReselectEventId,
+                            tabReselect = tabReselect,
+                        )
+                    }
+
+                    TopLevelDestination.Discover -> {
+                        SubjectSearchScreen(
+                            windowTopInset = contentTopInset,
+                            viewModel = discoverViewModel,
+                            hoistedSearchVm = discoverSearchVm,
+                            showOwnTopBar = false,
+                            onSubjectClick = openSubject,
+                            onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
+                            // 第 6 轮 §5/§6：DiscoverViewModel（找条目 + 评分月刊）已整体删除
+                            sharedTransitionScope = pageSharedScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            // F11：发现页在顶部重选 = 刷新（single-flight 由 ViewModel/协调器保证）
+                            tabReselectEventId = tabReselectEventId,
+                            tabReselect = tabReselect,
+                        )
+                    }
+
+                    TopLevelDestination.Stats -> {
+                        val statsViewModel = viewModel<com.otakup.niriko.viewmodel.StatsViewModel>(
+                            factory = com.otakup.niriko.viewmodel.StatsViewModelFactory(
+                                collectionRepository = app.collectionRepository,
+                                broadcastFetcher = app.broadcastFetcher,
+                                seasonalFetcher = app.seasonalFetcher,
+                                episodeRepository = app.episodeRepository,
+                                refreshCoordinator = app.refreshCoordinator,
+                            ),
+                        )
+                        StatsScreen(
+                            modifier = Modifier.padding(top = contentTopInset),
+                            viewModel = statsViewModel,
+                            onSubjectClick = openSubject,
+                            tabReselectEventId = tabReselectEventId,
+                            tabReselect = tabReselect,
+                            onNavigateToDiscover = {
+                                scope.launch { pagerState.animateScrollToPage(TopLevelDestination.Discover.ordinal) }
+                            },
+                            // 共享元素隔离：仅当前可见页生效（与 Library/Discover 一致，防跨页同 key 闪烁）
+                            sharedTransitionScope = pageSharedScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
+                    }
+
+                    TopLevelDestination.Settings -> {
+                        // 设置主页 = 分类导航；各分类页的 ViewModel 由 NirikoNavHost 二级路由自建
+                        SettingsScreen(
+                            modifier = Modifier.padding(top = contentTopInset),
+                            onNavigateToCategory = { route -> navController.navigate(route) },
+                        )
+                    }
+                }
             }
-            TopLevelDestination.Discover -> {
-                SubjectSearchScreen(
+        }
+        // ===== B8：两页悬浮顶栏挂在 pager 外层（与底栏同级，不随页横向平移）=====
+        // 玻璃源沿用底栏的 barBackdrop（壁纸 + 本页内容层），页面内部的 provider 保持不动。
+        val topBarSlot = topBarSlotFor(pagerState.settledPage)
+        if (topBarSlot != null) {
+            CompositionLocalProvider(LocalSearchGlassBackdrop provides barBackdrop) {
+                PagerTopBar(
+                    slot = topBarSlot,
                     windowTopInset = contentTopInset,
-                    viewModel = discoverViewModel,
-                    hoistedSearchVm = discoverSearchVm,
-                    showOwnTopBar = false,
-                    onSubjectClick = openSubject,
-                    onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
-                    // 第 6 轮 §5/§6：DiscoverViewModel（找条目 + 评分月刊）已整体删除
-                    sharedTransitionScope = pageSharedScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    // F11：发现页在顶部重选 = 刷新（single-flight 由 ViewModel/协调器保证）
-                    tabReselectEventId = tabReselectEventId,
-                    tabReselect = tabReselect,
-                )
-            }
-            TopLevelDestination.Stats -> {
-                val statsViewModel = viewModel<com.otakup.niriko.viewmodel.StatsViewModel>(
-                    factory = com.otakup.niriko.viewmodel.StatsViewModelFactory(
-                        collectionRepository = app.collectionRepository,
-                        broadcastFetcher = app.broadcastFetcher,
-                        seasonalFetcher = app.seasonalFetcher,
-                        episodeRepository = app.episodeRepository,
-                        refreshCoordinator = app.refreshCoordinator,
-                    ),
-                )
-                StatsScreen(
-                    modifier = Modifier.padding(top = contentTopInset),
-                    viewModel = statsViewModel,
-                    onSubjectClick = openSubject,
-                    tabReselectEventId = tabReselectEventId,
-                    tabReselect = tabReselect,
-                    onNavigateToDiscover = {
-                        scope.launch { pagerState.animateScrollToPage(TopLevelDestination.Discover.ordinal) }
+                    hideProgress = topBarHideProgress,
+                    modifier = Modifier.align(Alignment.TopStart),
+                    libraryContent = {
+                        LibraryTopBar(
+                            viewModel = libraryViewModel,
+                            controls = libraryControls,
+                            searchVm = librarySearchVm,
+                        )
                     },
-                    // 共享元素隔离：仅当前可见页生效（与 Library/Discover 一致，防跨页同 key 闪烁）
-                    sharedTransitionScope = pageSharedScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                )
-            }
-            TopLevelDestination.Settings -> {
-                // 设置主页 = 分类导航；各分类页的 ViewModel 由 NirikoNavHost 二级路由自建
-                SettingsScreen(
-                    modifier = Modifier.padding(top = contentTopInset),
-                    onNavigateToCategory = { route -> navController.navigate(route) },
+                    discoverContent = {
+                        DiscoverTopBar(
+                            viewModel = discoverViewModel,
+                            searchVm = discoverSearchVm,
+                        )
+                    },
                 )
             }
         }
-    }
-    }
-    // ===== B8：两页悬浮顶栏挂在 pager 外层（与底栏同级，不随页横向平移）=====
-    // 玻璃源沿用底栏的 barBackdrop（壁纸 + 本页内容层），页面内部的 provider 保持不动。
-    val topBarSlot = topBarSlotFor(pagerState.settledPage)
-    if (topBarSlot != null) {
-        CompositionLocalProvider(LocalSearchGlassBackdrop provides barBackdrop) {
-            PagerTopBar(
-                slot = topBarSlot,
-                windowTopInset = contentTopInset,
-                hideProgress = topBarHideProgress,
-                modifier = Modifier.align(Alignment.TopStart),
-                libraryContent = {
-                    LibraryTopBar(
-                        viewModel = libraryViewModel,
-                        controls = libraryControls,
-                        searchVm = librarySearchVm,
-                    )
-                },
-                discoverContent = {
-                    DiscoverTopBar(
-                        viewModel = discoverViewModel,
-                        searchVm = discoverSearchVm,
-                    )
-                },
+        // 手机 / 中等宽度：横向胶囊底栏挂在 MAIN 路由内容里 —— 预测性返回预览父页时，
+        // 底栏会随父页一起被画出来（挂在窗口层则预览里没有它）。
+        // 宽屏竖向 dock 仍在窗口层（见 MainActivity），二级路由也保留。
+        if (windowLayout != NirikoWindowLayout.EXPANDED) {
+            NirikoNavSuite(
+                layout = windowLayout,
+                pagerState = pagerState,
+                backdrop = barBackdrop,
+                onDestinationSelected = onDestinationSelected,
+                onTabReselected = onTabReselected,
             )
         }
-    }
-    // 手机 / 中等宽度：横向胶囊底栏挂在 MAIN 路由内容里 —— 预测性返回预览父页时，
-    // 底栏会随父页一起被画出来（挂在窗口层则预览里没有它）。
-    // 宽屏竖向 dock 仍在窗口层（见 MainActivity），二级路由也保留。
-    if (windowLayout != NirikoWindowLayout.EXPANDED) {
-        NirikoNavSuite(
-            layout = windowLayout,
-            pagerState = pagerState,
-            backdrop = barBackdrop,
-            onDestinationSelected = onDestinationSelected,
-            onTabReselected = onTabReselected,
-        )
-    }
     }
 }

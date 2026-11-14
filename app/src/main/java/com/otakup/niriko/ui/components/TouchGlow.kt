@@ -1,7 +1,6 @@
 package com.otakup.niriko.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
@@ -17,7 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import kotlinx.coroutines.launch
 
 /**
@@ -29,7 +28,9 @@ fun Modifier.touchGlow(): Modifier {
     val position = remember { mutableStateOf(Offset.Unspecified) }
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    val springSpec = spring<Float>(dampingRatio = 0.5f, stiffness = 300f)
+    // A.8：spring(0.5, 300) 是第 N 套手写手感 → micro()（0.7/700）。白晕是「按压中的东西」，
+    // 与开关 thumb / 滑块圆钮同一档：按下即时起、抬起稍缓收回。
+    val springSpec = NirikoMotionSpecs.micro<Float>()
 
     return this
         .graphicsLayer {

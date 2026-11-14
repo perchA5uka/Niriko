@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -28,10 +29,8 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -51,15 +50,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
 import com.otakup.niriko.nirikoApp
+import com.otakup.niriko.ui.components.NirikoTextField
 import com.otakup.niriko.ui.settings.BilibiliImportSection
 import com.otakup.niriko.ui.settings.KazumiImportSection
+import com.otakup.niriko.ui.settings.RatingSourceSettingsGroup
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsInfoRow
-import com.otakup.niriko.ui.settings.SettingsPickerRow
 import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
+import com.otakup.niriko.ui.settings.SettingsPickerRow
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
-import com.otakup.niriko.ui.settings.RatingSourceSettingsGroup
 import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.SettingsViewModel
 
@@ -101,7 +101,6 @@ fun DataSourceSettingsContent(
     onNavigateToBilibiliSync: () -> Unit = {},
     onNavigateToSteamSync: () -> Unit = {},
 ) {
-
     val settings by viewModel.settings.collectAsState()
     val context = LocalContext.current
 
@@ -289,10 +288,11 @@ fun DataSourceSettingsContent(
             value = if (settings.bangumiSyncPriority == com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority.LOCAL_FIRST) "本地优先" else "Bangumi 优先",
             onClick = {
                 viewModel.setBangumiSyncPriority(
-                    if (settings.bangumiSyncPriority == com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority.LOCAL_FIRST)
+                    if (settings.bangumiSyncPriority == com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority.LOCAL_FIRST) {
                         com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority.BANGUMI_FIRST
-                    else
-                        com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority.LOCAL_FIRST,
+                    } else {
+                        com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority.LOCAL_FIRST
+                    },
                 )
             },
         )
@@ -356,20 +356,22 @@ fun DataSourceSettingsContent(
             onDoubanAntiSpoiler = viewModel::setDoubanAntiSpoiler,
         )
         SettingsGroupTitle("导入")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                KazumiImportSection(
-                    subjectDao = context.nirikoApp.database.subjectDao(),
-                    collectionDao = context.nirikoApp.database.collectionDao(),
-                    snackbarHost = snackbarHostState,
-                )
-            },
-            {
-                BilibiliImportSection(
-                    onNavigateToBilibiliSync = onNavigateToBilibiliSync,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    KazumiImportSection(
+                        subjectDao = context.nirikoApp.database.subjectDao(),
+                        collectionDao = context.nirikoApp.database.collectionDao(),
+                        snackbarHost = snackbarHostState,
+                    )
+                },
+                {
+                    BilibiliImportSection(
+                        onNavigateToBilibiliSync = onNavigateToBilibiliSync,
+                    )
+                },
+            )
+        )
     }
 
     // Steam API Key 配置弹窗（可选：公开接口无需 key，仅未来扩展用）
@@ -386,7 +388,7 @@ fun DataSourceSettingsContent(
                         "可选配置。当前游戏信息（价格/在线人数/开发商等）使用公开接口,无需 Key。\n如需使用更多 Steam Web API,可在 steamcommunity.com/dev/apikey 免费申请后填入。",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = steamApiKeyInput,
                         onValueChange = { steamApiKeyInput = it },
                         label = { Text("API Key（留空清除）") },
@@ -423,14 +425,14 @@ fun DataSourceSettingsContent(
                             "凭据仅保存在本机，不会上传。",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = oauthClientIdInput,
                         onValueChange = { oauthClientIdInput = it },
                         label = { Text("Client ID") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = oauthClientSecretInput,
                         onValueChange = { oauthClientSecretInput = it },
                         label = { Text("Client Secret") },
@@ -439,7 +441,7 @@ fun DataSourceSettingsContent(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = oauthRedirectInput,
                         onValueChange = { oauthRedirectInput = it },
                         label = { Text("Redirect URI") },
@@ -475,7 +477,7 @@ fun DataSourceSettingsContent(
                         "在 bangumi.tv 设置 → 同步管理中创建一个 Access Token 后粘贴到下方。Token 仅保存在本机,请勿泄露。",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = bangumiTokenInput,
                         onValueChange = { bangumiTokenInput = it },
                         label = { Text("Access Token") },

@@ -20,8 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Http
 import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.material.icons.outlined.Http
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PowerOff
 import androidx.compose.material.icons.outlined.Security
@@ -31,7 +31,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +51,10 @@ import com.otakup.niriko.data.probe.ProbeConfig
 import com.otakup.niriko.data.probe.ProbeResult
 import com.otakup.niriko.data.probe.ProbeState
 import com.otakup.niriko.data.settings.AppSettings
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.collapseExit
+import com.otakup.niriko.ui.animation.expandEnter
+import com.otakup.niriko.ui.components.NirikoTextField
 import kotlinx.coroutines.launch
 
 /**
@@ -92,109 +95,113 @@ fun GrayChannelSettingsGroup(
     Column(modifier = modifier.fillMaxWidth()) {
         SettingsGroupTitle("灰色通道")
 
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Security,
-                    title = "启用灰色通道",
-                    description = "非官方 / 未文档化接口（豆瓣剧照等）。默认关闭。",
-                    checked = settings.grayChannelEnabled,
-                    onCheckedChange = onGrayChannelEnabled,
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Http,
-                    title = "请求头（User-Agent / Cookie）",
-                    description = if (settings.probeUserAgent.isBlank() && settings.probeCookie.isBlank()) {
-                        "使用默认值 · 失效时可在此修改，无需等发版"
-                    } else {
-                        "已自定义 UA" + if (settings.probeCookie.isNotBlank()) " + Cookie" else ""
-                    },
-                    onClick = { showHeaderDialog = true },
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.VisibilityOff,
-                    title = "剧照防剧透",
-                    description = "跳过第一页剧照（开播宣传图与早期剧情图），从第二页起取；" +
-                        "取不到时自动回退。默认开启。",
-                    checked = settings.doubanAntiSpoiler,
-                    onCheckedChange = onDoubanAntiSpoiler,
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Link,
-                    title = "豆瓣 Referer",
-                    description = "图片 ${settings.doubanImageReferer} · API ${settings.doubanApiReferer}",
-                    onClick = { showRefererDialog = true },
-                )
-            },
-            {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(
-                            onClick = {
-                                running = true
-                                results = null
-                                scope.launch {
-                                    val config = ProbeConfig(
-                                        userAgent = settings.probeUserAgent,
-                                        cookie = settings.probeCookie,
-                                        doubanImageReferer = settings.doubanImageReferer,
-                                        doubanApiReferer = settings.doubanApiReferer,
-                                        grayChannelEnabled = settings.grayChannelEnabled,
-                                    )
-                                    results = runCatching { GrayChannelRunner.runAll(config) }
-                                        .getOrDefault(emptyList())
-                                    running = false
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Security,
+                        title = "启用灰色通道",
+                        description = "非官方 / 未文档化接口（豆瓣剧照等）。默认关闭。",
+                        checked = settings.grayChannelEnabled,
+                        onCheckedChange = onGrayChannelEnabled,
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Http,
+                        title = "请求头（User-Agent / Cookie）",
+                        description = if (settings.probeUserAgent.isBlank() && settings.probeCookie.isBlank()) {
+                            "使用默认值 · 失效时可在此修改，无需等发版"
+                        } else {
+                            "已自定义 UA" + if (settings.probeCookie.isNotBlank()) " + Cookie" else ""
+                        },
+                        onClick = { showHeaderDialog = true },
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.VisibilityOff,
+                        title = "剧照防剧透",
+                        description = "跳过第一页剧照（开播宣传图与早期剧情图），从第二页起取；" +
+                            "取不到时自动回退。默认开启。",
+                        checked = settings.doubanAntiSpoiler,
+                        onCheckedChange = onDoubanAntiSpoiler,
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Link,
+                        title = "豆瓣 Referer",
+                        description = "图片 ${settings.doubanImageReferer} · API ${settings.doubanApiReferer}",
+                        onClick = { showRefererDialog = true },
+                    )
+                },
+                {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                onClick = {
+                                    running = true
+                                    results = null
+                                    scope.launch {
+                                        val config = ProbeConfig(
+                                            userAgent = settings.probeUserAgent,
+                                            cookie = settings.probeCookie,
+                                            doubanImageReferer = settings.doubanImageReferer,
+                                            doubanApiReferer = settings.doubanApiReferer,
+                                            grayChannelEnabled = settings.grayChannelEnabled,
+                                        )
+                                        results = runCatching { GrayChannelRunner.runAll(config) }
+                                            .getOrDefault(emptyList())
+                                        running = false
+                                    }
+                                },
+                                enabled = !running,
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                if (running) {
+                                    CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("自检中…")
+                                } else {
+                                    Text("运行连通性自检")
                                 }
-                            },
-                            enabled = !running,
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            if (running) {
-                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
-                                Spacer(Modifier.width(8.dp))
-                                Text("自检中…")
-                            } else {
-                                Text("运行连通性自检")
                             }
                         }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "依次请求每个端点，原样显示 HTTP 状态码与响应前 400 字节。" +
+                                "看不懂没关系——把结果发给我即可定位问题。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "⚠ 豆瓣没有授权第三方抓取。该通道仅供个人查看；若将来分发建议移除。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
                     }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "依次请求每个端点，原样显示 HTTP 状态码与响应前 400 字节。" +
-                            "看不懂没关系——把结果发给我即可定位问题。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        "⚠ 豆瓣没有授权第三方抓取。该通道仅供个人查看；若将来分发建议移除。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
-            },
-        ))
+                },
+            )
+        )
 
         results?.let { list ->
             Spacer(Modifier.height(8.dp))
             SettingsGroupTitle("自检结果（${list.count { it.state == ProbeState.OK }}/${list.size} 可用）")
-            SettingsSplitGroup(content = listOf {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    list.forEachIndexed { index, result ->
-                        ProbeResultRow(
-                            result = result,
-                            expanded = expandedResult == index,
-                            onToggle = { expandedResult = if (expandedResult == index) null else index },
-                        )
+            SettingsSplitGroup(
+                content = listOf {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        list.forEachIndexed { index, result ->
+                            ProbeResultRow(
+                                result = result,
+                                expanded = expandedResult == index,
+                                onToggle = { expandedResult = if (expandedResult == index) null else index },
+                            )
+                        }
                     }
                 }
-            })
+            )
         }
     }
 
@@ -211,13 +218,13 @@ fun GrayChannelSettingsGroup(
                             "在这里改成它当前接受的 UA / Cookie 即可，不必等发版。",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = ua,
                         onValueChange = { ua = it },
                         label = { Text("User-Agent（留空 = 默认）") },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = cookie,
                         onValueChange = { cookie = it },
                         label = { Text("Cookie（留空 = 不带）") },
@@ -248,13 +255,13 @@ fun GrayChannelSettingsGroup(
                             "带 path 的 movie.douban.com/ 反而会被图床拒。",
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = imageReferer,
                         onValueChange = { imageReferer = it },
                         label = { Text("图片 Referer") },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = apiReferer,
                         onValueChange = { apiReferer = it },
                         label = { Text("API Referer 前缀") },
@@ -327,7 +334,11 @@ private fun ProbeResultRow(
             }
             Text(if (expanded) "收起" else "响应", style = MaterialTheme.typography.labelSmall, color = color)
         }
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandEnter(LocalReduceMotion.current),
+            exit = collapseExit(LocalReduceMotion.current),
+        ) {
             Column {
                 Text(
                     result.url,

@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.otakup.niriko.data.model.stats.TonightItem
@@ -32,6 +31,7 @@ import com.otakup.niriko.data.model.stats.TonightReason
 import com.otakup.niriko.data.model.stats.UpcomingDay
 import com.otakup.niriko.data.onair.AirTime
 import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.theme.NirikoShapes
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
@@ -56,10 +56,10 @@ fun TonightSection(
     Box(modifier = modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.medium)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                // 字重交回 token（titleMedium = w600）：调用点叠 Bold 等于在 token 外又写一档。
                 Text(
                     text = "今晚看什么",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -138,6 +138,7 @@ private fun subtitle(item: TonightItem, today: LocalDate): String {
             append("落后 " + item.behind + " 集（已播 " + approx + item.aired + " / 已看 " + item.watched + "）")
             if (time != null) append(" · " + time + " 放送")
         }
+
         TonightReason.AIRING_TODAY -> buildString {
             append(item.episodeNumber?.let { "第 " + approx + it + " 集" } ?: "今日更新")
             if (time != null) append(" · " + time + " 放送")
@@ -165,7 +166,6 @@ fun UpcomingWeekStrip(
                 Text(
                     text = "接下来七天",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -201,23 +201,31 @@ private fun UpcomingColumn(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f)
+                if (isToday) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f)
+                }
             )
             .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        // V-03：这三行原先各写 10 / 9 / 11sp 字面量，绕过 NirikoTypography 且低于正文下限。
+        // 统一走 labelSmall(11.5sp) 的「注释档」——列宽 7 等分（320dp 屏约 35dp/列）下
+        // "10/31" 仍能单行放下；再小就只剩"能塞进去"而读不清。
         Text(
             text = label,
-            fontSize = 10.sp,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
             color = labelColor,
+            maxLines = 1,
         )
         Text(
             text = day.date.format(dayDateFormatter),
-            fontSize = 9.sp,
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
         if (day.firstCoverUrl != null) {
             AsyncImage(
@@ -226,20 +234,20 @@ private fun UpcomingColumn(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(26.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(NirikoShapes.RowInnerShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             )
         } else {
             Box(
                 modifier = Modifier
                     .size(26.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(NirikoShapes.RowInnerShape)
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)),
             )
         }
         Text(
             text = if (day.count > 0) day.count.toString() else "—",
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             color = if (day.count > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -1,5 +1,6 @@
 package com.otakup.niriko.ui.subject
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,10 +24,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,7 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import com.otakup.niriko.util.EpisodeWavePolicy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,7 +50,16 @@ import com.otakup.niriko.data.local.entity.EpisodeRatingEntity
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.remote.rating.ExternalRating
 import com.otakup.niriko.data.repository.EpisodeRatingRepository
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.orSnap
 import com.otakup.niriko.ui.components.GlassSectionCard
+import com.otakup.niriko.ui.components.NirikoActionPill
+import com.otakup.niriko.ui.components.NirikoFilterPill
+import com.otakup.niriko.ui.components.NirikoSelectionPill
+import com.otakup.niriko.ui.components.SectionHeader
+import com.otakup.niriko.ui.theme.NirikoShapes
+import com.otakup.niriko.util.EpisodeWavePolicy
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 /**
@@ -111,34 +120,41 @@ fun EpisodeRatingSection(
             RatingSourceChoice.MINE -> mainEpisodes.mapNotNull { ep ->
                 myRatings[ep.id]?.let { score ->
                     EpisodeRatingAnalyzer.RatingPoint(
-                        epId = ep.id, ep = ep.ep, label = ep.nameCn ?: ep.name,
-                        score = score, votes = null, sourceId = MINE_SOURCE,
+                        epId = ep.id,
+                        ep = ep.ep,
+                        label = ep.nameCn ?: ep.name,
+                        score = score,
+                        votes = null,
+                        sourceId = MINE_SOURCE,
                     )
                 }
             }
+
             else -> mainEpisodes.mapNotNull { ep ->
                 val r = ratings[ep.id]?.get(sourceId) ?: return@mapNotNull null
                 val score = r.score ?: return@mapNotNull null
                 EpisodeRatingAnalyzer.RatingPoint(
-                    epId = ep.id, ep = ep.ep, label = ep.nameCn ?: ep.name,
-                    score = score, votes = r.voteCount, sourceId = sourceId,
+                    epId = ep.id,
+                    ep = ep.ep,
+                    label = ep.nameCn ?: ep.name,
+                    score = score,
+                    votes = r.voteCount,
+                    sourceId = sourceId,
                 )
             }
         }
     }
     val points = remember(rawPoints, minVotesFilter) {
-        if (minVotesFilter <= 0) rawPoints
-        else EpisodeRatingAnalyzer.filterLowVotes(rawPoints, minVotesFilter).first
+        if (minVotesFilter <= 0) {
+            rawPoints
+        } else {
+            EpisodeRatingAnalyzer.filterLowVotes(rawPoints, minVotesFilter).first
+        }
     }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        Text(
-            "剧集",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        Spacer(Modifier.height(8.dp))
+        // V-15：分区标题统一走 SectionHeader。
+        SectionHeader(title = "剧集", modifier = Modifier.padding(horizontal = 16.dp))
 
         GlassSectionCard(
             backdrop = glassBackdrop,
@@ -150,10 +166,10 @@ fun EpisodeRatingSection(
                 if (points.size >= 2) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         RatingSourceChoice.entries.forEach { choice ->
-                            FilterChip(
+                            NirikoSelectionPill(
+                                text = choice.label,
                                 selected = source == choice,
                                 onClick = { source = choice },
-                                label = { Text(choice.label, style = MaterialTheme.typography.labelSmall) },
                             )
                         }
                     }
@@ -167,21 +183,16 @@ fun EpisodeRatingSection(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        FilterChip(
+                        NirikoFilterPill(
+                            text = "移动平均",
                             selected = showMovingAverage,
                             onClick = { showMovingAverage = !showMovingAverage },
-                            label = { Text("移动平均", style = MaterialTheme.typography.labelSmall) },
                         )
                         listOf(0, 10, 50).forEach { threshold ->
-                            FilterChip(
+                            NirikoSelectionPill(
+                                text = if (threshold == 0) "全部票数" else "≥$threshold 票",
                                 selected = minVotesFilter == threshold,
                                 onClick = { minVotesFilter = threshold },
-                                label = {
-                                    Text(
-                                        if (threshold == 0) "全部票数" else "≥$threshold 票",
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                },
                             )
                         }
                     }
@@ -211,19 +222,10 @@ fun EpisodeRatingSection(
                 }
                 if (hasTmdbBinding && imdbAvailable) {
                     Spacer(Modifier.height(8.dp))
-                    AssistChip(
+                    NirikoActionPill(
+                        text = if (imdbLoading) "正在加载 IMDb 评分…" else "加载 IMDb 逐集评分",
                         onClick = { if (!imdbLoading) onLoadImdb() },
-                        label = {
-                            Text(
-                                if (imdbLoading) "正在加载 IMDb 评分…" else "加载 IMDb 逐集评分",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
-                        leadingIcon = {
-                            if (imdbLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, gapSize = 0.dp)
-                            } else null
-                        },
+                        enabled = !imdbLoading,
                     )
                 }
 
@@ -360,10 +362,18 @@ private fun EpisodeRow(
     onOpenStill: () -> Unit,
 ) {
     val waveColor = MaterialTheme.colorScheme.primary
+    // S03：可展开行此前没有任何「能展开」的视觉线索（chevron 只在展开内容里）。
+    // 行尾常驻一个 18dp 箭头，展开时旋转 180°；reduceMotion 下直接落位。
+    val reduceMotion = LocalReduceMotion.current
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = with(NirikoMotionSpecs) { spatialDefault<Float>().orSnap(reduceMotion) },
+        label = "episodeRowChevron",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(NirikoShapes.ControlShape)
             .clickable { onToggleExpand() }
             .padding(vertical = 6.dp, horizontal = 4.dp),
     ) {
@@ -378,8 +388,11 @@ private fun EpisodeRow(
                         if (waveAlpha > 0f) drawRect(waveColor.copy(alpha = waveAlpha * 0.42f))
                     }
                     .background(
-                        if (isWatched) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        if (isWatched) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        }
                     ),
                 contentAlignment = Alignment.Center,
             ) {
@@ -402,6 +415,8 @@ private fun EpisodeRow(
                     ep.duration?.takeIf { it.isNotBlank() }?.let { add(it) }
                     if (ep.comment > 0) add("${ep.comment} 讨论")
                 }.joinToString(" · ")
+                // S02：meta 不再与右侧徽标抢同一行 —— 徽标最多 3 个，窄屏上会把 meta 挤成
+                // 「2…」，用户看不出这一集多长/何时播出。徽标改到 meta 下面单独一行。
                 if (meta.isNotBlank()) {
                     Text(
                         text = meta,
@@ -411,10 +426,28 @@ private fun EpisodeRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                val badges = listOfNotNull(
+                    tmdb?.score?.let { "TMDb" to it },
+                    imdb?.score?.let { "IMDb" to it },
+                    myRating?.let { "我的" to it },
+                )
+                if (badges.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                        badges.forEachIndexed { badgeIndex, (label, score) ->
+                            if (badgeIndex > 0) Spacer(Modifier.width(4.dp))
+                            RatingBadge(label, score, highlight = label == "我的")
+                        }
+                    }
+                }
             }
-            tmdb?.score?.let { RatingBadge("TMDb", it) }
-            imdb?.score?.let { Spacer(Modifier.width(4.dp)); RatingBadge("IMDb", it) }
-            myRating?.let { Spacer(Modifier.width(4.dp)); RatingBadge("我的", it, highlight = true) }
+            Icon(
+                imageVector = Icons.Filled.ExpandMore,
+                contentDescription = if (expanded) "收起该集详情" else "展开该集详情",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(18.dp)
+                    .graphicsLayer { rotationZ = chevronRotation },
+            )
         }
 
         if (expanded) {
@@ -445,23 +478,17 @@ private fun EpisodeRow(
                         Spacer(Modifier.height(6.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AssistChip(
+                        NirikoActionPill(
+                            text = "看到这里",
                             onClick = onMarkWatched,
-                            label = { Text("看到这里", style = MaterialTheme.typography.labelSmall) },
-                            leadingIcon = {
-                                if (isWatched) {
-                                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-                                } else {
-                                    Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                                }
-                            },
+                            icon = if (isWatched) Icons.Filled.Check else Icons.Filled.PlayArrow,
                         )
                         Spacer(Modifier.width(8.dp))
                         // 修复 BUG-13：原来这里的「标记 8 分」是写死的假评分输入。
                         // 真正的评分/评价现在在单集二级页里。
-                        AssistChip(
+                        NirikoActionPill(
+                            text = "单集详情 ›",
                             onClick = onOpenDetail,
-                            label = { Text("单集详情 ›", style = MaterialTheme.typography.labelSmall) },
                         )
                     }
                 }
@@ -477,8 +504,11 @@ private fun RatingBadge(label: String, score: Float, highlight: Boolean = false)
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .background(
-                if (highlight) MaterialTheme.colorScheme.primaryContainer
-                else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                if (highlight) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                }
             )
             .padding(horizontal = 6.dp, vertical = 3.dp),
     ) {
@@ -506,26 +536,26 @@ fun ThumbsSection(
 ) {
     if (items.isEmpty()) return
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "剧照 / 截图",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                "全部 ${items.size} 张",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable {
-                    onOpen(items.map { it.url }, 0)
-                },
-            )
-        }
-        Spacer(Modifier.height(8.dp))
+        // V-15：分区标题统一 SectionHeader；S04：「全部 N 张」放 trailing，命中区由
+        // SectionHeader 行内高度 + 外层 48dp 触控壳承担（原实现是一段 13sp 文字，点不中）。
+        SectionHeader(
+            title = "剧照 / 截图",
+            modifier = Modifier.padding(horizontal = 16.dp),
+            trailing = {
+                Box(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clickable { onOpen(items.map { it.url }, 0) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "全部 ${items.size} 张",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            },
+        )
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -535,7 +565,7 @@ fun ThumbsSection(
                     modifier = Modifier
                         .width(220.dp)
                         .aspectRatio(16f / 9f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(NirikoShapes.ControlShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .clickable { onOpen(items.map { it.url }, index) },
                 ) {
@@ -596,12 +626,16 @@ private fun episodeRatingEmptyHint(
 ): String = when {
     !hasTmdbBinding ->
         "尚未绑定 TMDb 条目，无法获取每集评分。绑定后这里会显示整季评分走势曲线。"
+
     loadState == null ->
         "正在获取 TMDb 每集评分…"
+
     loadState.state == EpisodeRatingRepository.TmdbEpisodeLoad.State.FAILED ->
         "TMDb 请求失败或被限流，稍后重试即可。"
+
     loadState.state == EpisodeRatingRepository.TmdbEpisodeLoad.State.UNAVAILABLE ->
         "未配置 TMDb API Key（设置 → 权威数据源）。"
+
     else ->
         "TMDb 该季暂无逐集评分（冷门番常见）。"
 }

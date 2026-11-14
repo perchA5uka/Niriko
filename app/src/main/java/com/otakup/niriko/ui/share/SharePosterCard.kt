@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * AniShelf 分享卡（安利海报风格）：全封面 + 底部黑渐变 + 底部左对齐标题/胶囊。
@@ -53,7 +54,7 @@ fun SharePosterCard(
             Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF3A3A3A), Color(0xFF101410)))))
         }
         // 底部黑渐变
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.1f), Color.Black.copy(0.65f), Color.Black.copy(0.85f)))));
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.1f), Color.Black.copy(0.65f), Color.Black.copy(0.85f)))))
         // 底部左对齐内容
         Column(
             modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(28.dp),
@@ -71,7 +72,7 @@ fun SharePosterCard(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White.copy(0.85f),
-                    modifier = Modifier.background(Color.White.copy(0.12f), RoundedCornerShape(999.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.background(Color.White.copy(0.12f), NirikoShapes.PillShape).padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
             Spacer(Modifier.height(10.dp))
@@ -82,7 +83,7 @@ fun SharePosterCard(
                 color = Color.White,
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.shadow(8.dp, RoundedCornerShape(4.dp)),
+                modifier = Modifier.shadow(8.dp, NirikoShapes.RowInnerShape),
             )
             if (!data.secondaryTitle.isNullOrBlank()) {
                 Text(data.secondaryTitle, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(0.85f), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
@@ -92,7 +93,7 @@ fun SharePosterCard(
                 Spacer(Modifier.height(12.dp))
                 Row {
                     data.tags.take(4).forEach { tag ->
-                        Text("#" + tag, fontSize = 12.sp, color = Color.White.copy(0.9f), modifier = Modifier.background(Color.White.copy(0.15f), RoundedCornerShape(999.dp)).padding(horizontal = 8.dp, vertical = 3.dp).padding(end = 6.dp))
+                        Text("#" + tag, fontSize = 12.sp, color = Color.White.copy(0.9f), modifier = Modifier.background(Color.White.copy(0.15f), NirikoShapes.PillShape).padding(horizontal = 8.dp, vertical = 3.dp).padding(end = 6.dp))
                     }
                 }
             }

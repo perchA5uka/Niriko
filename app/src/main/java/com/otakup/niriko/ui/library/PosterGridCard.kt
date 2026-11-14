@@ -3,11 +3,13 @@ package com.otakup.niriko.ui.library
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
@@ -19,10 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.LocalIndication
-import com.otakup.niriko.ui.animation.pressTilt
-import com.otakup.niriko.ui.animation.rememberReturnGlowModifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,14 +29,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
-import com.otakup.niriko.ui.components.cardRarityMaterial
 import com.otakup.niriko.data.model.cardMaterialFromRating
+import com.otakup.niriko.ui.animation.pressTilt
+import com.otakup.niriko.ui.animation.rememberReturnGlowModifier
 import com.otakup.niriko.ui.components.CoverImage
 import com.otakup.niriko.ui.components.FavoriteBadge
 import com.otakup.niriko.ui.components.RatingBadge
 import com.otakup.niriko.ui.components.StatusBadge
+import com.otakup.niriko.ui.components.cardRarityMaterial
 import com.otakup.niriko.ui.components.skeletonBaseColor
 import com.otakup.niriko.ui.components.skeletonShimmer
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 收藏页 · 海报网格卡片（AniShelf 借鉴）。
@@ -75,7 +76,9 @@ fun PosterGridCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .pressTilt(interactionSource, lighting = lighting)
+                // F-14：作品库主卡（整张卡就是详情入口）才开 pressTilt 触感；列表内小卡不开，
+                // 否则快速滚动时每滑过一张都响一次。
+                .pressTilt(interactionSource, lighting = lighting, hapticEnabled = true)
                 .clip(RoundedCornerShape(PosterCardMetrics.CornerRadius))
                 .then(
                     if (selected) {
@@ -113,20 +116,20 @@ fun PosterGridCard(
             StatusBadge(
                 status = collection.status,
                 subjectType = subject.type,
-                shape = RoundedCornerShape(16.dp),
+                shape = NirikoShapes.SectionShape,
                 modifier = Modifier.align(Alignment.TopStart).padding(7.dp),
             )
             // 右上收藏心
             FavoriteBadge(
                 filled = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = NirikoShapes.SectionShape,
                 modifier = Modifier.align(Alignment.TopEnd).padding(7.dp),
             )
             // 左下评分（略微上移避开进度条）
             if (collection.rating != null) {
                 RatingBadge(
                     rating = collection.rating,
-                    shape = RoundedCornerShape(16.dp),
+                    shape = NirikoShapes.SectionShape,
                     modifier = Modifier.align(Alignment.BottomStart).padding(7.dp).padding(bottom = 12.dp),
                 )
             }
@@ -137,7 +140,7 @@ fun PosterGridCard(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 6.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(NirikoShapes.SectionShape)
                         .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
                 ) {
                     Box(
@@ -222,7 +225,7 @@ fun PosterGridSkeletonCard(
                 modifier = Modifier
                     .fillMaxWidth(0.65f)
                     .height(12.dp)
-                    .clip(RoundedCornerShape(4.dp))
+                    .clip(NirikoShapes.RowInnerShape)
                     .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.22f))
                     .skeletonShimmer(),
             )

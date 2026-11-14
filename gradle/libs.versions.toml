@@ -43,6 +43,11 @@ robolectric = "4.17"
 # kotlin-stdlib 2.1.21、androidx.compose.runtime 1.8.0 —— 均低于本工程版本，不产生顶版。
 telephoto = "0.19.0"
 
+# ── 静态格式门禁（环境体检 2026-10）──
+# Spotless 管「改动过的文件」的格式；ktlint 规则集版本由 Spotless 内置依赖决定，
+# 不单独钉 ktlint 坐标，避免与 Kotlin 语言版本互相顶版。
+spotless = "8.10.4"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
@@ -120,3 +125,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

@@ -30,6 +30,7 @@ import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsInfoRow
 import com.otakup.niriko.ui.settings.SettingsSplitGroup
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 「向开发者捐赠」二级页外壳（窄屏：脚手架 + 返回箭头）。
@@ -57,22 +58,24 @@ fun DonateSettingsScreen(
 fun DonateSettingsContent() {
     Column {
         SettingsGroupTitle("向开发者捐赠", description = "帮助我继续更新")
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsInfoRow(
-                    icon = Icons.Outlined.VolunteerActivism,
-                    title = "完全自愿",
-                    description = "Niriko 是个人业余项目，所有功能对所有人开放；捐赠不解锁任何内容，也不影响任何功能。",
-                )
-            },
-            {
-                SettingsInfoRow(
-                    icon = Icons.Outlined.Coffee,
-                    title = "怎么支持",
-                    description = "用另一台设备扫下面的收款码即可，金额随意。反馈、Bug 报告和 star 同样是支持。",
-                )
-            },
-        ))
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsInfoRow(
+                        icon = Icons.Outlined.VolunteerActivism,
+                        title = "完全自愿",
+                        description = "Niriko 是个人业余项目，所有功能对所有人开放；捐赠不解锁任何内容，也不影响任何功能。",
+                    )
+                },
+                {
+                    SettingsInfoRow(
+                        icon = Icons.Outlined.Coffee,
+                        title = "怎么支持",
+                        description = "用另一台设备扫下面的收款码即可，金额随意。反馈、Bug 报告和 star 同样是支持。",
+                    )
+                },
+            )
+        )
 
         SettingsGroupTitle("支付宝")
         DonateQrImage(
@@ -114,7 +117,7 @@ private fun DonateQrImage(
     aspectRatio: Float,
     contentDescription: String,
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val shape = NirikoShapes.CardShape
     Box(
         modifier = Modifier
             .fillMaxWidth()

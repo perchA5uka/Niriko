@@ -3,14 +3,12 @@ package com.otakup.niriko.ui.person
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -27,10 +25,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,7 +46,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.otakup.niriko.ui.animation.pressTilt
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -58,11 +55,16 @@ import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.remote.PersonDetailInfo
 import com.otakup.niriko.data.remote.PersonSubjectInfo
+import com.otakup.niriko.ui.animation.pressTilt
 import com.otakup.niriko.ui.common.CreditSubjectCard
 import com.otakup.niriko.ui.components.ErrorContent
 import com.otakup.niriko.ui.components.LoadingContent
+import com.otakup.niriko.ui.components.NirikoTagPill
 import com.otakup.niriko.ui.components.RichText
+import com.otakup.niriko.ui.components.SectionHeader
+import com.otakup.niriko.ui.components.StateHost
 import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.PersonDetailViewModel
 
 /** 人物（声优/导演等）详情页。 */
@@ -88,7 +90,8 @@ fun PersonDetailScreen(
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-                Text("人物详情", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                // V-16：drill-in 页标题统一 headlineSmall(24/w600)，与设置二级页同档。
+                Text("人物详情", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
                 // 收藏按钮（需 Bangumi token）
                 if (state.detail != null) {
                     OutlinedButton(
@@ -96,27 +99,48 @@ fun PersonDetailScreen(
                         enabled = !state.isCollecting,
                         modifier = Modifier.padding(end = 8.dp),
                     ) {
-                        Text(if (state.isCollecting) "收藏中…" else if (state.isCollected) "已收藏" else "收藏")
+                        Text(
+                            if (state.isCollecting) {
+                                "收藏中…"
+                            } else if (state.isCollected) {
+                                "已收藏"
+                            } else {
+                                "收藏"
+                            }
+                        )
                     }
                 }
             }
-            when {
-                state.isLoading -> LoadingContent()
-                state.error != null -> ErrorContent(message = state.error ?: "", onRetry = viewModel::retry)
-                state.detail != null -> {
-                    val detail = state.detail!!
-                    PersonDetailBody(
-                        detail = detail,
-                        subjects = state.subjects,
-                        characters = state.characters,
-                        jobStats = state.jobStats,
-                        onSubjectClick = onSubjectClick,
-                        onCharacterClick = onCharacterClick,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                    )
+            // B-13：加载 / 错误 / 正文三态换页走 StateHost 的 alpha 包络。
+            // 不用 AnimatedContent：正文里含 LazyRow，过渡期双组合会踩 02 文档的双 Lazy 红线。
+            val detailPhaseKey = when {
+                state.isLoading -> "loading"
+                state.error != null -> "error"
+                state.detail != null -> "ready"
+                else -> "error"
+            }
+            StateHost(stateKey = detailPhaseKey) {
+                when {
+                    state.isLoading -> LoadingContent()
+
+                    state.error != null -> ErrorContent(message = state.error ?: "", onRetry = viewModel::retry)
+
+                    state.detail != null -> {
+                        val detail = state.detail!!
+                        PersonDetailBody(
+                            detail = detail,
+                            subjects = state.subjects,
+                            characters = state.characters,
+                            jobStats = state.jobStats,
+                            onSubjectClick = onSubjectClick,
+                            onCharacterClick = onCharacterClick,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                        )
+                    }
+
+                    else -> ErrorContent(message = "无法加载人物信息", onRetry = viewModel::retry)
                 }
-                else -> ErrorContent(message = "无法加载人物信息", onRetry = viewModel::retry)
             }
         }
     }
@@ -166,8 +190,10 @@ private fun PersonDetailBody(
         // 职业标签
         if (detail.career.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 职业是纯信息（点不动），用信息胶囊而不是 M3 FilterChip：
+                // FilterChip 即使 onClick 为空也有可点外观，用户会去试。
                 detail.career.forEach { career ->
-                    FilterChip(selected = false, onClick = {}, label = { Text(careerLabel(career), style = MaterialTheme.typography.labelSmall) })
+                    NirikoTagPill(text = careerLabel(career))
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -181,8 +207,8 @@ private fun PersonDetailBody(
             detail.infoBox.forEach { add(it.key to it.value) }
         }
         if (basicRows.isNotEmpty()) {
-            Text("基本信息", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
+            // V-15：分区标题统一走 SectionHeader（上下 12dp 呼吸由组件统一负责）。
+            SectionHeader(title = "基本信息")
             basicRows.forEach { (label, value) ->
                 Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Text(
@@ -199,23 +225,14 @@ private fun PersonDetailBody(
 
         // ===== 职位统计（本地聚合，零额外请求） =====
         if (jobStats.isNotEmpty()) {
-            Text("参与职位", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
+            SectionHeader(title = "参与职位")
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                // 同上：职位统计只读，给信息胶囊。
                 jobStats.take(14).forEach { stat ->
-                    FilterChip(
-                        selected = false,
-                        onClick = {},
-                        label = {
-                            Text(
-                                "${stat.job} ${stat.count}",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
-                    )
+                    NirikoTagPill(text = "${stat.job} ${stat.count}")
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -243,8 +260,7 @@ private fun PersonDetailBody(
         // 简介（可折叠）
         if (!detail.summary.isNullOrBlank()) {
             var summaryExpanded by remember { mutableStateOf(false) }
-            Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
+            SectionHeader(title = "简介")
             RichText(
                 text = detail.summary,
                 style = MaterialTheme.typography.bodyMedium,
@@ -268,8 +284,7 @@ private fun PersonDetailBody(
 
         // 参与作品（按类型分组，每组横向滑动）
         if (subjects.isNotEmpty()) {
-            Text("参与作品", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
+            SectionHeader(title = "参与作品")
             // 按 type 分组，组顺序固定：动画→书籍→音乐→游戏→三次元→其他
             val typeOrder = listOf(2, 1, 3, 4, 6)
             val grouped = subjects.groupBy { it.type }
@@ -317,8 +332,7 @@ private fun PersonDetailBody(
 
         // 声优：演绎角色（横向滑动，去重避免 LazyRow 重复 key 崩溃）
         if (characters.isNotEmpty()) {
-            Text("配音角色", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
+            SectionHeader(title = "配音角色")
             val distinctCharacters = characters.distinctBy { it.id }
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -343,7 +357,7 @@ private fun CharacterCard(
         modifier = modifier
             .width(100.dp)
             .pressTilt(interactionSource)
-            .appleGlassCard(shape = RoundedCornerShape(20.dp))
+            .appleGlassCard(shape = NirikoShapes.CardShape)
             .clickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,

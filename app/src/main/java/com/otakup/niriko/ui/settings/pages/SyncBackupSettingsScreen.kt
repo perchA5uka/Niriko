@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Autorenew
 import androidx.compose.material.icons.outlined.Cloud
@@ -20,10 +21,8 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -41,11 +40,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.refresh.RefreshKeys
+import com.otakup.niriko.ui.components.NirikoTextField
 import com.otakup.niriko.ui.settings.SettingsActionRow
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
-import com.otakup.niriko.ui.settings.SettingsPickerRow
 import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
+import com.otakup.niriko.ui.settings.SettingsPickerRow
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.BackupViewModel
@@ -59,7 +59,7 @@ private fun formatAgo(at: Long, now: Long): String {
     val minutes = ((now - at).coerceAtLeast(0L)) / 60_000
     return when {
         minutes < 1 -> "刚刚"
-        minutes < 60 -> "${minutes} 分钟前"
+        minutes < 60 -> "$minutes 分钟前"
         minutes < 24 * 60 -> "${minutes / 60} 小时前"
         else -> "${minutes / (24 * 60)} 天前"
     }
@@ -70,7 +70,7 @@ private fun formatUntil(at: Long, now: Long): String {
     val minutes = ((at - now).coerceAtLeast(0L) + 59_999) / 60_000
     return when {
         minutes < 1 -> "马上"
-        minutes < 60 -> "${minutes} 分钟后"
+        minutes < 60 -> "$minutes 分钟后"
         else -> "${minutes / 60} 小时后"
     }
 }
@@ -207,26 +207,28 @@ fun SyncBackupSettingsContent(
     Column {
         // ===== WebDAV =====
         SettingsGroupTitle("WebDAV 同步")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsPickerRow(
-                    icon = Icons.Outlined.Cloud,
-                    title = "服务器地址",
-                    description = "WebDAV 服务端 URL 与账号",
-                    value = if (settings.webDavUrl.isEmpty()) "未配置" else settings.webDavUrl,
-                    onClick = { showWebDavConfig = true },
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Autorenew,
-                    title = "自动同步",
-                    description = autoSyncSummary,
-                    checked = settings.webDavAutoSync,
-                    onCheckedChange = viewModel::setWebDavAutoSync,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsPickerRow(
+                        icon = Icons.Outlined.Cloud,
+                        title = "服务器地址",
+                        description = "WebDAV 服务端 URL 与账号",
+                        value = if (settings.webDavUrl.isEmpty()) "未配置" else settings.webDavUrl,
+                        onClick = { showWebDavConfig = true },
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Autorenew,
+                        title = "自动同步",
+                        description = autoSyncSummary,
+                        checked = settings.webDavAutoSync,
+                        onCheckedChange = viewModel::setWebDavAutoSync,
+                    )
+                },
+            )
+        )
         if (settings.webDavUrl.isNotEmpty()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)) {
                 OutlinedButton(
@@ -234,8 +236,11 @@ fun SyncBackupSettingsContent(
                     modifier = Modifier.weight(1f),
                     enabled = !isSyncing,
                 ) {
-                    if (isSyncing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
-                    else Text("上传")
+                    if (isSyncing) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
+                    } else {
+                        Text("上传")
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(
@@ -243,8 +248,11 @@ fun SyncBackupSettingsContent(
                     modifier = Modifier.weight(1f),
                     enabled = !isSyncing,
                 ) {
-                    if (isSyncing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
-                    else Text("下载")
+                    if (isSyncing) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, gapSize = 0.dp)
+                    } else {
+                        Text("下载")
+                    }
                 }
             }
             // F09 的同步边界（§10.2 第 6 条）：分区**不随 WebDAV 同步**，只随 JSON 备份迁移。
@@ -262,32 +270,34 @@ fun SyncBackupSettingsContent(
         // ===== 备份 =====
         if (backupViewModel != null) {
             SettingsGroupTitle("数据备份")
-            SettingsPageSplitGroup(content = listOf(
-                {
-                    SettingsActionRow(
-                        icon = Icons.Outlined.FileUpload,
-                        title = "导出备份",
-                        description = "将所有数据导出为 JSON 文件",
-                        isLoading = backupState.isExporting,
-                        showChevron = false,
-                        onClick = {
-                            backupViewModel.getExportFileName().let { name ->
-                                exportLauncher.launch(name)
-                            }
-                        },
-                    )
-                },
-                {
-                    SettingsActionRow(
-                        icon = Icons.Outlined.FileDownload,
-                        title = "从备份恢复",
-                        description = "从 JSON 文件恢复数据（与本地冲突的记录以本地为准）",
-                        isLoading = backupState.isImporting,
-                        showChevron = false,
-                        onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
-                    )
-                },
-            ))
+            SettingsPageSplitGroup(
+                content = listOf(
+                    {
+                        SettingsActionRow(
+                            icon = Icons.Outlined.FileUpload,
+                            title = "导出备份",
+                            description = "将所有数据导出为 JSON 文件",
+                            isLoading = backupState.isExporting,
+                            showChevron = false,
+                            onClick = {
+                                backupViewModel.getExportFileName().let { name ->
+                                    exportLauncher.launch(name)
+                                }
+                            },
+                        )
+                    },
+                    {
+                        SettingsActionRow(
+                            icon = Icons.Outlined.FileDownload,
+                            title = "从备份恢复",
+                            description = "从 JSON 文件恢复数据（与本地冲突的记录以本地为准）",
+                            isLoading = backupState.isImporting,
+                            showChevron = false,
+                            onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) },
+                        )
+                    },
+                )
+            )
         }
     }
     // 导入确认弹窗
@@ -367,7 +377,7 @@ fun SyncBackupSettingsContent(
             title = { Text("WebDAV 配置") },
             text = {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = webDavUrlInput,
                         onValueChange = { webDavUrlInput = it },
                         label = { Text("服务器 URL") },
@@ -375,14 +385,14 @@ fun SyncBackupSettingsContent(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = webDavUsernameInput,
                         onValueChange = { webDavUsernameInput = it },
                         label = { Text("用户名") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    OutlinedTextField(
+                    NirikoTextField(
                         value = webDavPasswordInput,
                         onValueChange = { webDavPasswordInput = it },
                         label = { Text("密码") },

@@ -1,23 +1,20 @@
 package com.otakup.niriko.ui.settings
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
@@ -27,10 +24,9 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.VolunteerActivism
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +35,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -47,19 +42,20 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.shape.RoundedCornerShape
-import com.otakup.niriko.navigation.SETTINGS_APPEARANCE_ROUTE
-import com.otakup.niriko.ui.theme.NirikoShapes
-import com.otakup.niriko.navigation.SETTINGS_LIBRARY_ROUTE
-import com.otakup.niriko.navigation.SETTINGS_SEARCH_ROUTE
-import com.otakup.niriko.navigation.SETTINGS_DATASOURCE_ROUTE
-import com.otakup.niriko.navigation.SETTINGS_SYNC_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_ABOUT_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_APPEARANCE_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_DATASOURCE_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_DONATE_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_LIBRARY_ROUTE
 import com.otakup.niriko.navigation.SETTINGS_REFRESH_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_SEARCH_ROUTE
+import com.otakup.niriko.navigation.SETTINGS_SYNC_ROUTE
 import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import com.otakup.niriko.ui.adaptive.currentNirikoWindowLayout
 import com.otakup.niriko.ui.common.reportBottomBarScroll
+import com.otakup.niriko.ui.components.NirikoSearchField
+import com.otakup.niriko.ui.components.nirikoRowIndication
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 设置主页：
@@ -105,7 +101,13 @@ private fun SettingsCategoryListScreen(
         Text(
             text = "设置",
             style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp),
+            // V-05：与组标题、组卡同一条 16dp 水平基线（此前这里是 20dp）
+            modifier = Modifier.padding(
+                start = SettingsPageHorizontalInset,
+                end = SettingsPageHorizontalInset,
+                top = 20.dp,
+                bottom = 4.dp,
+            ),
         )
         Spacer(Modifier.height(4.dp))
 
@@ -115,19 +117,20 @@ private fun SettingsCategoryListScreen(
         var searchQuery by rememberSaveable { mutableStateOf("") }
         val searchIndex = remember { defaultSettingsIndex() }
         val searchHits = remember(searchQuery) { searchSettings(searchIndex, searchQuery) }
-        OutlinedTextField(
+        // P2-1：整块换成共享组件 NirikoSearchField（玻璃胶囊 + 放大镜 + placeholder + 输入 + 清除）。
+        // 改造前这里是本文件自绘的第 6 副「输入框面孔」：没有 focus 态（点进去只有光标在闪）、
+        // 没有 imeAction、清除钮自己拼 IconButton —— 与作品库/搜索页的搜索框三套写法。
+        // 组件自带 focus 描边（effectsFast + reduceMotion 降级）与 48dp 清除钮，本页不再重复实现。
+        NirikoSearchField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-            placeholder = { Text("搜索设置（标题 / 说明 / 分组）") },
-            leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    TextButton(onClick = { searchQuery = "" }) { Text("清除") }
-                }
-            },
-            singleLine = true,
-            shape = RoundedCornerShape(NirikoShapes.Control),
+            placeholder = "搜索设置（标题 / 说明 / 分组）",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = SettingsPageHorizontalInset, vertical = 4.dp),
+            minHeight = SettingsRowMinHeight,
+            leadingIcon = Icons.Outlined.Search,
+            onClear = { searchQuery = "" },
         )
         if (searchQuery.isNotBlank()) {
             SettingsGroupTitle(
@@ -135,96 +138,106 @@ private fun SettingsCategoryListScreen(
                 description = if (searchHits.isEmpty()) "没有找到相关设置" else "共 ${searchHits.size} 项",
             )
             if (searchHits.isEmpty()) {
-                SettingsSplitGroup(content = listOf({
-                    SettingsInfoRow(
-                        icon = Icons.Outlined.Search,
-                        title = "没有找到这个设置",
-                        description = "试试「壁纸」「同步」「更新」「备份」等关键词",
-                    )
-                }))
+                SettingsSplitGroup(
+                    content = listOf({
+                        SettingsInfoRow(
+                            icon = Icons.Outlined.Search,
+                            title = "没有找到这个设置",
+                            description = "试试「壁纸」「同步」「更新」「备份」等关键词",
+                        )
+                    })
+                )
             } else {
-                SettingsSplitGroup(content = searchHits.map { hit ->
-                    { SettingsSearchResultRow(hit) { onNavigateToCategory(hit.entry.route) } }
-                })
+                SettingsSplitGroup(
+                    content = searchHits.map { hit ->
+                        { SettingsSearchResultRow(hit) { onNavigateToCategory(hit.entry.route) } }
+                    }
+                )
             }
             Spacer(Modifier.height(8.dp))
         }
 
         SettingsGroupTitle("偏好", description = "外观、收藏展示与搜索")
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsCategoryRow(
-                    title = "外观",
-                    subtitle = "主题配色、玻璃、壁纸与图标",
-                    icon = Icons.Outlined.Palette,
-                    onClick = { onNavigateToCategory(SETTINGS_APPEARANCE_ROUTE) },
-                )
-            },
-            {
-                SettingsCategoryRow(
-                    title = "收藏与展示",
-                    subtitle = "卡片展示、统计与启动页",
-                    icon = Icons.Outlined.CollectionsBookmark,
-                    onClick = { onNavigateToCategory(SETTINGS_LIBRARY_ROUTE) },
-                )
-            },
-            {
-                SettingsCategoryRow(
-                    title = "搜索",
-                    subtitle = "内容过滤与搜索建议",
-                    icon = Icons.Outlined.Search,
-                    onClick = { onNavigateToCategory(SETTINGS_SEARCH_ROUTE) },
-                )
-            },
-        ))
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsCategoryRow(
+                        title = "外观",
+                        subtitle = "主题配色、玻璃、壁纸与图标",
+                        icon = Icons.Outlined.Palette,
+                        onClick = { onNavigateToCategory(SETTINGS_APPEARANCE_ROUTE) },
+                    )
+                },
+                {
+                    SettingsCategoryRow(
+                        title = "收藏与展示",
+                        subtitle = "卡片展示、统计与启动页",
+                        icon = Icons.Outlined.CollectionsBookmark,
+                        onClick = { onNavigateToCategory(SETTINGS_LIBRARY_ROUTE) },
+                    )
+                },
+                {
+                    SettingsCategoryRow(
+                        title = "搜索",
+                        subtitle = "内容过滤与搜索建议",
+                        icon = Icons.Outlined.Search,
+                        onClick = { onNavigateToCategory(SETTINGS_SEARCH_ROUTE) },
+                    )
+                },
+            )
+        )
 
         SettingsGroupTitle("数据", description = "数据源、账号、同步与备份")
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsCategoryRow(
-                    title = "数据源与账号",
-                    subtitle = "Bangumi / Steam 与第三方导入",
-                    icon = Icons.Outlined.Storage,
-                    onClick = { onNavigateToCategory(SETTINGS_DATASOURCE_ROUTE) },
-                )
-            },
-            {
-                SettingsCategoryRow(
-                    title = "同步与备份",
-                    subtitle = "WebDAV 同步与 JSON 备份",
-                    icon = Icons.Outlined.Sync,
-                    onClick = { onNavigateToCategory(SETTINGS_SYNC_ROUTE) },
-                )
-            },
-        ))
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsCategoryRow(
+                        title = "数据源与账号",
+                        subtitle = "Bangumi / Steam 与第三方导入",
+                        icon = Icons.Outlined.Storage,
+                        onClick = { onNavigateToCategory(SETTINGS_DATASOURCE_ROUTE) },
+                    )
+                },
+                {
+                    SettingsCategoryRow(
+                        title = "同步与备份",
+                        subtitle = "WebDAV 同步与 JSON 备份",
+                        icon = Icons.Outlined.Sync,
+                        onClick = { onNavigateToCategory(SETTINGS_SYNC_ROUTE) },
+                    )
+                },
+            )
+        )
 
         SettingsGroupTitle("其他", description = "诊断与版本信息")
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsCategoryRow(
-                    title = "刷新诊断",
-                    subtitle = "各数据源的新鲜度、退避与强制刷新",
-                    icon = Icons.Outlined.Refresh,
-                    onClick = { onNavigateToCategory(SETTINGS_REFRESH_ROUTE) },
-                )
-            },
-            {
-                SettingsCategoryRow(
-                    title = "关于",
-                    subtitle = "版本与开源许可",
-                    icon = Icons.Outlined.Info,
-                    onClick = { onNavigateToCategory(SETTINGS_ABOUT_ROUTE) },
-                )
-            },
-            {
-                SettingsCategoryRow(
-                    title = "向开发者捐赠",
-                    subtitle = "帮助我继续更新",
-                    icon = Icons.Outlined.VolunteerActivism,
-                    onClick = { onNavigateToCategory(SETTINGS_DONATE_ROUTE) },
-                )
-            },
-        ))
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsCategoryRow(
+                        title = "刷新诊断",
+                        subtitle = "各数据源的新鲜度、退避与强制刷新",
+                        icon = Icons.Outlined.Refresh,
+                        onClick = { onNavigateToCategory(SETTINGS_REFRESH_ROUTE) },
+                    )
+                },
+                {
+                    SettingsCategoryRow(
+                        title = "关于",
+                        subtitle = "版本与开源许可",
+                        icon = Icons.Outlined.Info,
+                        onClick = { onNavigateToCategory(SETTINGS_ABOUT_ROUTE) },
+                    )
+                },
+                {
+                    SettingsCategoryRow(
+                        title = "向开发者捐赠",
+                        subtitle = "帮助我继续更新",
+                        icon = Icons.Outlined.VolunteerActivism,
+                        onClick = { onNavigateToCategory(SETTINGS_DONATE_ROUTE) },
+                    )
+                },
+            )
+        )
 
         // 底部留白必须盖住悬浮 dock，否则最后一行会被压在胶囊底下。
         // dock 的实际占位 = 64dp 胶囊 + 14dp 距底偏移(+ 系统导航栏 inset)，
@@ -248,7 +261,7 @@ private val DockBottomReserve = 120.dp
 
 /**
  * 分类行（Kazumi SettingsCategoryTile 等价物）：
- * 圆形 secondaryContainer 图标底 36dp + 标题 bodyLarge + 描述 bodySmall + ChevronRight 图标。
+ * 36dp 圆角方片图标底（[SettingsRowIconChip]）+ 标题 bodyLarge + 描述 bodySmall + [SettingsChevron]。
  */
 @Composable
 private fun SettingsCategoryRow(
@@ -257,31 +270,27 @@ private fun SettingsCategoryRow(
     icon: ImageVector,
     onClick: () -> Unit,
 ) {
+    val interactionSource = rememberRowInteractionSource()
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // V-07：分类行与组内行共用同一套行高基准（标题 + 说明 = 72dp）
+            .heightIn(min = SettingsRowTwoLineMinHeight)
             .clickable(
-                interactionSource = rememberRowInteractionSource(),
-                indication = androidx.compose.material3.ripple(),
+                interactionSource = interactionSource,
+                // M1：分类行的圆角 morph 动画保留（正向样本），只把 M3 矩形水波换成整行覆盖
+                indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+            )
+            .padding(horizontal = SettingsPageHorizontalInset, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        // V-08/V-05：36dp 圆形实底改成 ControlShape 圆角方片 + 玻璃标签底，与组卡"瓷"材质同族
+        SettingsRowIconChip(icon)
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -297,12 +306,7 @@ private fun SettingsCategoryRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        SettingsChevron()
     }
 }
 
@@ -317,11 +321,22 @@ private fun SettingsSearchResultRow(
     hit: SettingsSearchHit,
     onClick: () -> Unit,
 ) {
+    val interactionSource = rememberRowInteractionSource()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            // V-07 / M1：行高与按压反馈都和分类行、组内行保持一致
+            .heightIn(min = SettingsRowTwoLineMinHeight)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+            )
+            .padding(horizontal = SettingsPageHorizontalInset, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
@@ -345,12 +360,7 @@ private fun SettingsSearchResultRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(24.dp),
-        )
+        SettingsChevron()
     }
 }
 
@@ -370,4 +380,3 @@ private fun highlightedTitle(hit: SettingsSearchHit): AnnotatedString {
         }
     }
 }
-

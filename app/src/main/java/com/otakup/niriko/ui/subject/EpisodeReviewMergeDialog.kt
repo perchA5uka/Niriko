@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -27,7 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.ui.components.TagChip
+import com.otakup.niriko.ui.components.NirikoFilterPill
 import com.otakup.niriko.util.EpisodeReviewMergePolicy
 
 /**
@@ -91,13 +89,14 @@ internal fun EpisodeReviewMergeDialog(
                 Text("写入内容", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     EpisodeReviewMergePolicy.Mode.entries.forEach { candidate ->
-                        TagChip(
-                            label = when (candidate) {
+                        // V-12：这是「三选一」开关而非标签 → 用筛选胶囊（选中态带主色描边）。
+                        NirikoFilterPill(
+                            text = when (candidate) {
                                 EpisodeReviewMergePolicy.Mode.COMMENTS_ONLY -> "仅评论"
                                 EpisodeReviewMergePolicy.Mode.AVERAGE_ONLY -> "仅均分"
                                 EpisodeReviewMergePolicy.Mode.BOTH -> "两者"
                             },
-                            emphatic = mode == candidate,
+                            selected = mode == candidate,
                             onClick = { mode = candidate },
                         )
                     }
@@ -105,14 +104,14 @@ internal fun EpisodeReviewMergeDialog(
 
                 Text("均分舍入", style = MaterialTheme.typography.labelLarge)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TagChip(
-                        label = "半分（推荐）",
-                        emphatic = rounding == EpisodeReviewMergePolicy.Rounding.HALF_UP_HALF,
+                    NirikoFilterPill(
+                        text = "半分（推荐）",
+                        selected = rounding == EpisodeReviewMergePolicy.Rounding.HALF_UP_HALF,
                         onClick = { rounding = EpisodeReviewMergePolicy.Rounding.HALF_UP_HALF },
                     )
-                    TagChip(
-                        label = "整数",
-                        emphatic = rounding == EpisodeReviewMergePolicy.Rounding.HALF_UP_INTEGER,
+                    NirikoFilterPill(
+                        text = "整数",
+                        selected = rounding == EpisodeReviewMergePolicy.Rounding.HALF_UP_INTEGER,
                         onClick = { rounding = EpisodeReviewMergePolicy.Rounding.HALF_UP_INTEGER },
                     )
                 }

@@ -19,21 +19,14 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
 import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import com.otakup.niriko.ui.common.loadCoverAnalysisBitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -45,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -55,12 +47,18 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.data.settings.CardGlassLevel
-import com.otakup.niriko.data.settings.GlassEffectLevel
+import coil.Coil
+import com.kyant.backdrop.backdrops.emptyBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.common.loadCoverAnalysisBitmap
+import com.otakup.niriko.ui.components.liquidglass.LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES
+import com.otakup.niriko.ui.components.liquidglass.LIQUID_GLASS_HIGHLIGHT_TILT_DEGREES
 import com.otakup.niriko.ui.components.liquidglass.LiquidGlassConfig
 import com.otakup.niriko.ui.components.liquidglass.buildFrostedRenderEffect
 import com.otakup.niriko.ui.components.liquidglass.buildLiquidGlassRenderEffect
@@ -73,14 +71,9 @@ import com.otakup.niriko.ui.components.liquidglass.tryLoadLiquidGlassShader
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
 import com.otakup.niriko.ui.theme.NirikoShapes
-import com.kyant.backdrop.backdrops.emptyBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import coil.Coil
-import coil.request.CachePolicy
-import coil.request.ImageRequest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Apple 风格磨砂玻璃卡片（列表卡片用）。
@@ -111,10 +104,16 @@ fun Modifier.appleGlassCard(
     // 参考款：很透的磨砂玻璃 —— 低 alpha 中性 tint（浅白/深黑），让背景透过卡清晰可见。
     // 自适应亮度：亮壁纸 → 稍微加深 tint 保对比；暗壁纸 → 更透。
     val adaptive = (luma - 0.5f) * 0.10f
-    val glassBaseAlpha = if (isDark) (0.30f + adaptive).coerceIn(0.22f, 0.42f)
-                         else (0.20f + adaptive).coerceIn(0.14f, 0.32f)
-    val glassBase = if (isDark) Color.Black.copy(alpha = glassBaseAlpha)
-                    else Color.White.copy(alpha = glassBaseAlpha)
+    val glassBaseAlpha = if (isDark) {
+        (0.30f + adaptive).coerceIn(0.22f, 0.42f)
+    } else {
+        (0.20f + adaptive).coerceIn(0.14f, 0.32f)
+    }
+    val glassBase = if (isDark) {
+        Color.Black.copy(alpha = glassBaseAlpha)
+    } else {
+        Color.White.copy(alpha = glassBaseAlpha)
+    }
     // 顶部受光 → 中心透明 → 底部沉降：材质令牌（LiquidGlassPalette），组件内不再写死色值。
     val highlightColors = liquidGlassSurfaceGradient(isDark)
     // 封面 Ambient Tint：alpha 0.05，限制在卡片上 1/3 区域（余光，不是染色）
@@ -143,10 +142,25 @@ fun Modifier.appleGlassCard(
     val pressed = interactionSource != null && interactionSource.collectIsPressedAsState().value
     val highlightAlpha by animateFloatAsState(
         targetValue = if (pressed) 0.95f else 0.65f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        // A.8：spring(0.5, 400) 是手写字面量 → micro()（按压反馈专用档，见 NirikoMotionSpecs）
+        animationSpec = NirikoMotionSpecs.micro<Float>(),
         label = "cardHighlight",
     )
-    val highlight = { liquidGlassHighlight(alpha = highlightAlpha) }
+    // 受光角度跟着按压倾斜走：lambda 在 draw 阶段才被执行（drawBackdrop 的 highlight 是
+    // DrawScope.() -> Highlight），所以这里读 PressTiltLighting 的 State 只触发重绘、不触发重组。
+    // 没有 lighting 的调用点（绝大多数列表卡）走默认 45°，与改动前逐像素一致。
+    val highlight = {
+        val tilt = lighting
+        val angle = if (tilt == null) {
+            LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES
+        } else {
+            (
+                LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES +
+                    tilt.rotationY / 7f * LIQUID_GLASS_HIGHLIGHT_TILT_DEGREES
+                ).coerceIn(25f, 65f)
+        }
+        liquidGlassHighlight(alpha = highlightAlpha, angleDegrees = angle)
+    }
     // 方向性外投影：接触阴影下沉 + 环境弱化。
     val shadow = { liquidGlassShadow(isDark = isDark) }
     // 玻璃内厚度：底部一条下沉暗边。
@@ -250,7 +264,9 @@ fun LiquidGlassSurface(
     val shader = remember(context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             tryLoadLiquidGlassShader(context)
-        } else null
+        } else {
+            null
+        }
     }
 
     // 渲染链缓存：仅尺寸/参数变化时重建（内容重绘不触发）
@@ -261,6 +277,7 @@ fun LiquidGlassSurface(
     ) {
         when {
             layerSizePx.width <= 0 || layerSizePx.height <= 0 -> null
+
             shader != null -> buildLiquidGlassRenderEffect(
                 shader = shader,
                 sizePx = layerSizePx,
@@ -275,6 +292,7 @@ fun LiquidGlassSurface(
                 chromaMultiplier = config.chromaMultiplier,
                 tint = effectiveTint,
             )
+
             else -> buildFrostedRenderEffect(layerSizePx, blurRadiusPx)
         }
     }
@@ -390,8 +408,14 @@ private fun extractAmbientTint(bitmap: Bitmap): Color? {
     val w = bitmap.width
     val h = bitmap.height
     val step = maxOf(1, minOf(w, h) / 16)
-    var sumR = 0L; var sumG = 0L; var sumB = 0L; var count = 0
-    var satR = 0L; var satG = 0L; var satB = 0L; var satCount = 0
+    var sumR = 0L
+    var sumG = 0L
+    var sumB = 0L
+    var count = 0
+    var satR = 0L
+    var satG = 0L
+    var satB = 0L
+    var satCount = 0
     var y = 0
     while (y < h) {
         var x = 0
@@ -406,10 +430,16 @@ private fun extractAmbientTint(bitmap: Bitmap): Color? {
             // 跳过近黑（<12）与近白（>243），避免封面底色/文字污染
             if (lum in 12..243) {
                 val sat = if (max == 0) 0f else (max - min).toFloat() / max
-                sumR += r; sumG += g; sumB += b; count++
+                sumR += r
+                sumG += g
+                sumB += b
+                count++
                 // 高饱和像素：优先作为环境色（如 Madoka 的紫/黄）
                 if (sat > 0.3f) {
-                    satR += r; satG += g; satB += b; satCount++
+                    satR += r
+                    satG += g
+                    satB += b
+                    satCount++
                 }
             }
             x += step

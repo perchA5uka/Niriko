@@ -1,12 +1,11 @@
 package com.otakup.niriko.ui.animation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.Easing
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -37,20 +36,16 @@ val AnimEasingDefault: Easing = FastOutSlowInEasing
 // - 按压反馈：damping 0.75（轻微回弹，反馈"活着"但不弹跳过头）；
 // - 仅手势携带动量的释放场景（如 Pager 翻页到位）保留更高回弹（见 NirikoBottomBar）。
 
-/** 卡片按压缩放的弹簧动画规格（damping 0.75，轻微回弹）。 */
-fun pressSpring() = spring<Float>(
-    dampingRatio = 0.75f,
-    stiffness = Spring.StiffnessMedium,
-)
-
-/** 列表项入场的弹簧动画规格（damping 0.85，临界附近无回弹）。 */
+/**
+ * 非模态 sheet 的「回弹落座」弹簧（damping 0.85，临界附近无回弹）。
+ *
+ * 这是 v1.2.2 里唯一被保留的旧规格：`NirikoNonModalSheet` 松手后用它把面板弹回打开位置，
+ * 手感比 spatialSlow 更"贴手"。v1.2.2 已把它真正接进 `NirikoNonModalSheet`
+ * （原先它是零调用，见 D3 决策）。其余零调用规格（pressSpring / panelSpring /
+ * countTween / tabFadeIn / tabFadeOut）已在同一批次删除，对应能力由
+ * [NirikoMotionSpecs] 的六档 + [NirikoPressSpecs] 承担。
+ */
 fun appearSpring() = spring<Float>(
-    dampingRatio = 0.85f,
-    stiffness = Spring.StiffnessMediumLow,
-)
-
-/** 面板展开/收起的弹簧动画规格（damping 0.85）。 */
-fun panelSpring() = spring<Float>(
     dampingRatio = 0.85f,
     stiffness = Spring.StiffnessMediumLow,
 )
@@ -68,9 +63,6 @@ val LocalReduceMotion = androidx.compose.runtime.staticCompositionLocalOf { fals
 @androidx.compose.runtime.Composable
 fun motionEnabled(): Boolean = !LocalReduceMotion.current
 
-/** 数字/值变化的 tween 规格——平滑计数。 */
-fun countTween() = tween<Float>(durationMillis = AnimDurationLong, easing = AnimEasingDefault)
-
 // ==================== 页面过渡规格 ==================
 
 /**
@@ -78,57 +70,63 @@ fun countTween() = tween<Float>(durationMillis = AnimDurationLong, easing = Anim
  * 用于详情页、搜索页等二级页面。
  * [specs] 由调用点从 MaterialTheme.motionScheme 取出（P0-B 动效统一）。
  */
-fun enterFromRight(specs: NirikoMotionSpecs): EnterTransition =
-    fadeIn(animationSpec = specs.effectsDefault()) +
-        slideInHorizontally(
-            animationSpec = specs.spatialDefault(),
-            initialOffsetX = { it / 4 },
-        )
+fun enterFromRight(specs: NirikoMotionSpecs): EnterTransition = fadeIn(animationSpec = specs.effectsDefault()) +
+    slideInHorizontally(
+        animationSpec = specs.spatialDefault(),
+        initialOffsetX = { it / 4 },
+    )
+
+/**
+ * 页面进入过渡：淡入 + 从左侧 1/4 屏宽滑入（返回上一级时用）。
+ */
+fun enterFromLeft(specs: NirikoMotionSpecs): EnterTransition = fadeIn(animationSpec = specs.effectsDefault()) +
+    slideInHorizontally(
+        animationSpec = specs.spatialDefault(),
+        initialOffsetX = { -it / 4 },
+    )
+
+/**
+ * 页面退出过渡：淡出 + 向左侧滑出（下一级推入时，当前页让位）。
+ */
+fun exitToLeft(specs: NirikoMotionSpecs): ExitTransition = fadeOut(animationSpec = specs.effectsDefault()) +
+    slideOutHorizontally(
+        animationSpec = specs.spatialDefault(),
+        targetOffsetX = { -it / 4 },
+    )
 
 /**
  * 页面退出过渡：淡出 + 向右侧滑出。
  */
-fun exitToRight(specs: NirikoMotionSpecs): ExitTransition =
-    fadeOut(animationSpec = specs.effectsDefault()) +
-        slideOutHorizontally(
-            animationSpec = specs.spatialDefault(),
-            targetOffsetX = { it / 4 },
-        )
-
-/**
- * 底部 Tab 切换过渡：仅淡入淡出，无滑动。
- */
-val tabFadeIn: EnterTransition = fadeIn(animationSpec = tween(AnimDurationShort))
-val tabFadeOut: ExitTransition = fadeOut(animationSpec = tween(AnimDurationShort))
+fun exitToRight(specs: NirikoMotionSpecs): ExitTransition = fadeOut(animationSpec = specs.effectsDefault()) +
+    slideOutHorizontally(
+        animationSpec = specs.spatialDefault(),
+        targetOffsetX = { it / 4 },
+    )
 
 // ==================== M3 SharedAxis Z（P3） ====================
 
 /** Back returns to the previous depth instead of repeating the forward transition. */
-fun popEnterSharedAxisZ(specs: NirikoMotionSpecs): EnterTransition =
-    fadeIn(animationSpec = specs.effectsDefault()) +
-        scaleIn(initialScale = 0.92f, animationSpec = specs.spatialDefault())
+fun popEnterSharedAxisZ(specs: NirikoMotionSpecs): EnterTransition = fadeIn(animationSpec = specs.effectsDefault()) +
+    scaleIn(initialScale = 0.92f, animationSpec = specs.spatialDefault())
 
-fun popExitSharedAxisZ(specs: NirikoMotionSpecs): ExitTransition =
-    fadeOut(animationSpec = specs.effectsDefault()) +
-        scaleOut(targetScale = 1.08f, animationSpec = specs.spatialDefault())
+fun popExitSharedAxisZ(specs: NirikoMotionSpecs): ExitTransition = fadeOut(animationSpec = specs.effectsDefault()) +
+    scaleOut(targetScale = 1.08f, animationSpec = specs.spatialDefault())
 
 /**
  * 二级页进入：fade + scale 0.92→1（M3 SharedAxis Z）。
  * 与封面共享元素过渡叠加更自然，替代原先"右侧滑入"。
  */
-fun enterSharedAxisZ(specs: NirikoMotionSpecs): EnterTransition =
-    fadeIn(animationSpec = specs.effectsDefault()) +
-        scaleIn(
-            initialScale = 0.92f,
-            animationSpec = specs.spatialDefault(),
-        )
+fun enterSharedAxisZ(specs: NirikoMotionSpecs): EnterTransition = fadeIn(animationSpec = specs.effectsDefault()) +
+    scaleIn(
+        initialScale = 0.92f,
+        animationSpec = specs.spatialDefault(),
+    )
 
 /**
  * 二级页退出：fade + scale 1→0.92。
  */
-fun exitSharedAxisZ(specs: NirikoMotionSpecs): ExitTransition =
-    fadeOut(animationSpec = specs.effectsDefault()) +
-        scaleOut(
-            targetScale = 0.92f,
-            animationSpec = specs.spatialDefault(),
-        )
+fun exitSharedAxisZ(specs: NirikoMotionSpecs): ExitTransition = fadeOut(animationSpec = specs.effectsDefault()) +
+    scaleOut(
+        targetScale = 0.92f,
+        animationSpec = specs.spatialDefault(),
+    )

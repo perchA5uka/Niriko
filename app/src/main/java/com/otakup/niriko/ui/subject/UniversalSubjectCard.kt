@@ -1,12 +1,11 @@
 package com.otakup.niriko.ui.subject
 
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,27 +19,24 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.shape.RoundedCornerShape
 import com.otakup.niriko.data.model.SubjectCardDisplayModel
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.rank.RankDelta
 import com.otakup.niriko.data.rank.RankDirection
-import com.otakup.niriko.util.ProgressBumpPolicy
+import com.otakup.niriko.ui.animation.pressTilt
 import com.otakup.niriko.ui.components.CoverThumbnail
 import com.otakup.niriko.ui.components.GlassProgressBar
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.components.rememberCoverTint
 import com.otakup.niriko.ui.components.touchGlow
-import com.otakup.niriko.data.model.WatchStatus
-import com.otakup.niriko.ui.animation.pressSpring
-import com.otakup.niriko.ui.animation.pressTilt
+import com.otakup.niriko.ui.theme.NirikoShapes
+import com.otakup.niriko.util.ProgressBumpPolicy
 
 /**
  * 通用作品卡片。发现页、搜索页、收藏页统一使用。
@@ -99,11 +95,15 @@ fun UniversalSubjectCard(
     Box(
         modifier = modifier
             .then(
-                if (pressTiltEnabled) Modifier.pressTilt(interactionSource, lighting = lighting)
-                else Modifier.touchGlow(),
+                if (pressTiltEnabled) {
+                    // F-14：搜索结果/趋势列表的主卡（整张卡是详情入口）才给按压触感。
+                    Modifier.pressTilt(interactionSource, lighting = lighting, hapticEnabled = true)
+                } else {
+                    Modifier.touchGlow()
+                },
             )
             .appleGlassCard(
-                shape = RoundedCornerShape(20.dp),
+                shape = NirikoShapes.CardShape,
                 tintColor = ambientTint,
                 isCollectionCard = isCollectionCard,
                 interactionSource = interactionSource,
@@ -193,7 +193,8 @@ fun UniversalSubjectCard(
                         model.primaryTitle,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 2.dp),
                     )
 
@@ -231,7 +232,11 @@ fun UniversalSubjectCard(
                     // 现在单位与分母都交给 ProgressBumpPolicy 裁决，和长按浮层 / 编辑面板同口径。
                     // remember 必须无条件调用（条件调用会破坏 slot 表），判空放进 lambda 里
                     val progressFraction = remember(
-                        subjectType, watchedEpisodes, watchedVolumes, totalEpisodes, totalVolumes,
+                        subjectType,
+                        watchedEpisodes,
+                        watchedVolumes,
+                        totalEpisodes,
+                        totalVolumes,
                     ) {
                         if (subjectType == null) {
                             null
@@ -257,12 +262,14 @@ fun UniversalSubjectCard(
                                 height = 6.dp,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant,
                             )
+
                             // 分母未知（总卷数没记录）：写出已读卷数，而不是画一条错的进度条
                             isVolumeUnit -> Text(
                                 "已读 ${watchedVolumes ?: 0} 卷",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+
                             completionTime != null && completionTime > 0 -> Text(
                                 "游戏时长：${completionTime}分钟",
                                 style = MaterialTheme.typography.labelSmall,

@@ -3,18 +3,19 @@ package com.otakup.niriko.navigation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -30,11 +31,11 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
-import com.otakup.niriko.ui.bottombar.LiquidBottomTabs
 import com.otakup.niriko.ui.bottombar.LiquidBottomTab
-import com.otakup.niriko.ui.common.bottomBarHideFraction
-import kotlinx.coroutines.launch
+import com.otakup.niriko.ui.bottombar.LiquidBottomTabs
+import com.otakup.niriko.ui.common.LocalBottomBarHideFraction
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** 底部导航：迁移为 kyant 的 LiquidBottomTabs（悬浮胶囊）。 */
 @Composable
@@ -51,17 +52,23 @@ fun NirikoBottomBar(
     // B11-Step1：隐藏进度 0..1 由方向状态机驱动（MainActivity 单源动画）。
     // 与改造前的 8dp + alpha 0.85 不同：这里完整滑出屏幕、alpha 归零，隐藏态自然不拦触摸
     // （offset 改的是 placement，命中区跟着一起走 —— 不能用 translationY）。
-    val hideProgress = bottomBarHideFraction().coerceIn(0f, 1f)
+    // A.9-1：隐藏进度是每帧变化的 State，**不在组合期读值**。此前这里在组合期解引用
+    // hideProgress 并把结果捕获进 offset/graphicsLayer，220ms 的隐藏期内整条 kyant 底栏
+    // （双份 content + 3 层 drawBackdrop）每帧重组；现在只在位移/绘制 lambda 里读 state，
+    // 组合期只订阅「布尔量是否变化」（derivedStateOf）。
+    val hideFraction = LocalBottomBarHideFraction.current
     val density = LocalDensity.current
     var measuredHeightPx by remember { mutableIntStateOf(0) }
     // 位移 = 实测高度 + 24dp 余量：保证胶囊与投影完全离开视口，不残留可点区域。
     val shiftPx = measuredHeightPx + with(density) { 24.dp.toPx() }
-    val fullyHidden = hideProgress >= 0.999f
+    val fullyHidden by remember(hideFraction) {
+        derivedStateOf { hideFraction.floatValue >= 0.999f }
+    }
     Box(
         modifier = modifier
-            .offset { IntOffset(0, (hideProgress * shiftPx).roundToInt()) }
+            .offset { IntOffset(0, (hideFraction.floatValue.coerceIn(0f, 1f) * shiftPx).roundToInt()) }
             .onSizeChanged { measuredHeightPx = it.height }
-            .graphicsLayer { alpha = 1f - hideProgress }
+            .graphicsLayer { alpha = 1f - hideFraction.floatValue.coerceIn(0f, 1f) }
             .then(if (fullyHidden) Modifier.clearAndSetSemantics { } else Modifier),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -81,24 +88,33 @@ fun NirikoBottomBar(
             TopLevelDestination.entries.forEach { destination ->
                 LiquidBottomTab(
                     onClick = {
-                        if (pagerState.targetPage == destination.ordinal) onTabReselected(destination.ordinal)
-                        else scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
+                        if (pagerState.targetPage == destination.ordinal) {
+                            onTabReselected(destination.ordinal)
+                        } else {
+                            scope.launch { pagerState.animateScrollToPage(destination.ordinal) }
+                        }
                     },
                 ) {
                     val selected = pagerState.currentPage == destination.ordinal
                     Icon(
                         imageVector = if (selected) destination.selectedIcon else destination.unselectedIcon,
                         contentDescription = stringResource(destination.titleRes),
-                        tint = if (selected) MaterialTheme.colorScheme.primary
-                               else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                         modifier = Modifier.size(22.dp),
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = stringResource(destination.titleRes),
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (selected) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
             }

@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.util.ShareCardLayoutPolicy
 
 /**
@@ -46,14 +47,11 @@ object ShareCardVariants {
     const val RATING_WIDTH = 1080
     const val RATING_HEIGHT = 1080
 
-    suspend fun renderRating(context: Context, host: ShareBitmapHost, data: RatingComparisonCardData): Bitmap =
-        host.renderContent(context, RATING_WIDTH, RATING_HEIGHT) { RatingComparisonCard(data) }
+    suspend fun renderRating(context: Context, host: ShareBitmapHost, data: RatingComparisonCardData): Bitmap = host.renderContent(context, RATING_WIDTH, RATING_HEIGHT) { RatingComparisonCard(data) }
 
-    suspend fun renderWeekly(context: Context, host: ShareBitmapHost, data: WeeklyReportCardData): Bitmap =
-        host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { WeeklyReportCard(data) }
+    suspend fun renderWeekly(context: Context, host: ShareBitmapHost, data: WeeklyReportCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { WeeklyReportCard(data) }
 
-    suspend fun renderPartitionPage(context: Context, host: ShareBitmapHost, data: PartitionPosterCardData): Bitmap =
-        host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { PartitionPosterCard(data) }
+    suspend fun renderPartitionPage(context: Context, host: ShareBitmapHost, data: PartitionPosterCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { PartitionPosterCard(data) }
 
     /**
      * 把一整个分区切成若干页（每页 12 部，见 ShareCardLayoutPolicy.pages）。
@@ -236,7 +234,7 @@ private fun WeeklyReportCard(data: WeeklyReportCardData) {
                         bitmap = bmp.asImageBitmap(),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.width(300.dp).height(420.dp).clip(RoundedCornerShape(16.dp)),
+                        modifier = Modifier.width(300.dp).height(420.dp).clip(NirikoShapes.SectionShape),
                     )
                     Spacer(Modifier.height(16.dp))
                 }
@@ -291,7 +289,7 @@ private fun PartitionPosterCard(data: PartitionPosterCardData) {
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(300.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(NirikoShapes.ControlShape)
                                     .background(ShareCompose.CoverBg),
                             ) {
                                 if (bmp != null) {

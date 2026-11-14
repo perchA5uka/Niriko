@@ -2,30 +2,37 @@ package com.otakup.niriko.ui.stats
 
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,13 +40,11 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -57,13 +62,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.kizitonwose.calendar.compose.ContentHeightMode
@@ -74,34 +80,41 @@ import com.kizitonwose.calendar.compose.weekcalendar.rememberWeekCalendarState
 import com.kizitonwose.calendar.core.DayPosition
 import com.kizitonwose.calendar.core.OutDateStyle
 import com.otakup.niriko.data.calculator.CalendarRangeCalculator
-import com.otakup.niriko.data.local.entity.CollectionEntity
-import com.otakup.niriko.data.local.entity.CollectionWithSubject
-import com.otakup.niriko.data.local.entity.SubjectEntity
-import com.otakup.niriko.data.model.SubjectType
-import com.otakup.niriko.data.model.WatchStatus
-import com.otakup.niriko.ui.theme.NirikoTheme
-import com.otakup.niriko.ui.theme.rememberChartTypeColors
-import com.otakup.niriko.data.model.stats.CalendarDayEvents
-import com.otakup.niriko.data.model.stats.CalendarMode
-import com.otakup.niriko.data.model.stats.BroadcastMonthState
-import com.otakup.niriko.data.model.stats.BroadcastMonthStatus
-import com.otakup.niriko.ui.components.appleGlassCard
-import androidx.core.content.FileProvider
 import com.otakup.niriko.data.export.IcsAirEvent
 import com.otakup.niriko.data.export.IcsExportScope
 import com.otakup.niriko.data.export.IcsExporter
 import com.otakup.niriko.data.export.buildIcsSubjectEvents
+import com.otakup.niriko.data.local.entity.CollectionEntity
+import com.otakup.niriko.data.local.entity.CollectionWithSubject
+import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.EpisodeInfo
+import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.model.WatchStatus
+import com.otakup.niriko.data.model.stats.BroadcastMonthState
+import com.otakup.niriko.data.model.stats.BroadcastMonthStatus
+import com.otakup.niriko.data.model.stats.CalendarDayEvents
+import com.otakup.niriko.data.model.stats.CalendarMode
+import com.otakup.niriko.nirikoApp
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.common.LocalNirikoFeedback
+import com.otakup.niriko.ui.components.NirikoActionPill
+import com.otakup.niriko.ui.components.NirikoFilterPill
+import com.otakup.niriko.ui.components.NirikoSegmentedControl
+import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.theme.CalendarAccents
+import com.otakup.niriko.ui.theme.NirikoShapes
+import com.otakup.niriko.ui.theme.NirikoTheme
+import com.otakup.niriko.ui.theme.rememberChartTypeColors
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
-import com.otakup.niriko.nirikoApp
+import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.YearMonth
-import java.time.temporal.ChronoUnit
 import kotlinx.datetime.DayOfWeek as KDayOfWeek
 import kotlinx.datetime.LocalDate as KLocalDate
 import kotlinx.datetime.YearMonth as KYearMonth
@@ -114,18 +127,22 @@ import kotlinx.datetime.toKotlinYearMonth as kToKotlinYearMonth
 // 作品类型颜色统一由 ui/theme/ChartPalette.kt 的主题派生色提供（chartTypeColor /
 // rememberChartTypeColors），此处不再保留第二套固定色表。
 
-/** 放送标记颜色（金色菱形 ◆）。 */
-private val BroadcastColor = Color(0xFFFDD835)
-private val ReleaseColor = Color(0xFF66BB6A)
+// V-02：这四色原先在本文件与 CalendarDaySheet 各写一遍（同样的 0x），
+// 改一处忘一处就会让同一天在棋盘格与当日列表里显示成不同颜色。
+// 现在统一由 ui/theme/AccentColors.kt 的 CalendarAccents 提供，这里只留语义别名。
+//
+// 放送标记颜色（金色菱形 ◆）。
+private val BroadcastColor = CalendarAccents.Broadcast
+private val ReleaseColor = CalendarAccents.Release
 
 /** 停播角标颜色（灰）与延期角标颜色（橙，对应 4.10 的「橙色小三角」）。 */
-internal val HiatusColor = Color(0xFF90A4AE)
-internal val DelayColor = Color(0xFFFB8C00)
+internal val HiatusColor = CalendarAccents.Hiatus
+internal val DelayColor = CalendarAccents.Delay
 
 private val weekdayLabels = listOf("日", "一", "二", "三", "四", "五", "六")
 private val dotSize = 4.dp
 private val dotSpacing = 1.dp
-private val cellShape = RoundedCornerShape(4.dp)
+private val cellShape = NirikoShapes.RowInnerShape
 
 // ==================== CalendarCard（顶层容器） ====================
 
@@ -149,6 +166,8 @@ fun CalendarCard(
     onSwitchView: (Boolean) -> Unit,
     onAnchorDateChange: (LocalDate) -> Unit,
     onRefreshBroadcast: (() -> Unit)? = null,
+    /** F-05：放送日历是否正在刷新；刷新胶囊据此显示「刷新中…」并禁用重复点击。 */
+    isRefreshing: Boolean = false,
     /** 放送日历上次成功刷新时间（0 = 从未）。 */
     broadcastLastUpdatedAt: Long = 0L,
     broadcastMonthState: BroadcastMonthState? = null,
@@ -161,6 +180,8 @@ fun CalendarCard(
 ) {
     val context = LocalContext.current
     val exportScope = rememberCoroutineScope()
+    // F03：全局反馈通道（宿主在 MainActivity 窗口层）；预览/单测里为 null，`?.show` 即跳过。
+    val feedback = LocalNirikoFeedback.current
     val monthStart = remember(anchorDate) { YearMonth.from(anchorDate).atDay(1) }
     val monthEnd = remember(anchorDate) { YearMonth.from(anchorDate).atEndOfMonth() }
     val monthSubjects = remember(dayEvents) {
@@ -280,6 +301,7 @@ fun CalendarCard(
                     message = broadcastError ?: broadcastMonthState?.let(::broadcastMonthMessage),
                     lastUpdatedAt = broadcastMonthState?.lastSuccessAt ?: broadcastLastUpdatedAt,
                     onRefresh = onRefreshBroadcast,
+                    isRefreshing = isRefreshing,
                 )
                 // 4.8：导出放送日历（.ics）—— 现算现导出，不落库
                 IcsExportEntry(
@@ -307,6 +329,9 @@ fun CalendarCard(
                             )
                             val body = IcsExporter.build(events, Instant.now())
                             runCatching { shareIcsCalendar(context, body) }
+                                // F03：成功分支此前完全静默 —— 用户只看到系统分享面板，
+                                // 无从确认「到底导出了几个事件」。补一条回执（失败仍用 Toast）。
+                                .onSuccess { feedback?.show("已生成放送日历（" + events.size + " 个事件）") }
                                 .onFailure {
                                     Toast.makeText(
                                         context,
@@ -329,9 +354,23 @@ fun CalendarCard(
 /** 日期条窗口半径（天）：以今天为中心固定展示 31 天。 */
 internal const val DATE_STRIP_RADIUS = 15
 
+/**
+ * 日期条的视觉宽：保持改造前的 38dp。
+ *
+ * F12：38dp 是「看着舒服」的宽，不到 48dp 的触控下限，横滑连点时容易选错日期。
+ * 所以把「视觉宽」与「命中宽」拆成两个常量：视觉不放大（格子不显得臃肿），
+ * 命中区由外层 Box 撑到 [DATE_STRIP_TOUCH_WIDTH]，手指不必精确落在 38dp 内。
+ */
+internal val DATE_STRIP_VISUAL_WIDTH = 38.dp
+
+/** 日期条命中区（F12）：48dp = Material 最小可点目标。 */
+internal val DATE_STRIP_TOUCH_WIDTH = 48.dp
+
+/** 日期条命中区高度（F12）：内容实际约 50dp，这里显式写死下限以防字体缩放把它压回 <48dp。 */
+internal val DATE_STRIP_TOUCH_HEIGHT = 48.dp
+
 /** 以 [center] 为中心、半径 [radius] 的日期列表（升序，共 2 × radius + 1 天）。 */
-internal fun dateStripDates(center: LocalDate, radius: Int = DATE_STRIP_RADIUS): List<LocalDate> =
-    (-radius..radius).map { center.plusDays(it.toLong()) }
+internal fun dateStripDates(center: LocalDate, radius: Int = DATE_STRIP_RADIUS): List<LocalDate> = (-radius..radius).map { center.plusDays(it.toLong()) }
 
 /**
  * 日期条窗口的中心：默认锚定在 [today]（点选近处日期时整条不移动，不会在手指下平移），
@@ -374,60 +413,69 @@ private fun CalendarDateStrip(
     LazyRow(
         state = listState,
         modifier = Modifier.fillMaxWidth().calendarGestureLock(gestureLock),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // F12：原先 38dp 视觉 + 6dp 间距 = 44dp pitch；现在命中盒 48dp、间距并入盒子两侧
+        // （38 视觉 + 左右各 5dp 命中余量），整体 pitch 48dp，视觉节奏与原来几乎一致。
+        horizontalArrangement = Arrangement.spacedBy(0.dp),
         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp),
     ) {
         itemsIndexed(dates, key = { _, date -> date.toString() }) { _, date ->
             val selected = date == anchorDate
             val isToday = date == today
             val weekday = weekdayIndexSunday0(date)
-            Column(
+            Box(
                 modifier = Modifier
-                    .width(38.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        when {
-                            selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
-                            isToday -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f)
-                            else -> Color.Transparent
+                    .width(DATE_STRIP_TOUCH_WIDTH)
+                    .heightIn(min = DATE_STRIP_TOUCH_HEIGHT)
+                    .clickable { onPickDate(date) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(DATE_STRIP_VISUAL_WIDTH)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            when {
+                                selected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                isToday -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.30f)
+                                else -> Color.Transparent
+                            },
+                        )
+                        .padding(vertical = 5.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = weekdayLabels[weekday],
+                        style = MaterialTheme.typography.labelSmall,
+                        color = when {
+                            selected -> MaterialTheme.colorScheme.primary
+                            weekday == 0 || weekday == 6 -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                    .clickable { onPickDate(date) }
-                    .padding(vertical = 5.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = weekdayLabels[weekday],
-                    style = MaterialTheme.typography.labelSmall,
-                    color = when {
-                        selected -> MaterialTheme.colorScheme.primary
-                        weekday == 0 || weekday == 6 -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-                Text(
-                    text = date.dayOfMonth.toString(),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (selected || isToday) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
-                Box(
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .size(4.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (dayEvents[date]?.hasEvents == true) {
-                                MaterialTheme.colorScheme.tertiary
-                            } else {
-                                Color.Transparent
-                            },
-                        ),
-                )
+                    Text(
+                        text = date.dayOfMonth.toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (selected || isToday) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (dayEvents[date]?.hasEvents == true) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    Color.Transparent
+                                },
+                            ),
+                    )
+                }
             }
         }
     }
@@ -452,45 +500,26 @@ private fun CalendarControlRow(
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 三态模式：占满剩余宽度，模式变多时横滑
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CalendarMode.entries.forEach { mode ->
-                CalendarChip(
-                    label = mode.label,
-                    selected = currentMode == mode,
-                    onClick = { onSwitchMode(mode) },
-                )
-            }
-        }
+        // 三态模式：「一组里选一个」，用全站唯一的分段控件（V-11）。
+        // 改造前是 M3 FilterChip + horizontalScroll：选中实心 primaryContainer，
+        // 与详情页观看状态、发现页筛选各长一副脸；三个模式也根本不需要横滑。
+        // 等宽由分段控件内部 weight(1f) 保证，切模式时不会左右跳。
+        NirikoSegmentedControl(
+            options = CalendarMode.entries.map { it.label },
+            selectedIndex = CalendarMode.entries.indexOf(currentMode),
+            onSelect = { index -> onSwitchMode(CalendarMode.entries[index]) },
+            modifier = Modifier.weight(1f),
+            // 本行就在放送日历那张玻璃卡内部：再叠一层玻璃就是玻璃套玻璃，
+            // FULL 档会多一次实时折射且背后内容糊成一片 —— 所以轨道退成凹槽实底。
+            nestedInGlass = true,
+        )
         Spacer(Modifier.width(6.dp))
-        // 视图粒度
-        CalendarChip(label = "周", selected = !expanded, onClick = { onSwitchView(false) })
+        // 视图粒度是「两个独立开关」而不是一组单选，所以用可点胶囊：
+        // 若也塞进分段容器，两组控件的容器边会连成一条长胶囊，读起来像一个四选一。
+        NirikoFilterPill(text = "周", selected = !expanded, onClick = { onSwitchView(false) })
         Spacer(Modifier.width(4.dp))
-        CalendarChip(label = "月", selected = expanded, onClick = { onSwitchView(true) })
+        NirikoFilterPill(text = "月", selected = expanded, onClick = { onSwitchView(true) })
     }
-}
-
-@Composable
-private fun CalendarChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = { Text(label, style = MaterialTheme.typography.labelMedium) },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        ),
-    )
 }
 
 // ==================== 图例 ====================
@@ -507,28 +536,28 @@ private fun CalendarLegend(calendarMode: CalendarMode) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Dot(color = Color.White, isStarted = true, size = 6.dp)
                 Spacer(Modifier.width(3.dp))
-                Text("开始", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                Text("开始", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Dot(color = Color.White, isStarted = false, size = 6.dp)
                 Spacer(Modifier.width(3.dp))
-                Text("完成", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                Text("完成", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (calendarMode == CalendarMode.BROADCAST || calendarMode == CalendarMode.ALL) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 BroadcastMarker(size = 6.dp)
                 Spacer(Modifier.width(3.dp))
-                Text("放送", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                Text("放送", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ReleaseMarker(size = 6.dp)
                 Spacer(Modifier.width(3.dp))
-                Text("发售", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 9.sp)
+                Text("发售", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // 阶段 F：放送可信度说明（单源，仅供参考）
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("放送时间参考 Bangumi 日历", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f), fontSize = 9.sp)
+                Text("放送时间参考 Bangumi 日历", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
             }
         }
     }
@@ -551,6 +580,8 @@ private fun BroadcastStatusHint(
     message: String?,
     lastUpdatedAt: Long,
     onRefresh: (() -> Unit)? = null,
+    /** F-05：刷新进行中——文案改为「刷新中…」且禁用，避免重复点击 / 「点了没反应」。 */
+    isRefreshing: Boolean = false,
 ) {
     // 相对时间走字
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -573,7 +604,6 @@ private fun BroadcastStatusHint(
                     text = message,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp,
                 )
             }
             if (lastUpdatedAt > 0L) {
@@ -582,22 +612,22 @@ private fun BroadcastStatusHint(
                         .formatAgo(lastUpdatedAt, nowMs),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 9.sp,
                 )
             }
         }
         if (onRefresh != null) {
-            Text(
-                text = "刷新",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClick = onRefresh),
+            // F05 的「必须 48dp 命中区」结论保留，但不再手画玻璃片：
+            // 动作入口统一 NirikoActionPill（玻璃底 + 主色字 + ensureReadable 已内建），
+            // 与下方「放送日历导出 .ics」是同一枚胶囊，同区块不会出现两种动作外观。
+            NirikoActionPill(
+                text = if (isRefreshing) "刷新中…" else "刷新",
+                onClick = onRefresh,
+                enabled = !isRefreshing,
+                modifier = Modifier.heightIn(min = 48.dp),
             )
         }
     }
 }
-
 
 /** 4.8：导出入口（放在放送状态行下方，与「刷新」同一区）。 */
 @Composable
@@ -609,13 +639,12 @@ private fun IcsExportEntry(enabled: Boolean, onOpen: () -> Unit) {
         horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        // 9sp 裸文字（命中区约 20×14dp）→ 动作胶囊：与「刷新」同族，且形状本身就在说「可点」。
+        NirikoActionPill(
             text = "放送日历导出 .ics",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            fontSize = 9.sp,
-            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.clickable(enabled = enabled, onClick = onOpen),
+            onClick = onOpen,
+            enabled = enabled,
+            modifier = Modifier.heightIn(min = 48.dp),
         )
     }
 }
@@ -635,16 +664,13 @@ private fun IcsExportDialog(
         title = { Text("导出放送日历（.ics）") },
         text = {
             Column {
+                // 对话框里也不该再长出第 4 副 chip 面孔（V-12）：范围是「多选一」，用筛选胶囊。
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     IcsExportScope.entries.forEach { scope ->
-                        FilterChip(
+                        NirikoFilterPill(
+                            text = scope.label,
                             selected = range == scope,
                             onClick = { if (!busy) onRangeChange(scope) },
-                            label = { Text(scope.label, style = MaterialTheme.typography.labelMedium) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
                         )
                     }
                 }
@@ -658,8 +684,11 @@ private fun IcsExportDialog(
                 } else {
                     val s = summary
                     Text(
-                        text = if (s == null) "范围确定后显示将导出的数量"
-                        else "将导出 ${s.subjects} 部 / ${s.events} 个事件（其中 ${s.estimated} 个为预估）",
+                        text = if (s == null) {
+                            "范围确定后显示将导出的数量"
+                        } else {
+                            "将导出 ${s.subjects} 部 / ${s.events} 个事件（其中 ${s.estimated} 个为预估）"
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -691,6 +720,7 @@ private fun CalendarHeader(
     expanded: Boolean,
     onSwitchMonth: (Int) -> Unit,
 ) {
+    val reduceMotion = LocalReduceMotion.current
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -701,13 +731,38 @@ private fun CalendarHeader(
                 contentDescription = if (expanded) "上个月" else "上一周",
             )
         }
-        Text(
-            text = CalendarRangeCalculator.title(anchorDate, expanded),
+        // B-15：标题此前是硬替换——翻月时数字直接跳变，没有"往哪边翻"的方向线索。
+        // 用 AnimatedContent 让旧标题朝翻页方向退出、新标题从另一侧进入（位移 1/8 宽度）；
+        // 切周/月是换粒度而不是翻页，没有前后方向，只做淡入淡出。
+        // contentKey 用标题文本：点日期条换勾选日（同月同周）不触发过渡，只有标题真的变了才播。
+        val title = CalendarRangeCalculator.title(anchorDate, expanded)
+        AnimatedContent(
+            targetState = Triple(anchorDate, expanded, title),
             modifier = Modifier.weight(1f),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+            contentAlignment = Alignment.Center,
+            transitionSpec = {
+                calendarTitleTransition(
+                    direction = calendarTitleDirection(
+                        fromDate = initialState.first,
+                        fromExpanded = initialState.second,
+                        toDate = targetState.first,
+                        toExpanded = targetState.second,
+                    ),
+                    reduceMotion = reduceMotion,
+                )
+            },
+            contentKey = { it.third },
+            label = "calendarTitle",
+        ) { state ->
+            Text(
+                text = state.third,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                // 字重交回 token（titleMedium = w600）：日历标题与其它区块标题同粗，
+                // 不再手写 Bold 造第二套标题字重（P2-5 同一判据）。
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
         IconButton(onClick = { onSwitchMonth(1) }) {
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -715,6 +770,82 @@ private fun CalendarHeader(
             )
         }
     }
+}
+
+/** 日历标题切换的翻页方向（纯函数，供 B-15 的过渡与单测共用）。 */
+internal enum class CalendarTitleDirection {
+    /** 往更早的月份 / 周翻。 */
+    BACKWARD,
+
+    /** 往更晚的月份 / 周翻。 */
+    FORWARD,
+
+    /** 没有前后方向：切周/月粒度，或锚点未产生跨月 / 跨周变化。 */
+    NONE,
+}
+
+/**
+ * 由相邻两次锚点算出翻页方向（纯函数）。
+ *
+ * 只向标题过渡提供方向，不参与任何布局：月视图比较月份差（点日期条换日不会误判成翻页），
+ * 周视图比较周起点差；周/月互切一律 [CalendarTitleDirection.NONE]（换粒度不是翻页）。
+ */
+internal fun calendarTitleDirection(
+    fromDate: LocalDate,
+    fromExpanded: Boolean,
+    toDate: LocalDate,
+    toExpanded: Boolean,
+): CalendarTitleDirection {
+    if (fromExpanded != toExpanded) return CalendarTitleDirection.NONE
+    val delta: Long = if (toExpanded) {
+        ChronoUnit.MONTHS.between(YearMonth.from(fromDate), YearMonth.from(toDate))
+    } else {
+        ChronoUnit.DAYS.between(
+            CalendarRangeCalculator.weekStart(fromDate),
+            CalendarRangeCalculator.weekStart(toDate),
+        ) / 7
+    }
+    return when {
+        delta > 0L -> CalendarTitleDirection.FORWARD
+        delta < 0L -> CalendarTitleDirection.BACKWARD
+        else -> CalendarTitleDirection.NONE
+    }
+}
+
+/**
+ * 标题过渡规格（B-15）。
+ *
+ * 位移用 effects 档而不是 spatial 档：标题是文本块、位移只有 1/8 宽度，
+ * 用 effectsFast 的临界阻尼一下子到位，不会像整页切换那样回弹；
+ * [LocalReduceMotion] 打开时两侧都是 None，标题瞬切（不留下"往哪边翻"的半个动作）。
+ */
+internal fun calendarTitleTransition(
+    direction: CalendarTitleDirection,
+    reduceMotion: Boolean,
+): ContentTransform {
+    if (reduceMotion) {
+        return ContentTransform(
+            targetContentEnter = EnterTransition.None,
+            initialContentExit = ExitTransition.None,
+            sizeTransform = null,
+        )
+    }
+    val fadeSpec = NirikoMotionSpecs.effectsFast<Float>()
+    val slideSpec = NirikoMotionSpecs.effectsFast<IntOffset>()
+    val sign = when (direction) {
+        CalendarTitleDirection.FORWARD -> 1
+        CalendarTitleDirection.BACKWARD -> -1
+        CalendarTitleDirection.NONE -> 0
+    }
+    // NONE（换粒度 / 同月内换日）不做横向位移，否则会出现"没翻页却横着滑"的假方向。
+    // sizeTransform = null：标题宽度变化由文本自身重新排版，不额外做尺寸动画（每帧重测不值得）。
+    return ContentTransform(
+        targetContentEnter = fadeIn(fadeSpec) +
+            slideInHorizontally(slideSpec) { fullWidth -> sign * fullWidth / 8 },
+        initialContentExit = fadeOut(fadeSpec) +
+            slideOutHorizontally(slideSpec) { fullWidth -> -sign * fullWidth / 8 },
+        sizeTransform = null,
+    )
 }
 
 // ==================== 星期表头 ====================
@@ -941,15 +1072,23 @@ private fun CalendarDayCell(
     val isToday = date == LocalDate.now()
     val dayText = "${date.dayOfMonth}"
 
+    // F12 的已知下限：日期条已补到 48dp，但**日格**的宽度由 7 等分决定
+    // （360dp 屏约 41dp、320dp 屏约 39dp），补到 48dp 只有两条路：改列数（日历语义变了）
+    // 或让相邻格命中区重叠（连点更易点错日期）。权衡后保留现状；F12 审计点名的
+    // 「38dp 日期条」已修，日格记为受布局约束的例外。
     Box(
         modifier = modifier
             .clip(cellShape)
             .then(
-                if (covers.isNotEmpty()) Modifier.border(
-                    width = 1.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    shape = cellShape,
-                ) else Modifier,
+                if (covers.isNotEmpty()) {
+                    Modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        shape = cellShape,
+                    )
+                } else {
+                    Modifier
+                },
             )
             .clickable(onClick = onClick),
     ) {
@@ -970,8 +1109,11 @@ private fun CalendarDayCell(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
-                        if (isToday) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                        else Color.Transparent,
+                        if (isToday) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        } else {
+                            Color.Transparent
+                        },
                     ),
             )
         }
@@ -986,19 +1128,28 @@ private fun CalendarDayCell(
                 // 跨月延续标记：由计算层预计算（StatsCalculator），UI 直接读取，避免组合期字符串解析
                 val hasContinuing = events?.hasContinuing == true
                 if (hasContinuing) {
+                    // V-03：8sp 字面量抬回 labelSmall(11.5sp)。格子宽约 42dp，11.5sp 单字
+                    // 仍放得下，不需要靠缩字号塞进格子（缩到 8sp 就只剩"看得见"而读不出）。
                     Text(
                         text = "续",
                         style = MaterialTheme.typography.labelSmall,
-                        fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        // 压图时用白字：浅色主题 primary 是深绿，压在 0.5 黑纱封面上对比度极低；
+                        // 无封面时仍用 primary（浅底上深绿可读）。与日期数字同一套判据。
+                        color = if (hasEvents && displayCoverUrl != null) {
+                            Color.White
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
                         modifier = Modifier.padding(end = 2.dp),
                     )
                 }
+                // V-03：日期数字去掉 10/9 两档字面量。格子尺寸由 7 等分决定（不随字号变），
+                // 字号只表达层级：日期是格子里唯一的正文信息，走 labelSmall 的 11.5sp；
+                // "有没有事件"改用封面/圆点表达，不再用字号差区分（原型 ④：角标改 badge）。
                 Text(
                     text = dayText,
                     style = MaterialTheme.typography.labelSmall,
-                    fontSize = if (hasEvents) 10.sp else 9.sp,
                     fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                     color = if (hasEvents && displayCoverUrl != null) Color.White else MaterialTheme.colorScheme.onSurface,
                 )
@@ -1009,15 +1160,27 @@ private fun CalendarDayCell(
         }
 
         // 停播 / 延期角标（右上角一个字）：停 = 灰色，延 = 橙色（4.10）
+        // V-03：原来是 8sp 裸文字压在封面上，颜色承担全部语义，字号小到只能算噪点。
+        // 改成实底 badge：形状+底色负责辨识，文字回到 labelSmall(11.5sp)；
+        // 深色字压在暖色/灰底上，无论背后是封面还是浅色格子都能读（不再出现金字压浅底）。
         airingAdjusts.firstOrNull()?.let { adjust ->
-            Text(
-                text = adjust.label,
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (adjust.kind == AiringAdjustKind.DELAYED) DelayColor else HiatusColor,
-                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp),
-            )
+            val badgeColor = if (adjust.kind == AiringAdjustKind.DELAYED) DelayColor else HiatusColor
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(2.dp)
+                    .clip(cellShape)
+                    .background(badgeColor)
+                    .padding(horizontal = 3.dp),
+            ) {
+                Text(
+                    text = adjust.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black.copy(alpha = 0.87f),
+                    maxLines = 1,
+                )
+            }
         }
 
         // 今天标记
@@ -1061,15 +1224,11 @@ private fun CalendarCellCover(
 
 // ==================== 标记行 ====================
 
-/**
- * 在日历格子左下角渲染个人事件圆点 + 放送标记。
- *
- * 实心 ● = 当天开始观看，颜色 = SubjectType
- * 空心 ○ = 当天完成观看，颜色 = SubjectType
- * 菱形 ◆ = 当天有放送作品，金色
- *
- * 最多显示 4 个标记，超出显示 "+N"。
- */
+// 在日历格子左下角渲染个人事件圆点 + 放送标记：
+// 实心 ● = 当天开始观看，颜色 = SubjectType；空心 ○ = 当天完成观看，颜色 = SubjectType；
+// 菱形 ◆ = 当天有放送作品，金色；最多显示 4 个标记，超出显示 "+N"。
+// （行注释：下面紧跟 buildMarks 自己的 KDoc，两块 KDoc 相邻会被 ktlint 判为 dangling。）
+
 /** 构建当天标记列表（纯函数；结果由 DotsRow 缓存，避免每次重组重算）。 */
 private fun buildMarks(events: CalendarDayEvents, typeColors: Map<SubjectType, Color>): List<MarkInfo> {
     val allMarks = mutableListOf<MarkInfo>()
@@ -1134,6 +1293,10 @@ private fun DotsRow(events: CalendarDayEvents) {
     val allMarks = remember(events, typeColors) { buildMarks(events, typeColors) }
     val visibleMarks = allMarks.take(4)
     val remaining = allMarks.size - 4
+    // 溢出计数原先固定白色：格子没封面时（只有开始/完成事件）白字压在浅色 surface 上完全看不见。
+    // 用「有没有封面」决定前景色，和日期数字使用同一套判据。
+    val onCover = events.coverCandidates.isNotEmpty()
+    val overflowColor = if (onCover) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(dotSpacing),
@@ -1147,11 +1310,14 @@ private fun DotsRow(events: CalendarDayEvents) {
             }
         }
         if (remaining > 0) {
+            // V-03：7sp 是本仓最低的字号（低于 11.5sp 注释档），抬到 labelSmall 后仍靠
+            // 标记行下方留白排得下；"还有几个标记"不再是显微镜才能看到的信息。
             Text(
                 text = "+$remaining",
-                fontSize = 7.sp,
-                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                color = overflowColor,
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
             )
         }
     }
@@ -1188,10 +1354,10 @@ private fun BroadcastMarker(size: Dp) {
     Canvas(modifier = Modifier.size(size)) {
         val half = size.toPx() / 2f
         val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(half, 0f)               // 上
-            lineTo(size.toPx(), half)       // 右
-            lineTo(half, size.toPx())       // 下
-            lineTo(0f, half)               // 左
+            moveTo(half, 0f) // 上
+            lineTo(size.toPx(), half) // 右
+            lineTo(half, size.toPx()) // 下
+            lineTo(0f, half) // 左
             close()
         }
         drawPath(path, color = BroadcastColor)
@@ -1204,9 +1370,9 @@ private fun ReleaseMarker(size: Dp) {
     Canvas(modifier = Modifier.size(size)) {
         val half = size.toPx() / 2f
         val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(half, 0f)          // 上顶点
+            moveTo(half, 0f) // 上顶点
             lineTo(size.toPx(), size.toPx()) // 右下
-            lineTo(0f, size.toPx())   // 左下
+            lineTo(0f, size.toPx()) // 左下
             close()
         }
         drawPath(path, color = ReleaseColor)
@@ -1235,8 +1401,7 @@ internal fun mainEpisodeDates(episodes: List<EpisodeInfo>): List<LocalDate> = ep
     .distinct().sorted()
 
 /** Room 侧（EpisodeEntity）的集日期：DAO 已按 type == 0 过滤，这里只解析 + 去重。 */
-internal fun mainEpisodeDatesFromAirdates(airdates: List<String?>): List<LocalDate> =
-    airdates.mapNotNull { it?.let(::parseIsoDate) }.distinct().sorted()
+internal fun mainEpisodeDatesFromAirdates(airdates: List<String?>): List<LocalDate> = airdates.mapNotNull { it?.let(::parseIsoDate) }.distinct().sorted()
 
 private fun parseIsoDate(raw: String): LocalDate? = runCatching { LocalDate.parse(raw) }.getOrNull()
 
@@ -1244,8 +1409,7 @@ private fun parseIsoDate(raw: String): LocalDate? = runCatching { LocalDate.pars
  * 集数据是否完整到可以推断停播/延期：必须覆盖声明集数。
  * 4.7 的硬约束 —— 缺集与停播无法区分，只在 complete 时启用缺口判定，否则会把「没拉到」误报成停播。
  */
-internal fun isEpisodeDataComplete(totalEpisodes: Int?, episodeDates: List<LocalDate>): Boolean =
-    totalEpisodes != null && totalEpisodes > 0 && episodeDates.size >= totalEpisodes
+internal fun isEpisodeDataComplete(totalEpisodes: Int?, episodeDates: List<LocalDate>): Boolean = totalEpisodes != null && totalEpisodes > 0 && episodeDates.size >= totalEpisodes
 
 /**
  * 某一天的角标（纯函数，4.7 / 4.10）：

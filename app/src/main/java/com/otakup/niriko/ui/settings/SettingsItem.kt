@@ -1,28 +1,22 @@
 package com.otakup.niriko.ui.settings
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,12 +24,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.ui.components.GlassSlider
 import com.otakup.niriko.ui.components.GlassToggle
+import com.otakup.niriko.ui.components.nirikoRowIndication
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 // ==================== 行度量（对齐 Kazumi SettingsTile / _TileLabel） ====================
 
@@ -51,11 +49,14 @@ private val RowHorizontalPadding = 16.dp
 /** 行垂直内边距（点击行 / 信息行）。 */
 private val RowVerticalPadding = 12.dp
 
-/** 尾部 chevron 图标尺寸（入口页用 24dp，组内行用 20dp）。 */
-private val RowChevronSize = 20.dp
+/** 禁用行的整体不透明度（V-09 / F09）：0.38 是 M3 的 disabled content 档位。 */
+private const val DisabledRowAlpha = 0.38f
 
-/** 数值徽标的圆角（Kazumi SettingsSliderTile 用 8）。 */
-private val ValueBadgeShape = RoundedCornerShape(8.dp)
+/**
+ * 行最小高度（V-07）：单行 56dp、带说明 72dp，常量见 [SettingsLayout]。
+ * 此前高度靠内边距和内容自己撑：单行 48dp、两行 70dp，同屏行高参差。
+ */
+private fun rowMinHeight(hasDescription: Boolean) = if (hasDescription) SettingsRowTwoLineMinHeight else SettingsRowMinHeight
 
 // ==================== 公共解剖 ====================
 
@@ -94,32 +95,34 @@ private fun SettingsRowLabel(
     }
 }
 
-/** 行尾的 value 文本（bodyMedium 次要色，右对齐，最长两行）。 */
+/**
+ * 行尾的 value 文本（V-09）：右对齐、最长两行。
+ *
+ * 刻意不抢 weight：标题用 weight(1f) 吃剩余宽度，值按内容宽度贴右 ——
+ * 与整改前的裸文字行为一致，长标题不会被「限定权重」的值挤成两行。
+ */
 @Composable
 private fun RowScope.SettingsRowValue(value: String) {
-    Box(
-        modifier = Modifier.weight(1f).padding(start = 8.dp),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.End,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
+    SettingsValueText(value = value, modifier = Modifier.padding(start = 8.dp))
 }
 
-/** 行尾的 chevron 图标（替代旧的文本箭头「›」）。 */
+/**
+ * 「当前值」的唯一排版（V-09）：labelLarge + onSurfaceVariant 的裸文字。
+ *
+ * 整改前「当前值」有两种长相——选择行是裸文字，滑块行是一枚 8dp 圆角
+ * secondaryContainer 徽标，同一页里两种值视觉权重不同，读起来像两种控件。
+ * 现在只留裸文字（徽标变体已删），滑块行拖动时同样只换文字，不再闪一块底色。
+ */
 @Composable
-private fun SettingsRowChevron() {
-    Icon(
-        imageVector = Icons.Outlined.ChevronRight,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.size(RowChevronSize),
+private fun SettingsValueText(value: String, modifier: Modifier = Modifier) {
+    Text(
+        modifier = modifier,
+        text = value,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.End,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -145,11 +148,18 @@ fun SettingsSwitchRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = rowMinHeight(description != null))
+            // M1：去掉 M3 矩形水波，改用整行圆角覆盖（按压进度由 nirikoRowIndication 驱动）
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(),
+                indication = null,
                 enabled = enabled,
                 onClick = { onCheckedChange(!checked) },
+            )
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+                enabled = enabled,
             )
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -191,11 +201,17 @@ fun SettingsPickerRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = rowMinHeight(description != null))
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(),
+                indication = null,
                 enabled = enabled,
                 onClick = onClick,
+            )
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+                enabled = enabled,
             )
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -214,7 +230,7 @@ fun SettingsPickerRow(
             trailing()
         }
         Spacer(Modifier.width(8.dp))
-        SettingsRowChevron()
+        SettingsChevron()
     }
 }
 
@@ -236,13 +252,19 @@ fun SettingsRadioRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = rowMinHeight(description != null))
             .selectable(
                 selected = selected,
                 interactionSource = interactionSource,
-                indication = ripple(),
+                indication = null,
                 enabled = enabled,
                 role = Role.RadioButton,
                 onClick = onSelect,
+            )
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+                enabled = enabled,
             )
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -273,6 +295,7 @@ fun SettingsInfoRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = rowMinHeight(description != null))
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -310,11 +333,20 @@ fun SettingsActionRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .heightIn(min = rowMinHeight(description != null))
+            // F09：禁用态此前和可用态一模一样（只少了一个水波），用户不知道这行点不了。
+            // 整行压到 0.38 的 content alpha + enabled 透传给 clickable，视觉与行为同时表达禁用。
+            .alpha(if (enabled) 1f else DisabledRowAlpha)
             .clickable(
                 interactionSource = interactionSource,
-                indication = ripple(),
+                indication = null,
                 enabled = enabled && !isLoading,
                 onClick = onClick,
+            )
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+                enabled = enabled && !isLoading,
             )
             .padding(horizontal = RowHorizontalPadding, vertical = RowVerticalPadding),
         verticalAlignment = Alignment.CenterVertically,
@@ -333,18 +365,20 @@ fun SettingsActionRow(
         }
         if (showChevron) {
             Spacer(Modifier.width(8.dp))
-            SettingsRowChevron()
+            SettingsChevron()
         }
     }
 }
 
 /**
- * 数值设置行（Kazumi SettingsSliderTile 等价物）：标题 + 数值徽标 + 滑杆。
+ * 数值设置行（Kazumi SettingsSliderTile 等价物）：标题 + 当前值 + 滑杆。
  *
  * 拖动期间只更新本地状态，松手（onValueChangeFinished）才回调 onValueChange ——
  * 避免每一帧都写 DataStore；行为与原弹窗「确定后生效」一致。
  *
- * @param valueLabel 徽标文案（用当前拖动值格式化）
+ * 滑杆是 [GlassSlider]（V-13）：与同组开关行同一套玻璃材质，不再是 M3 的细轨实心点。
+ *
+ * @param valueLabel 当前值文案（用当前拖动值格式化）
  */
 @Composable
 fun SettingsSliderRow(
@@ -373,26 +407,22 @@ fun SettingsSliderRow(
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(12.dp))
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                shape = ValueBadgeShape,
-            ) {
-                Text(
-                    text = valueLabel(dragValue),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                )
-            }
+            // V-09：原来是 8dp 圆角 secondaryContainer 徽标，现在与选择行同一套裸文字。
+            SettingsValueText(valueLabel(dragValue))
         }
-        Spacer(Modifier.height(8.dp))
-        Slider(
+        Spacer(Modifier.height(4.dp))
+        // V-13：这里是设置页最后一处 M3 Slider。同组的开关行早就是玻璃开关（GlassToggle），
+        // 只有这一行还是 M3 的细轨 + 实心圆点 —— 同一张组卡里两种材质，用户能一眼看出「没做完」。
+        // 命中区：GlassSlider 视觉高 34dp，外层 heightIn(min = 48dp) 给足竖向点击范围
+        // （M3 Slider 自带 48dp，自绘件必须显式补，否则这一行比别的行难点）。
+        GlassSlider(
             value = dragValue,
             onValueChange = { dragValue = it },
-            onValueChangeFinished = { onValueChange(dragValue) },
             valueRange = valueRange,
             steps = steps,
+            modifier = Modifier.heightIn(min = SettingsRowMinHeight),
             enabled = enabled,
+            onValueChangeFinished = { onValueChange(dragValue) },
         )
     }
 }

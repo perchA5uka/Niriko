@@ -6,17 +6,16 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
@@ -32,24 +31,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.navigation.TabReselectSignal
-import com.otakup.niriko.navigation.TopLevelDestination
-import com.otakup.niriko.navigation.applyTabReselectTo
-import com.otakup.niriko.ui.animation.RevealOnScroll
-import com.otakup.niriko.ui.common.reportBottomBarScroll
-import androidx.compose.ui.platform.LocalContext
 import com.otakup.niriko.data.model.search.SubjectSearchUiState
 import com.otakup.niriko.data.model.search.TrendingMode
 import com.otakup.niriko.data.rank.RankDelta
 import com.otakup.niriko.data.rank.RankingSnapshotStore
 import com.otakup.niriko.data.rank.SettingsRankingSnapshotStorage
+import com.otakup.niriko.navigation.TabReselectSignal
+import com.otakup.niriko.navigation.TopLevelDestination
+import com.otakup.niriko.navigation.applyTabReselectTo
 import com.otakup.niriko.nirikoApp
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.RevealOnScroll
+import com.otakup.niriko.ui.common.reportBottomBarScroll
 import com.otakup.niriko.ui.components.ErrorContent
 import com.otakup.niriko.ui.components.SkeletonSubjectCard
+import com.otakup.niriko.ui.components.StateHost
 import com.otakup.niriko.ui.subject.SubjectResultCard
 import com.otakup.niriko.util.toCardDisplayModel
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,6 @@ internal fun TrendingFreshnessRow(
     }
 }
 
-
 /**
  * 趋势区（当季热门 / 历史排名）全屏列表。
  * 从旧 SubjectSearchScreen 迁移，专注滚动位置恢复与触底加载分页。
@@ -137,150 +137,169 @@ fun TrendingSection(
     topInset: Dp = 0.dp,
     headerContent: (@Composable () -> Unit)? = null,
 ) {
-    // 第 6 轮 R6：删掉 !trendingMode.isTrend 早退。
-    // 改造前 FIND / MONTHLY 是「功能入口」需要在这里提前返回；这两个模式已随模块删除，
-    // 剩下的三个模式都是趋势列表，早退只会让空态分支再也走不到。
-    if (state.error != null && query.isBlank()) {
-        ErrorContent(message = state.error, onRetry = onRetry)
-    } else if (state.trendingResults.isNotEmpty()) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            // 陈旧度 + 强制刷新入口：改造前用户无从判断屏幕上是新数据还是缓存
+    // B-13：加载 / 空 / 错误 / 正文之间的硬替换改为 StateHost 的 alpha 包络
+    // （单实例、按 key 变化播放；不是 AnimatedContent —— 整块里就有 LazyColumn，双组合会踩双 Lazy 红线）。
+    val paneStateKey = when {
+        state.error != null && query.isBlank() -> "error"
+        state.trendingResults.isNotEmpty() -> "results"
+        state.trendingMode == TrendingMode.STEAM && query.isBlank() -> "steamEmpty"
+        state.isLoadingTrending -> "loading"
+        else -> "empty"
+    }
+    StateHost(stateKey = paneStateKey) {
+        // 第 6 轮 R6：删掉 !trendingMode.isTrend 早退。
+        // 改造前 FIND / MONTHLY 是「功能入口」需要在这里提前返回；这两个模式已随模块删除，
+        // 剩下的三个模式都是趋势列表，早退只会让空态分支再也走不到。
+        if (state.error != null && query.isBlank()) {
+            ErrorContent(message = state.error, onRetry = onRetry)
+        } else if (state.trendingResults.isNotEmpty()) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                // 陈旧度 + 强制刷新入口：改造前用户无从判断屏幕上是新数据还是缓存
 
-            // 第 6 轮返工（用户复核）：当季热门回到**纯卡片列表** ——
-            // 头部计数行 / 排序 chips / 「第 N 话」副标题 / 尾部出口全部移除，
-            // 数据仍是「类内人气序 + 质量门槛 + 多样性重排 → 前 30」。
-            val listState = rememberLazyListState()
-            // 恢复该类型上次的滚动位置（像素级 index+offset；trendingVersion 每次 +1 是可靠信号）
-            // 仅历史排名（ALL_TIME）可翻页/切类型，需要恢复；SEASONAL 固定顶部。
-            val latestInitialScrollPos = rememberUpdatedState(initialScrollPos)
-            LaunchedEffect(state.trendingVersion) {
-                val (idx, offset) = latestInitialScrollPos.value
-                if (state.trendingMode == TrendingMode.ALL_TIME && state.trendingResults.isNotEmpty()) {
-                    listState.scrollToItem(idx.coerceIn(0, state.trendingResults.size), offset)
-                }
-            }
-            // 滚动时上报当前位置（index+offset 像素级，切类型时保存）
-            LaunchedEffect(listState) {
-                snapshotFlow {
-                    listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
-                }.collect { (index, offset) ->
-                    onScrollPosChange(index, offset)
-                }
-            }
-            // F11：底栏重选发现页 —— 不在顶部先回顶；已在顶部才刷新（与下拉刷新同一入口）。
-            // key 是**事件号**（不是滚动状态）：重组 / 列表变化都不会重复触发。
-            LaunchedEffect(tabReselectEventId) {
-                if (tabReselectEventId <= 0) return@LaunchedEffect
-                val signal = tabReselect ?: return@LaunchedEffect
-                applyTabReselectTo(
-                    signal = signal,
-                    page = TopLevelDestination.Discover.ordinal,
-                    supportsRefreshAtTop = true,
-                    listState = listState,
-                ) { onForceRefresh?.invoke() }
-            }
-            // 滚动接近底部 → 触发加载下一页（像素距离触发 + 最新 state，单一 effect）
-            val latestState = rememberUpdatedState(state)
-            val thresholdPx = with(LocalDensity.current) { 200.dp.toPx() }
-            LaunchedEffect(listState, thresholdPx) {
-                snapshotFlow {
-                    val info = listState.layoutInfo
-                    val last = info.visibleItemsInfo.lastOrNull()
-                    if (last == null || info.totalItemsCount == 0) {
-                        Double.MAX_VALUE
-                    } else {
-                        // 距底部像素 ≈ 剩余未组合项数 × 最后可见项高度
-                        val remainingItems = info.totalItemsCount - 1 - last.index
-                        remainingItems.toDouble() * last.size
-                    }
-                }.collect { remainingPx ->
-                    val st = latestState.value
-                    // 第 6 轮：hasMore 现在对「历史排名 · 全部」也成立（候选池还能扩大），
-                    // 因此不再限定 ALL_TIME，只认 hasMore。
-                    if (st.hasMore && !st.isLoadingMore && remainingPx < thresholdPx) {
-                        onLoadMore()
+                // 第 6 轮返工（用户复核）：当季热门回到**纯卡片列表** ——
+                // 头部计数行 / 排序 chips / 「第 N 话」副标题 / 尾部出口全部移除，
+                // 数据仍是「类内人气序 + 质量门槛 + 多样性重排 → 前 30」。
+                val listState = rememberLazyListState()
+                // 恢复该类型上次的滚动位置（像素级 index+offset；trendingVersion 每次 +1 是可靠信号）
+                // 仅历史排名（ALL_TIME）可翻页/切类型，需要恢复；SEASONAL 固定顶部。
+                val latestInitialScrollPos = rememberUpdatedState(initialScrollPos)
+                LaunchedEffect(state.trendingVersion) {
+                    val (idx, offset) = latestInitialScrollPos.value
+                    if (state.trendingMode == TrendingMode.ALL_TIME && state.trendingResults.isNotEmpty()) {
+                        listState.scrollToItem(idx.coerceIn(0, state.trendingResults.size), offset)
                     }
                 }
-            }
-            // 3.7：榜单周快照 → 行尾 ▲▼。只在历史排名（有 rank）时计算；本周首次采集当周没有旧快照，箭头自然为空。
-            val rankDeltas = rememberRankingDeltas(state.trendingMode, state.trendingResults)
-            LazyColumn(state = listState, modifier = Modifier.reportBottomBarScroll(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = topInset, bottom = 120.dp)) {
-                item(key = "feed_header") {
-                    Column { headerContent?.invoke(); TrendingFreshnessRow(lastUpdatedAt, onForceRefresh) }
-                }
-                itemsIndexed(state.trendingResults, key = { _, subject -> subject.subjectId }) { index, subject ->
-                    // 入场：进入视口淡入上移，同屏错峰 50ms（Apple：空间感知）
-                    RevealOnScroll(staggerIndex = index % 5) {
-                        SubjectResultCard(
-                            pressTiltEnabled = true,
-                            // 3.7：榜单行尾的 ▲▼（只在历史排名且有上周快照时出现）
-                            rankDelta = rankDeltas[subject.subjectId],
-                            model = subject.toCardDisplayModel(state.steamGames[subject.subjectId]),
-                            isInCollection = subject.subjectId in state.collectedSubjectIds,
-                            onClick = { onSubjectClick(subject.subjectId) },
-                            sharedElementKey = "cover_" + subject.subjectId,
-                            sharedTransitionScope = sharedTransitionScope,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            modifier = Modifier.animateItem(),
-                        )
+                // 滚动时上报当前位置（index+offset 像素级，切类型时保存）
+                LaunchedEffect(listState) {
+                    snapshotFlow {
+                        listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+                    }.collect { (index, offset) ->
+                        onScrollPosChange(index, offset)
                     }
                 }
-                item {
-                    when {
-                        // 加载更多：横向卡片骨架（B4），尺寸与上方真实结果卡一致
-                        state.isLoadingMore -> SkeletonSubjectCard(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
-
-                        !state.hasMore -> Box(
-                            Modifier.fillMaxWidth().padding(8.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                "— 已经到底了 —",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 回顶弹簧在「减少动态效果」下应瞬时落位（本约定只影响动画，不影响判决逻辑）。
+                val scrollToTopReduceMotion = LocalReduceMotion.current
+                // F11：底栏重选发现页 —— 不在顶部先回顶；已在顶部才刷新（与下拉刷新同一入口）。
+                // key 是**事件号**（不是滚动状态）：重组 / 列表变化都不会重复触发。
+                LaunchedEffect(tabReselectEventId) {
+                    if (tabReselectEventId <= 0) return@LaunchedEffect
+                    val signal = tabReselect ?: return@LaunchedEffect
+                    applyTabReselectTo(
+                        signal = signal,
+                        page = TopLevelDestination.Discover.ordinal,
+                        supportsRefreshAtTop = true,
+                        listState = listState,
+                        reduceMotion = scrollToTopReduceMotion,
+                    ) { onForceRefresh?.invoke() }
+                }
+                // 滚动接近底部 → 触发加载下一页（像素距离触发 + 最新 state，单一 effect）
+                val latestState = rememberUpdatedState(state)
+                val thresholdPx = with(LocalDensity.current) { 200.dp.toPx() }
+                LaunchedEffect(listState, thresholdPx) {
+                    snapshotFlow {
+                        val info = listState.layoutInfo
+                        val last = info.visibleItemsInfo.lastOrNull()
+                        if (last == null || info.totalItemsCount == 0) {
+                            Double.MAX_VALUE
+                        } else {
+                            // 距底部像素 ≈ 剩余未组合项数 × 最后可见项高度
+                            val remainingItems = info.totalItemsCount - 1 - last.index
+                            remainingItems.toDouble() * last.size
+                        }
+                    }.collect { remainingPx ->
+                        val st = latestState.value
+                        // 第 6 轮：hasMore 现在对「历史排名 · 全部」也成立（候选池还能扩大），
+                        // 因此不再限定 ALL_TIME，只认 hasMore。
+                        if (st.hasMore && !st.isLoadingMore && remainingPx < thresholdPx) {
+                            onLoadMore()
+                        }
+                    }
+                }
+                // 3.7：榜单周快照 → 行尾 ▲▼。只在历史排名（有 rank）时计算；本周首次采集当周没有旧快照，箭头自然为空。
+                val rankDeltas = rememberRankingDeltas(state.trendingMode, state.trendingResults)
+                LazyColumn(state = listState, modifier = Modifier.reportBottomBarScroll(), verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = topInset, bottom = 120.dp)) {
+                    item(key = "feed_header") {
+                        Column {
+                            headerContent?.invoke()
+                            TrendingFreshnessRow(lastUpdatedAt, onForceRefresh)
+                        }
+                    }
+                    itemsIndexed(state.trendingResults, key = { _, subject -> subject.subjectId }) { index, subject ->
+                        // 入场：进入视口淡入上移，同屏错峰 50ms（Apple：空间感知）
+                        RevealOnScroll(staggerIndex = index % 5) {
+                            SubjectResultCard(
+                                pressTiltEnabled = true,
+                                // 3.7：榜单行尾的 ▲▼（只在历史排名且有上周快照时出现）
+                                rankDelta = rankDeltas[subject.subjectId],
+                                model = subject.toCardDisplayModel(state.steamGames[subject.subjectId]),
+                                isInCollection = subject.subjectId in state.collectedSubjectIds,
+                                onClick = { onSubjectClick(subject.subjectId) },
+                                sharedElementKey = "cover_" + subject.subjectId,
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                modifier = Modifier.animateItem(),
                             )
+                        }
+                    }
+                    item {
+                        when {
+                            // 加载更多：横向卡片骨架（B4），尺寸与上方真实结果卡一致
+                            state.isLoadingMore -> SkeletonSubjectCard(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+
+                            !state.hasMore -> Box(
+                                Modifier.fillMaxWidth().padding(8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "— 已经到底了 —",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
             }
+        } else if (state.trendingMode == TrendingMode.STEAM && query.isBlank()) {
+            // Steam 榜单空态：区分「加载失败（可见错误 + 重试）」与「正常空态」。
+            // 找不到顶端 state.error 区分（error 已被上面首个分支消费），这里直接给重试按钮，
+            // 与 ViewModel 中「榜单拉取失败且无缓存 → error 置位」的逻辑互补：即使 error 为空
+            // （比如本地有条目但榜单失败），重试也能重新触发 refreshTrending() 强制重拉榜单。
+            ErrorContent(
+                message = state.error ?: "这里展示 Steam 当前最活跃的游戏排行。网络不可用或暂无数据时为空；导入游戏库后也会显示你的 Steam 作品。",
+                onRetry = onRetry,
+                modifier = Modifier.padding(top = 72.dp),
+            )
+        } else if (state.isLoadingTrending) {
+            // 首次加载中：横向卡片骨架（B4）—— 与真实搜索结果卡同尺寸（改造前这里是转圈，
+            // 更早还会显示「输入关键词搜索作品」这种错位文案）
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                repeat(3) { SkeletonSubjectCard() }
+            }
+        } else {
+            // 空态（第 6 轮 §4.2 R2）：**按模式给正确文案**。
+            // 改造前所有模式共用「输入关键词搜索作品」—— 对榜单毫无意义，
+            // 用户刷新后看到的就是「一片空白 + 一句驴唇不对马嘴的提示」。
+            TrendingEmptyState(
+                message = when (state.trendingMode) {
+                    TrendingMode.SEASONAL ->
+                        "本季暂无可展示的人气作品：候选要么还没开播，要么都不足 100 人评分。"
+
+                    TrendingMode.ALL_TIME ->
+                        "榜单暂无数据：当前筛选条件下没有可展示的条目。"
+
+                    TrendingMode.STEAM ->
+                        "Steam 排行暂无数据：导入游戏库或检查网络后再试。"
+                },
+                onRetry = onRetry,
+                onOpenAllTime = if (state.trendingMode == TrendingMode.SEASONAL) onOpenAllTime else null,
+            )
         }
-    } else if (state.trendingMode == TrendingMode.STEAM && query.isBlank()) {
-        // Steam 榜单空态：区分「加载失败（可见错误 + 重试）」与「正常空态」。
-        // 找不到顶端 state.error 区分（error 已被上面首个分支消费），这里直接给重试按钮，
-        // 与 ViewModel 中「榜单拉取失败且无缓存 → error 置位」的逻辑互补：即使 error 为空
-        // （比如本地有条目但榜单失败），重试也能重新触发 refreshTrending() 强制重拉榜单。
-        ErrorContent(
-            message = state.error ?: "这里展示 Steam 当前最活跃的游戏排行。网络不可用或暂无数据时为空；导入游戏库后也会显示你的 Steam 作品。",
-            onRetry = onRetry,
-            modifier = Modifier.padding(top = 72.dp),
-        )
-    } else if (state.isLoadingTrending) {
-        // 首次加载中：横向卡片骨架（B4）—— 与真实搜索结果卡同尺寸（改造前这里是转圈，
-        // 更早还会显示「输入关键词搜索作品」这种错位文案）
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            repeat(3) { SkeletonSubjectCard() }
-        }
-    } else {
-        // 空态（第 6 轮 §4.2 R2）：**按模式给正确文案**。
-        // 改造前所有模式共用「输入关键词搜索作品」—— 对榜单毫无意义，
-        // 用户刷新后看到的就是「一片空白 + 一句驴唇不对马嘴的提示」。
-        TrendingEmptyState(
-            message = when (state.trendingMode) {
-                TrendingMode.SEASONAL ->
-                    "本季暂无可展示的人气作品：候选要么还没开播，要么都不足 100 人评分。"
-                TrendingMode.ALL_TIME ->
-                    "榜单暂无数据：当前筛选条件下没有可展示的条目。"
-                TrendingMode.STEAM ->
-                    "Steam 排行暂无数据：导入游戏库或检查网络后再试。"
-            },
-            onRetry = onRetry,
-            onOpenAllTime = if (state.trendingMode == TrendingMode.SEASONAL) onOpenAllTime else null,
-        )
     }
 }
 

@@ -8,12 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -33,19 +31,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.SubjectType
+import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.stats.CompletionCaliber
 import com.otakup.niriko.data.model.stats.CompletionDetail
 import com.otakup.niriko.data.model.stats.StatsUiState
+import com.otakup.niriko.ui.components.StatLabel
+import com.otakup.niriko.ui.components.StatNumber
+import com.otakup.niriko.ui.components.StatNumberTone
+import com.otakup.niriko.ui.components.StatTile
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.theme.LocalDarkTheme
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.chartTypeColor
 import com.otakup.niriko.ui.theme.statusTone
 
@@ -53,9 +54,11 @@ import com.otakup.niriko.ui.theme.statusTone
  * 统计页 · 收藏概览（AniShelf 借鉴）。
  * 总作品大卡 + 2x2 tonal 状态卡（看过/在看/想看/搁置）+ 分类明细（动画/漫画/游戏/已看集数）。
  *
- * P0a 色彩秩序：状态卡改用 StatusTone（accent × 0.14 叠在 surfaceContainer 上），
- * 数字用 accent（深色取 tone 80），标签 onSurfaceVariant —— 浅粉彩补丁消失。
- * emoji 图标换为 Material Icons（tint 用对应状态色）。
+ * 色彩/排版口径（V-21 + G-2）：所有数值走 StatNumber 三档（24/13/11），
+ * 四张状态卡统一用 StatTile，底色/文字取 statusTone 的 container/onContainer 成对语义色；
+ * 只有「收藏作品数」这一枚主指标加主色（StatNumberTone.Primary），其余数值跟随正文色。
+ * 改造前状态卡是「surfaceContainer + accent×0.14 手绘叠加、数字再单独取 accent」，
+ * 同一页有 20/22/24/26/28/32 六档字号，读不出主次（audit V-21）。
  */
 @Composable
 fun StatsOverviewSection(state: StatsUiState) {
@@ -72,7 +75,7 @@ fun StatsOverviewSection(state: StatsUiState) {
                     Box(
                         modifier = Modifier
                             .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(NirikoShapes.ControlShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -85,14 +88,11 @@ fun StatsOverviewSection(state: StatsUiState) {
                     }
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text(
-                            text = "${state.totalCount}",
-                            style = MaterialTheme.typography.headlineLarge,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                        Text("收藏作品", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // V-21（原型 A：24/13/11 三档）：主指标 24sp + 主色。
+                        // 同一屏只有「收藏作品数」用主色——主色是层级信号，均分/完成率走默认色，
+                        // 否则四个数字都抢主色，等于没有主指标。
+                        StatNumber("${state.totalCount}", tone = StatNumberTone.Primary)
+                        StatLabel("收藏作品")
                     }
                 }
             }
@@ -118,7 +118,8 @@ fun StatsOverviewSection(state: StatsUiState) {
             modifier = Modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.medium).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("分类明细", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            // 字重交回 token（titleSmall = w600）：调用点再叠 Bold 就是在 token 之外手写第 7 种字重。
+            Text("分类明细", style = MaterialTheme.typography.titleSmall)
             typeRow(color = chartTypeColor(SubjectType.ANIME), label = "动画", count = countOfType(state, SubjectType.ANIME))
             typeRow(color = chartTypeColor(SubjectType.MANGA), label = "漫画", count = countOfType(state, SubjectType.MANGA))
             typeRow(color = chartTypeColor(SubjectType.GAME), label = "游戏", count = countOfType(state, SubjectType.GAME))
@@ -130,7 +131,7 @@ fun StatsOverviewSection(state: StatsUiState) {
             modifier = Modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.medium).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("观看量", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text("观看量", style = MaterialTheme.typography.titleSmall)
             typeRow(color = chartTypeColor(SubjectType.ANIME), label = "累计集数", count = state.totalWatchedEpisodes)
             if (state.watchMinutes > 0) {
                 typeRow(
@@ -154,7 +155,7 @@ fun StatsOverviewSection(state: StatsUiState) {
 
 /** 分钟 → 人类可读时长；只用于概览的「累计时长 / 游戏时长」两行。 */
 private fun formatDuration(minutes: Int): String = when {
-    minutes < 60 -> "${minutes} 分钟"
+    minutes < 60 -> "$minutes 分钟"
     minutes % 60 == 0 -> "${minutes / 60} 小时"
     else -> "${minutes / 60} 小时 ${minutes % 60} 分"
 }
@@ -165,9 +166,11 @@ private fun SmallStat(label: String, value: String) {
         modifier = Modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.small),
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            // V-21：与总作品数同一档 StatNumber(24/w600/tnum)，不再各自挑 titleLarge(22)；
+            // 标签统一 13sp 辅助档（StatLabel），注释才用 11.5sp。
+            StatNumber(value)
             Spacer(Modifier.width(6.dp))
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            StatLabel(label)
         }
     }
 }
@@ -180,13 +183,9 @@ private fun CompletionStat(state: StatsUiState) {
         modifier = Modifier.fillMaxWidth().appleGlassCard(shape = MaterialTheme.shapes.small),
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "%.0f%%".format(state.completionRate * 100),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            StatNumber("%.0f%%".format(state.completionRate * 100))
             Spacer(Modifier.width(6.dp))
-            Text("完成率", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            StatLabel("完成率")
             Spacer(Modifier.weight(1f))
             Text(
                 text = "?",
@@ -255,33 +254,25 @@ private fun statusCard(
 ) {
     val tone = statusTone(status)
     val count = state.statusDistribution.firstOrNull { it.status == status }?.count ?: 0
-    val shape = RoundedCornerShape(16.dp)
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceContainer, shape)
-            .drawBehind { drawRect(tone.accent.copy(alpha = 0.14f)) },
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = tone.accent,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall, color = tone.onContainer, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-            }
-            Text("$count", fontSize = 26.sp, color = if (LocalDarkTheme.current) tone.onContainer else tone.accent, fontWeight = FontWeight.Bold)
-        }
-    }
+    // V-21 + G-2：四张状态卡改用唯一磁贴组件 StatTile（图标+标签一行 / 24sp 数字一行）。
+    // 改造前这里各自写容器、图标与数字，和概览左卡是两种内部布局。
+    // 颜色保持 P0a 的口径：**surfaceContainer 底 + accent 薄涂 14%**（不是 statusTone.container
+    // 实底——那会把四张卡变成浅粉彩补丁，正是 P0a 修掉的问题）；数字深色取 onContainer、
+    // 浅色取 accent，标签用 onContainer。
+    StatTile(
+        value = "$count",
+        label = label,
+        modifier = modifier,
+        icon = icon,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = tone.onContainer,
+        valueColor = if (LocalDarkTheme.current) tone.onContainer else tone.accent,
+        tint = tone.accent,
+    )
 }
 
 @Composable
-private fun typeRow(color: Color, label: String, count: Int) =
-    typeRow(color = color, label = label, text = "$count")
+private fun typeRow(color: Color, label: String, count: Int) = typeRow(color = color, label = label, text = "$count")
 
 /** 数值既可能是计数也可能是时长文本（"22 小时 6 分"），所以留一个文本重载。 */
 @Composable
@@ -294,5 +285,4 @@ private fun typeRow(color: Color, label: String, text: String) {
     }
 }
 
-private fun countOfType(state: StatsUiState, type: SubjectType): Int =
-    state.typeDistribution.firstOrNull { it.type == type }?.count ?: 0
+private fun countOfType(state: StatsUiState, type: SubjectType): Int = state.typeDistribution.firstOrNull { it.type == type }?.count ?: 0

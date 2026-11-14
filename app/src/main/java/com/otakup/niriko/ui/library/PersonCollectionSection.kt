@@ -1,14 +1,12 @@
 package com.otakup.niriko.ui.library
 
-import androidx.compose.foundation.BorderStroke
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,12 +19,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,16 +34,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.local.entity.PersonCollectionEntity
-import androidx.compose.ui.platform.LocalContext
 import com.otakup.niriko.ui.components.BlurredGlassSurface
-import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.components.SectionHeader
 import com.otakup.niriko.ui.components.liquidglass.loadBlurredCover
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /** 库页面"人物收藏"横向滚动分区。人物不参与观看状态，仅展示已收藏。标题可点击折叠/展开。 */
 @Composable
@@ -58,27 +55,21 @@ fun PersonCollectionSection(
 ) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     Column(modifier = modifier.fillMaxWidth()) {
-        // 标题行（可点击折叠/展开）
-        Row(
+        // V-15：分区标题统一 SectionHeader；整行可点折叠，右侧箭头仍走 IconButton（48dp 命中区）。
+        SectionHeader(
+            title = "收藏的人物",
             modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "收藏的人物",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = { expanded = !expanded }) {
-                Icon(
-                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (expanded) "收起人物" else "展开人物",
-                )
-            }
-        }
+                .padding(horizontal = 16.dp)
+                .clickable { expanded = !expanded },
+            trailing = {
+                IconButton(onClick = { expanded = !expanded }) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (expanded) "收起人物" else "展开人物",
+                    )
+                }
+            },
+        )
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             LazyRow(
@@ -111,49 +102,49 @@ private fun PersonCollectionCard(
     }
     BlurredGlassSurface(
         bitmap = blurredCover,
-        shape = RoundedCornerShape(20.dp),
+        shape = NirikoShapes.CardShape,
         borderCornerRadius = 20f,
         modifier = modifier.width(100.dp),
     ) {
-    Box(
-        modifier = Modifier
-            .clickable(onClick = onClick),
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(8.dp),
+        Box(
+            modifier = Modifier
+                .clickable(onClick = onClick),
         ) {
-            AsyncImage(
-                model = person.imageUrl,
-                contentDescription = person.nameCn ?: person.name,
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = person.nameCn ?: person.name,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-            // B03：这一行**无条件渲染**（没有职业时渲染空文本 + minLines = 1）。
-            // 之前用 if 包着：有职业的卡多一行 → LazyRow 高度随可见卡片变化 = 横滑抖动。
-            Text(
-                text = person.career.firstOrNull()?.let { careerLabel(it) } ?: "",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(8.dp),
+            ) {
+                AsyncImage(
+                    model = person.imageUrl,
+                    contentDescription = person.nameCn ?: person.name,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    contentScale = ContentScale.Crop,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = person.nameCn ?: person.name,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+                // B03：这一行**无条件渲染**（没有职业时渲染空文本 + minLines = 1）。
+                // 之前用 if 包着：有职业的卡多一行 → LazyRow 高度随可见卡片变化 = 横滑抖动。
+                Text(
+                    text = person.career.firstOrNull()?.let { careerLabel(it) } ?: "",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    minLines = com.otakup.niriko.util.RailCardPolicy.LABEL_LINES,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
-    }
     }
 }
 

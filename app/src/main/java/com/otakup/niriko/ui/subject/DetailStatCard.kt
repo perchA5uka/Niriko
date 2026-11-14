@@ -15,14 +15,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.ui.components.GlassSectionCard
+import com.otakup.niriko.ui.components.StatNumber
+import com.otakup.niriko.ui.theme.NirikoAccents
+import com.otakup.niriko.ui.theme.NirikoShapes
 import top.yukonga.miuix.kmp.blur.Backdrop
 
 /**
@@ -45,7 +45,7 @@ fun DetailStatGrid(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         StatCard(
-            icon = { Icon(Icons.Filled.Star, null, tint = Color(0xFFF59E0B), modifier = Modifier.padding(bottom = 6.dp)) },
+            icon = { Icon(Icons.Filled.Star, null, tint = NirikoAccents.RatingGold, modifier = Modifier.padding(bottom = 6.dp)) },
             value = subject.ratingScore?.let { formatScore(it) } ?: "—",
             label = "Bangumi 评分",
             glassBackdrop = glassBackdrop,
@@ -62,23 +62,28 @@ fun DetailStatGrid(
             SubjectType.BOOK, SubjectType.MANGA -> {
                 subject.series != false && (subject.volumes ?: 0) > 0
             }
+
             else -> true
         }
         if (showMiddle) {
             val (value, label) = when (subject.type) {
                 SubjectType.ANIME, SubjectType.REAL ->
                     (subject.totalEpisodes?.toString() ?: "—") to "总集数"
+
                 SubjectType.BOOK, SubjectType.MANGA ->
                     (subject.volumes?.toString() ?: "—") to "卷数"
+
                 SubjectType.GAME ->
                     (vndbLengthMinutes?.let { formatDuration(it) } ?: "—") to "时长"
+
                 SubjectType.MUSIC ->
                     (episodeCount?.toString() ?: "—") to "曲目数"
+
                 else ->
                     (subject.totalEpisodes?.toString() ?: "—") to "总集数"
             }
             StatCard(
-                icon = { Icon(Icons.Filled.PlayArrow, null, tint = Color(0xFF3B82F6), modifier = Modifier.padding(bottom = 6.dp)) },
+                icon = { Icon(Icons.Filled.PlayArrow, null, tint = NirikoAccents.EpisodeBlue, modifier = Modifier.padding(bottom = 6.dp)) },
                 value = value,
                 label = label,
                 glassBackdrop = glassBackdrop,
@@ -88,7 +93,7 @@ fun DetailStatGrid(
         }
 
         StatCard(
-            icon = { Icon(Icons.Filled.People, null, tint = Color(0xFF2E7D32), modifier = Modifier.padding(bottom = 6.dp)) },
+            icon = { Icon(Icons.Filled.People, null, tint = NirikoAccents.PeopleGreen, modifier = Modifier.padding(bottom = 6.dp)) },
             value = subject.ratingTotal?.toString() ?: "—",
             label = "评分人数",
             glassBackdrop = glassBackdrop,
@@ -119,31 +124,31 @@ private fun StatCard(
         backdrop = glassBackdrop,
         isScrolling = isScrolling,
         modifier = modifier,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        shape = NirikoShapes.SectionShape,
         contentPadding = 14.dp,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-        icon()
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            fontSize = 10.sp,
-        )
+            icon()
+            // V-21：值统一走 StatNumber（24sp / w600 / tnum），字号与 tnum 只有这一个来源。
+            // 改造前是 headlineMedium(28) 再被 fontSize = 20.sp 覆写 —— 等于手写第 6 档。
+            StatNumber(value)
+            // 标签用 13sp 辅助档（原型 A 的 24/13/11 三档里的 13）；这张卡三等分窄，
+            // 所以保留 textAlign = Center 并单行截断，避免 "Bangumi 评分" 折成两行把卡撑高。
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+            )
         }
     }
 }
 
-private fun formatScore(score: Float): String =
-    if (score == score.toInt().toFloat()) score.toInt().toString()
-    else "%.1f".format(score)
-
+private fun formatScore(score: Float): String = if (score == score.toInt().toFloat()) {
+    score.toInt().toString()
+} else {
+    "%.1f".format(score)
+}

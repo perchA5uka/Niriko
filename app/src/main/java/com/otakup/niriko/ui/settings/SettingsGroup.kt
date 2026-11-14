@@ -48,8 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.theme.NirikoShapes
 
@@ -100,7 +100,11 @@ fun SettingsSplitGroup(
     /** 组两端大圆角；设置主页 / 宽屏左列保持默认（[NirikoShapes.Card]），二级页见 [SettingsPageSplitGroup]。 */
     outerRadius: Dp = GroupOuterRadius,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        // V-05：整改前主页/二级页/宽屏右列同屏有 0/16/20dp 三种水平缩进（组卡贴边、组标题 16dp、
+        // 页面标题与搜索框 20dp）。把 16dp 收进组卡自身，调用点（含 9 个二级页）不必各写一遍。
+        modifier = modifier.fillMaxWidth().padding(horizontal = SettingsPageHorizontalInset),
+    ) {
         Box(
             modifier = Modifier.fillMaxWidth().appleGlassCard(shape = RoundedCornerShape(outerRadius)),
         ) {
@@ -175,6 +179,7 @@ fun SettingsDetailScaffold(
     Column(modifier = modifier.fillMaxSize()) {
         TopAppBar(
             title = {
+                // V-16：二级页标题统一走 headlineSmall（Type.kt 的 24sp/w600），不再各处手写 fontSize。
                 Text(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -219,7 +224,13 @@ fun SettingsGroupTitle(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp),
+            // V-05：与组卡同一条 16dp 水平基线（此前 16dp 与页面标题 20dp 不一致）
+            .padding(
+                start = SettingsPageHorizontalInset,
+                end = SettingsPageHorizontalInset,
+                top = 20.dp,
+                bottom = 8.dp,
+            ),
     ) {
         Text(
             text = text,

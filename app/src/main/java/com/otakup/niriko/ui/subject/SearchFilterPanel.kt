@@ -1,14 +1,16 @@
 package com.otakup.niriko.ui.subject
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -23,26 +25,24 @@ import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RangeSlider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.discover.BrowseArea
 import com.otakup.niriko.data.discover.BrowseFilter
@@ -52,6 +52,73 @@ import com.otakup.niriko.data.discover.BrowseVersion
 import com.otakup.niriko.data.discover.BrowseYear
 import com.otakup.niriko.data.filter.FilterDimension
 import com.otakup.niriko.data.model.search.SearchSortMode
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.orSnapFinite
+import com.otakup.niriko.ui.components.GlassRangeSlider
+import com.otakup.niriko.ui.components.GlassToggle
+import com.otakup.niriko.ui.components.NirikoFilterPill
+import com.otakup.niriko.ui.components.NirikoMenu
+import com.otakup.niriko.ui.components.NirikoMenuItem
+import com.otakup.niriko.ui.components.NirikoTextField
+
+// ==================== 锚定菜单宿主（V-14 收口） ====================
+
+/**
+ * 筛选面板的锚定菜单宿主状态（**一个页面一个实例**）。
+ *
+ * 为什么不在面板里直接弹菜单：筛选面板挂在 LazyColumn 的 item / headerContent 这类懒容器里，
+ * 那里主轴约束是无限高 —— 菜单的定位与裁剪都拿不到整页尺寸（GlassMenuOverlay 用约束高度当可视区），
+ * 而且菜单会跟着列表一起滚走。所以面板只「请求一次菜单」，真正的菜单由页面根层的
+ * [FilterMenuHost] 渲染一次（页面级 overlay，与正文 / 顶栏同级）。
+ */
+@Stable
+class FilterMenuHostState {
+    /** 最近一次菜单请求：**收起时不清空**，清空会让菜单组合树立刻被摘掉，退场动画播不出来。 */
+    var request: FilterMenuRequest? by mutableStateOf(null)
+        private set
+
+    /** 菜单是否展开（只翻这个，不销毁 [request]）。 */
+    var expanded: Boolean by mutableStateOf(false)
+        private set
+
+    fun show(
+        anchorInRoot: Rect,
+        content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
+    ) {
+        request = FilterMenuRequest(anchorInRoot, content)
+        expanded = true
+    }
+
+    fun dismiss() {
+        expanded = false
+    }
+}
+
+/** 一次菜单请求：锚点（root 坐标）+ 菜单项内容；dismiss 由宿主注入。 */
+class FilterMenuRequest(
+    val anchorInRoot: Rect,
+    val content: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
+)
+
+/**
+ * 页面根层渲染的菜单宿主：整页尺寸的 overlay，作为根 Box 的最后一个子节点即可。
+ *
+ * [NirikoMenu] 自带 fillMaxSize 与 zIndex，所以它盖在正文与顶栏之上；
+ * 收起后 [FilterMenuHostState.request] 仍保留（退场动画需要），此时宿主什么都不画。
+ */
+@Composable
+fun FilterMenuHost(state: FilterMenuHostState, modifier: Modifier = Modifier) {
+    val request = state.request ?: return
+    NirikoMenu(
+        expanded = state.expanded,
+        anchorInRoot = request.anchorInRoot,
+        onDismissRequest = state::dismiss,
+        modifier = modifier,
+    ) {
+        request.content.invoke(this, state::dismiss)
+    }
+}
 
 /**
  * 高级筛选面板（**关键词搜索**用）。
@@ -74,10 +141,14 @@ fun SearchFilterPanel(
     onSortModeSelected: (SearchSortMode) -> Unit,
     onFilterSelected: (dimensionKey: String, optionLabel: String) -> Unit,
     onNsfwToggled: (Boolean) -> Unit,
+    /** V-14：页面级锚定菜单宿主；面板挂在懒容器里，自己弹不出正确的菜单定位与裁剪。 */
+    menuHost: FilterMenuHostState? = null,
     modifier: Modifier = Modifier,
 ) {
     if (dimensions.isEmpty() && !nsfwEnabled) return
 
+    // 展开/收起属「状态切换」：reduceMotion 时直接显示/隐藏，不做高度与透明度过渡。
+    val reduceMotion = LocalReduceMotion.current
     Column(modifier = modifier.fillMaxWidth()) {
         // 展开/收起按钮
         Row(
@@ -107,16 +178,23 @@ fun SearchFilterPanel(
             }
         }
 
-        // 展开面板 — 带淡入/淡出的弹簧动画
+        // 展开面板 — 高度用 spatial 档（体型变化），透明度用 effects 档（A.8：原来 8 处手写
+        // spring(StiffnessMediumLow) 是第 N 套手感，改成与全站同一组六档）
         AnimatedVisibility(
             visible = isExpanded,
-            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
-            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+            enter = panelEnter(reduceMotion),
+            exit = panelExit(reduceMotion),
         ) {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    // B-14：面板内选项会变（切搜索类型 → 维度条数与文案变化），容器高度原先硬切一帧。
+                    // animateContentSize 只补「内容尺寸差」这一段，展开/收起仍归 AnimatedVisibility，
+                    // 两者职责不重叠（否则高度会被算两次）。
+                    .animateContentSize(
+                        animationSpec = NirikoMotionSpecs.spatialDefault<IntSize>().orSnapFinite(reduceMotion),
+                    ),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 ),
@@ -126,6 +204,7 @@ fun SearchFilterPanel(
                     SortModeSelector(
                         currentMode = sortMode,
                         onModeSelected = onSortModeSelected,
+                        menuHost = menuHost,
                     )
                     Spacer(Modifier.height(12.dp))
 
@@ -148,7 +227,9 @@ fun SearchFilterPanel(
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.weight(1f))
-                        Switch(
+                        // V-13：M3 Switch 在玻璃面板里是唯一一块实心材质，换成玻璃开关后
+                        // 与设置页 34 个开关同族（同一组件负责 Role.Switch 语义与 48dp 行兜底）。
+                        GlassToggle(
                             checked = nsfwEnabled,
                             onCheckedChange = onNsfwToggled,
                         )
@@ -179,27 +260,29 @@ private fun DimensionRow(
     ) {
         dimension.options.forEach { option ->
             val isSelected = option.label in selections
-            FilterChip(
+            // 统一胶囊：改造前是 M3 FilterChip（8dp 小圆角 + 选中实心 primaryContainer），
+            // 与设置页/详情页的胶囊语言不一致，也是「五副 chip 面孔」里的一副。
+            NirikoFilterPill(
+                text = option.label,
                 selected = isSelected,
                 onClick = { onOptionSelected(option.label) },
-                label = { Text(option.label, style = MaterialTheme.typography.labelSmall) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                ),
             )
         }
     }
 }
 
+/** 菜单项选中标记：NirikoMenuItem 没有 selected 态，用文字后缀保持行内对齐（不用图标，避免选中行缩进错位）。 */
+private fun menuItemLabel(label: String, selected: Boolean): String = if (selected) label + "  ✓" else label
+
 /** 排序方式下拉选择器（关键词搜索用）。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SortModeSelector(
     currentMode: SearchSortMode,
     onModeSelected: (SearchSortMode) -> Unit,
+    menuHost: FilterMenuHostState? = null,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    // V-14：菜单浮层由页面根层渲染，这里只记锚点（root 坐标，在懒容器里也是整页坐标）。
+    var anchorInRoot by remember { mutableStateOf<Rect?>(null) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -208,38 +291,32 @@ private fun SortModeSelector(
             fontWeight = FontWeight.Medium,
         )
         Spacer(Modifier.width(8.dp))
-        TextButton(onClick = { expanded = true }) {
+        TextButton(
+            modifier = Modifier.onGloballyPositioned { coordinates ->
+                val rect = coordinates.boundsInRoot()
+                if (rect != anchorInRoot) anchorInRoot = rect
+            },
+            onClick = {
+                anchorInRoot?.let { anchor ->
+                    menuHost?.show(anchor) { dismiss ->
+                        SearchSortMode.entries.forEach { mode ->
+                            NirikoMenuItem(
+                                text = menuItemLabel(mode.label, mode == currentMode),
+                                onClick = {
+                                    onModeSelected(mode)
+                                    dismiss()
+                                },
+                            )
+                        }
+                    }
+                }
+            },
+        ) {
             Text(
                 currentMode.label,
                 style = MaterialTheme.typography.bodyMedium,
             )
             Icon(Icons.Default.ArrowDropDown, contentDescription = "展开排序选项")
-        }
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            SearchSortMode.entries.forEach { mode ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(mode.label)
-                            if (mode == currentMode) {
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "✓",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        onModeSelected(mode)
-                        expanded = false
-                    },
-                )
-            }
         }
     }
 }
@@ -292,8 +369,12 @@ fun BrowseFilterPanel(
     onRankRange: (Int?, Int?) -> Unit,
     onNsfw: (Boolean) -> Unit,
     onClear: () -> Unit,
+    /** V-14：页面级锚定菜单宿主（同 [SearchFilterPanel]）。 */
+    menuHost: FilterMenuHostState? = null,
     modifier: Modifier = Modifier,
 ) {
+    // 同 [SearchFilterPanel]：展开/收起降级为瞬时切换。
+    val reduceMotion = LocalReduceMotion.current
     Column(modifier = modifier.fillMaxWidth()) {
         // —— 工具条：筛选开关 + 已筛选标记 + 计数 ——
         Row(
@@ -326,13 +407,19 @@ fun BrowseFilterPanel(
 
         AnimatedVisibility(
             visible = isExpanded,
-            enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
-            exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+            enter = panelEnter(reduceMotion),
+            exit = panelExit(reduceMotion),
         ) {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    // B-14：面板内选项会变（切搜索类型 → 维度条数与文案变化），容器高度原先硬切一帧。
+                    // animateContentSize 只补「内容尺寸差」这一段，展开/收起仍归 AnimatedVisibility，
+                    // 两者职责不重叠（否则高度会被算两次）。
+                    .animateContentSize(
+                        animationSpec = NirikoMotionSpecs.spatialDefault<IntSize>().orSnapFinite(reduceMotion),
+                    ),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 ),
@@ -351,7 +438,7 @@ fun BrowseFilterPanel(
                         }
                     }
 
-                    SortRow(current = filter.sort, onSort = onSort)
+                    SortRow(current = filter.sort, onSort = onSort, menuHost = menuHost)
                     ChoiceChipsRow(
                         title = "地区",
                         labels = listOf("不限") + BrowseArea.entries.map { it.label },
@@ -364,7 +451,7 @@ fun BrowseFilterPanel(
                         selectedIndex = BrowseVersion.entries.indexOf(filter.version) + 1,
                         onSelect = { index -> onVersion(BrowseVersion.entries.getOrNull(index - 1)) },
                     )
-                    YearRow(filter = filter, nowYear = nowYear, onYear = onYear)
+                    YearRow(filter = filter, nowYear = nowYear, onYear = onYear, menuHost = menuHost)
                     ChoiceChipsRow(
                         title = "季度",
                         note = "需要年份",
@@ -392,14 +479,10 @@ fun BrowseFilterPanel(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         BrowseFilter.CONTENT_TAGS.forEach { tag ->
-                            FilterChip(
+                            NirikoFilterPill(
+                                text = tag,
                                 selected = tag in filter.tags,
                                 onClick = { onToggleTag(tag) },
-                                label = { Text(tag, style = MaterialTheme.typography.labelSmall) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                                ),
                             )
                         }
                     }
@@ -429,8 +512,7 @@ fun BrowseFilterPanel(
                     )
                     RangeRow(
                         title = "评分人数",
-                        value = (filter.minRatingCount ?: 0).toFloat()..
-                            (filter.maxRatingCount ?: RATING_COUNT_SLIDER_MAX.toInt()).toFloat(),
+                        value = (filter.minRatingCount ?: 0).toFloat()..(filter.maxRatingCount ?: RATING_COUNT_SLIDER_MAX.toInt()).toFloat(),
                         valueRange = 0f..RATING_COUNT_SLIDER_MAX,
                         steps = 24,
                         format = { value -> value.toInt().toString() },
@@ -445,8 +527,7 @@ fun BrowseFilterPanel(
                     )
                     RangeRow(
                         title = "排名区间",
-                        value = (filter.rankFrom ?: 0).toFloat()..
-                            (filter.rankTo ?: RANK_SLIDER_MAX.toInt()).toFloat(),
+                        value = (filter.rankFrom ?: 0).toFloat()..(filter.rankTo ?: RANK_SLIDER_MAX.toInt()).toFloat(),
                         valueRange = 0f..RANK_SLIDER_MAX,
                         steps = 19,
                         format = { value -> value.toInt().toString() },
@@ -472,14 +553,37 @@ fun BrowseFilterPanel(
 }
 
 /** 排序维度（9 个维度之一）：排名 / 上映时间 / 评分人数 / 评分 / 随机 / 名称。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SortRow(current: BrowseSort, onSort: (BrowseSort) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
+private fun SortRow(
+    current: BrowseSort,
+    onSort: (BrowseSort) -> Unit,
+    menuHost: FilterMenuHostState? = null,
+) {
+    var anchorInRoot by remember { mutableStateOf<Rect?>(null) }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
         Text("排序", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
         Spacer(Modifier.width(8.dp))
-        TextButton(onClick = { expanded = true }) {
+        TextButton(
+            modifier = Modifier.onGloballyPositioned { coordinates ->
+                val rect = coordinates.boundsInRoot()
+                if (rect != anchorInRoot) anchorInRoot = rect
+            },
+            onClick = {
+                anchorInRoot?.let { anchor ->
+                    menuHost?.show(anchor) { dismiss ->
+                        BrowseSort.entries.forEach { mode ->
+                            NirikoMenuItem(
+                                text = menuItemLabel(mode.label, mode == current),
+                                onClick = {
+                                    onSort(mode)
+                                    dismiss()
+                                },
+                            )
+                        }
+                    }
+                }
+            },
+        ) {
             Text(current.label, style = MaterialTheme.typography.bodyMedium)
             Icon(Icons.Default.ArrowDropDown, contentDescription = "展开排序选项")
         }
@@ -490,66 +594,52 @@ private fun SortRow(current: BrowseSort, onSort: (BrowseSort) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            BrowseSort.entries.forEach { mode ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(mode.label)
-                            if (mode == current) {
-                                Spacer(Modifier.width(8.dp))
-                                Text("✓", color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    },
-                    onClick = {
-                        onSort(mode)
-                        expanded = false
-                    },
-                )
-            }
-        }
     }
 }
 
 /** 年份维度：单选下拉（当前年 … 2001 + 「2000以前」）。 */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YearRow(filter: BrowseFilter, nowYear: Int, onYear: (BrowseYear?) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
+private fun YearRow(
+    filter: BrowseFilter,
+    nowYear: Int,
+    onYear: (BrowseYear?) -> Unit,
+    menuHost: FilterMenuHostState? = null,
+) {
+    var anchorInRoot by remember { mutableStateOf<Rect?>(null) }
     val options = BrowseFilter.yearOptions(nowYear)
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
         Text("年份", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
         Spacer(Modifier.width(8.dp))
-        TextButton(onClick = { expanded = true }) {
+        TextButton(
+            modifier = Modifier.onGloballyPositioned { coordinates ->
+                val rect = coordinates.boundsInRoot()
+                if (rect != anchorInRoot) anchorInRoot = rect
+            },
+            onClick = {
+                anchorInRoot?.let { anchor ->
+                    menuHost?.show(anchor) { dismiss ->
+                        NirikoMenuItem(
+                            text = menuItemLabel("不限", filter.year == null),
+                            onClick = {
+                                onYear(null)
+                                dismiss()
+                            },
+                        )
+                        options.forEach { option ->
+                            NirikoMenuItem(
+                                text = menuItemLabel(option.label, option == filter.year),
+                                onClick = {
+                                    onYear(option)
+                                    dismiss()
+                                },
+                            )
+                        }
+                    }
+                }
+            },
+        ) {
             Text(filter.year?.label ?: "不限", style = MaterialTheme.typography.bodyMedium)
             Icon(Icons.Default.ArrowDropDown, contentDescription = "展开年份选项")
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text("不限") },
-                onClick = {
-                    onYear(null)
-                    expanded = false
-                },
-            )
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(option.label)
-                            if (option == filter.year) {
-                                Spacer(Modifier.width(8.dp))
-                                Text("✓", color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    },
-                    onClick = {
-                        onYear(option)
-                        expanded = false
-                    },
-                )
-            }
         }
     }
 }
@@ -569,7 +659,7 @@ private fun StudioRow(filter: BrowseFilter, onStudio: (String?) -> Unit) {
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
+            NirikoTextField(
                 value = input,
                 onValueChange = { input = it },
                 singleLine = true,
@@ -612,14 +702,10 @@ private fun ChoiceChipsRow(
         modifier = Modifier.padding(bottom = 10.dp),
     ) {
         labels.forEachIndexed { index, label ->
-            FilterChip(
+            NirikoFilterPill(
+                text = label,
                 selected = index == selectedIndex,
                 onClick = { onSelect(index) },
-                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
-                ),
             )
         }
     }
@@ -647,7 +733,9 @@ private fun RangeRow(
             )
             TextButton(onClick = onClear) { Text("不限", style = MaterialTheme.typography.labelSmall) }
         }
-        RangeSlider(
+        // V-13：M3 RangeSlider → 玻璃双圆钮区间滑块（同一份「淡底 + 主题色渐变已选区」语言）。
+        // 取值/抓取/相撞结算全在 GlassRangeSliderMath.kt 的纯函数里，有单测。
+        GlassRangeSlider(
             value = value,
             onValueChange = onChange,
             valueRange = valueRange,
@@ -662,6 +750,27 @@ private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
         Text(title, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        GlassToggle(checked = checked, onCheckedChange = onCheckedChange)
     }
+}
+
+/**
+ * 筛选面板的展开进场：高度走 spatial 档、透明度走 effects 档。
+ *
+ * 为什么抽成函数而不是各写一份 if：本文件有两个面板（关键词搜索 / 历史排名），改造前各自抄了
+ * 4 处 spring(StiffnessMediumLow)（合计 8 处 = A.8 里「同一屏六个时长并存」的一处来源）。
+ */
+private fun panelEnter(reduceMotion: Boolean): EnterTransition = if (reduceMotion) {
+    EnterTransition.None
+} else {
+    fadeIn(animationSpec = NirikoMotionSpecs.effectsFast<Float>()) +
+        expandVertically(animationSpec = NirikoMotionSpecs.spatialDefault<IntSize>())
+}
+
+/** 与 [panelEnter] 配对的收起；收起与展开同档（两侧同一组六档，不另调时长）。 */
+private fun panelExit(reduceMotion: Boolean): ExitTransition = if (reduceMotion) {
+    ExitTransition.None
+} else {
+    fadeOut(animationSpec = NirikoMotionSpecs.effectsFast<Float>()) +
+        shrinkVertically(animationSpec = NirikoMotionSpecs.spatialDefault<IntSize>())
 }

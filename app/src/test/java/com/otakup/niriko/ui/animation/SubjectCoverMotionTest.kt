@@ -6,7 +6,8 @@ import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.ui.geometry.Rect
 import java.io.File
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -20,6 +21,7 @@ class SubjectCoverMotionTest {
         assertEquals(68.75f, spec.getValueFromNanos(100_000_000L, start, end, velocity).value, 0.001f)
         assertEquals(100f, spec.getValueFromNanos(200_000_000L, start, end, velocity).value, 0.001f)
     }
+
     @Test fun bothDirectionsRemainMonotonicWithVisibleTravelThroughEveryQuarter() {
         for (contracting in listOf(false, true)) {
             val spec = NirikoMotionSpecs.subjectCoverSeek<Float>(contracting).vectorize(Float.VectorConverter)
@@ -40,18 +42,26 @@ class SubjectCoverMotionTest {
             for (step in 100 downTo 0) {
                 val fraction = step / 100f
                 val curve = if (contracting) NirikoMotionSpecs.subjectCoverContractEasing else NirikoMotionSpecs.subjectCoverExpandEasing
-                assertEquals(curve.transform(fraction) * 100f,
-                    spec.getValueFromNanos(duration * step / 100, start, end, velocity).value, 0.001f)
+                assertEquals(
+                    curve.transform(fraction) * 100f,
+                    spec.getValueFromNanos(duration * step / 100, start, end, velocity).value,
+                    0.001f
+                )
             }
         }
     }
+
     @Test fun contractionRetracesTheExpansionExactly() {
         for (step in 0..100) {
             val t = step / 100f
-            assertEquals(NirikoMotionSpecs.subjectCoverExpandEasing.transform(1f - t),
-                1f - NirikoMotionSpecs.subjectCoverContractEasing.transform(t), 0.00001f)
+            assertEquals(
+                NirikoMotionSpecs.subjectCoverExpandEasing.transform(1f - t),
+                1f - NirikoMotionSpecs.subjectCoverContractEasing.transform(t),
+                0.00001f
+            )
         }
     }
+
     @Test fun pathBoundsUseSameDurationAsPageWithoutOvershootingGeometry() {
         val small = Rect(10f, 700f, 110f, 850f)
         val large = Rect(16f, 72f, 384f, 624f)
@@ -66,12 +76,17 @@ class SubjectCoverMotionTest {
             assertEquals(target, Rect.VectorConverter.convertFromVector(bounds.getValueFromNanos(200_000_000L, from, to, zero)))
         }
     }
+
     @Test fun endpointSizesRemainOutsideTheAnimatedSharedNodes() {
         fun source(path: String) = File("src/main/java/com/otakup/niriko/" + path).readText()
-        assertTrue(source("ui/components/CoverImage.kt").contains(".aspectRatio(aspectRatio)\n            .then(sharedModifier)"))
-        assertTrue(source("ui/subject/SubjectDetailScreen.kt").contains(".aspectRatio(ratio)\n                        .then(sharedModifier)"))
-        assertTrue(source("ui/common/CreditSubjectCard.kt").contains(".aspectRatio(CreditSubjectCardMetrics.posterAspectRatio)\n                    .then(coverModifier)"))
-        assertTrue(source("ui/subject/RelationsSection.kt").contains(".height(120.dp)\n                        .then(sharedModifier)"))
-        assertTrue(source("ui/library/LibraryGalleryCard.kt").contains(".fillMaxWidth().height(340.dp).then(sharedModifier)"))
+
+        // 只断言「链式顺序」，不锁死换行与缩进：spotless 的 ktlint 会按行长重排 Modifier 链，
+        // 锁死字面缩进的话，格式门改一次行就会误报（v1.2.2 实测：import 重排后本测试就红了）。
+        fun normalized(path: String) = source(path).replace(Regex("\\s+"), " ")
+        assertTrue(normalized("ui/components/CoverImage.kt").contains(".aspectRatio(aspectRatio) .then(sharedModifier)"))
+        assertTrue(normalized("ui/subject/SubjectDetailScreen.kt").contains(".aspectRatio(ratio) .then(sharedModifier)"))
+        assertTrue(normalized("ui/common/CreditSubjectCard.kt").contains(".aspectRatio(CreditSubjectCardMetrics.posterAspectRatio) .then(coverModifier)"))
+        assertTrue(normalized("ui/subject/RelationsSection.kt").contains(".height(120.dp) .then(sharedModifier)"))
+        assertTrue(normalized("ui/library/LibraryGalleryCard.kt").contains(".fillMaxWidth().height(340.dp).then(sharedModifier)"))
     }
 }

@@ -25,44 +25,45 @@ import com.otakup.niriko.data.model.verbFor
 import com.otakup.niriko.ui.theme.GlassChipTokens
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.NirikoAccents
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.statusTone
 
-/**
- * 彩色胶囊徽标体系（AniShelf 借鉴配色）：
- * - 状态：在看橙 / 看过绿 / 想看灰 / 搁置紫；
- * - 评分 ★ 黄 / 集数 S1E· 蓝。
- *
- * ## F05：海报小件统一材质 + 浅色白底
- *
- * 改造前四种小件各自写死 `Color.Black.copy(alpha = 0.55f)`（浅色模式下也是黑纱），
- * 文字直接用品牌色 —— 在浅色界面上既突兀、又和「浅色白底」的要求相反。
- *
- * 现在统一走 [GlassChipTokens]：
- * - 底色 = 浅色「浅白半透明」/ 深色「半透明黑」，并随背后图片亮度轻微自适应；
- * - 文字 = 品牌色经 [GlassChipTokens.ensureReadable] 调到**最坏情况合成底**上达标（AA 4.5:1）——
- *   「浅底 + 状态橙」这类旧实现必然不达标的组合现在也成立（橙色会被压暗，色相不变）；
- * - 玻璃档位关闭 / 低端降级时自动换成更实的底（可读性优先于玻璃观感）。
- *
- * 对比度不是估的：每个状态色 × 两种主题的合成底都在 GlassChipTokensTest 里算过。
- */
+// 彩色胶囊徽标体系（AniShelf 借鉴配色）：
+// - 状态：在看橙 / 看过绿 / 想看灰 / 搁置紫；
+// - 评分 ★ 黄 / 集数 S1E· 蓝。
+//
+// ## F05：海报小件统一材质 + 浅色白底
+//
+// 改造前四种小件各自写死 `Color.Black.copy(alpha = 0.55f)`（浅色模式下也是黑纱），
+// 文字直接用品牌色 —— 在浅色界面上既突兀、又和「浅色白底」的要求相反。
+//
+// 现在统一走 GlassChipTokens：
+// - 底色 = 浅色「浅白半透明」/ 深色「半透明黑」，并随背后图片亮度轻微自适应；
+// - 文字 = 品牌色经 GlassChipTokens.ensureReadable 调到**最坏情况合成底**上达标（AA 4.5:1）——
+//   「浅底 + 状态橙」这类旧实现必然不达标的组合现在也成立（橙色会被压暗，色相不变）；
+// - 玻璃档位关闭 / 低端降级时自动换成更实的底（可读性优先于玻璃观感）。
+//
+// 对比度不是估的：每个状态色 × 两种主题的合成底都在 GlassChipTokensTest 里算过。
+// 这里用行注释而非 KDoc：下面紧跟 watchStatusColor 自己的 KDoc，顶格 KDoc 会被判 dangling。
 
 /** 观看状态 → 徽标色（在看橙 / 看过绿 / 想看灰 / 搁置紫）。 */
 fun watchStatusColor(status: WatchStatus): Color = when (status) {
-    WatchStatus.WATCHING -> Color(0xFFF59E0B)
-    WatchStatus.COMPLETED -> Color(0xFF22C55E)
-    WatchStatus.PLAN_TO_WATCH -> Color(0xFF9CA3AF)
-    WatchStatus.ON_HOLD -> Color(0xFF8B5CF6)
-    WatchStatus.DROPPED -> Color(0xFF9CA3AF)
+    WatchStatus.WATCHING -> NirikoAccents.RatingGold
+    WatchStatus.COMPLETED -> NirikoAccents.StatusCompleted
+    WatchStatus.PLAN_TO_WATCH -> NirikoAccents.StatusNeutral
+    WatchStatus.ON_HOLD -> NirikoAccents.StatusOnHold
+    WatchStatus.DROPPED -> NirikoAccents.StatusNeutral
 }
 
 /** 评分 ★ 的颜色（琥珀）。 */
-private val RATING_ACCENT = Color(0xFFF59E0B)
+private val RATING_ACCENT = NirikoAccents.RatingGold
 
 /** 收藏心的颜色（红）。 */
-private val FAVORITE_ACCENT = Color(0xFFDC2626)
+private val FAVORITE_ACCENT = NirikoAccents.FavoriteRed
 
 /** 集数胶囊的底色（蓝）。 */
-private val EPISODE_ACCENT = Color(0xFF3B82F6)
+private val EPISODE_ACCENT = NirikoAccents.EpisodeBlue
 
 /**
  * 小件的材质上下文：底色 + 「在上面写字要用的颜色」（已按 [GlassChipTokens.ensureReadable] 调整）。
@@ -87,7 +88,7 @@ fun StatusBadge(
     status: WatchStatus,
     modifier: Modifier = Modifier,
     subjectType: SubjectType? = null,
-    shape: Shape = RoundedCornerShape(999.dp),
+    shape: Shape = NirikoShapes.PillShape,
 ) {
     val tone = statusTone(status)
     val (base, readable) = chipSurface()
@@ -120,7 +121,7 @@ fun StatusBadge(
 fun RatingBadge(
     rating: Float?,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(999.dp),
+    shape: Shape = NirikoShapes.PillShape,
 ) {
     if (rating == null) return
     val (base, readable) = chipSurface()
@@ -149,7 +150,7 @@ fun RatingBadge(
 fun EpisodeBadge(
     text: String,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(999.dp),
+    shape: Shape = NirikoShapes.PillShape,
 ) {
     val (base, readable) = chipSurface()
     val textColor = remember(base) { readable(EPISODE_ACCENT) }
@@ -170,7 +171,7 @@ fun EpisodeBadge(
 fun FavoriteBadge(
     modifier: Modifier = Modifier,
     filled: Boolean = true,
-    shape: Shape = RoundedCornerShape(999.dp),
+    shape: Shape = NirikoShapes.PillShape,
 ) {
     val (base, readable) = chipSurface()
     val dark = LocalDarkTheme.current
@@ -187,6 +188,8 @@ fun FavoriteBadge(
     }
 }
 
-private fun formatRating(rating: Float): String =
-    if (rating == rating.toInt().toFloat()) rating.toInt().toString()
-    else String.format("%.1f", rating)
+private fun formatRating(rating: Float): String = if (rating == rating.toInt().toFloat()) {
+    rating.toInt().toString()
+} else {
+    String.format("%.1f", rating)
+}

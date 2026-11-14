@@ -6,7 +6,6 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,12 +27,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.ui.components.CoverThumbnail
 import com.otakup.niriko.data.model.stats.TimelineEvent
+import com.otakup.niriko.ui.components.CoverThumbnail
 import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.theme.NirikoShapes
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
@@ -95,7 +93,6 @@ fun TimelineSection(
         Text(
             "时间线",
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(12.dp))
 
@@ -109,11 +106,6 @@ fun TimelineSection(
         ) { page ->
             val realIndex = ((page - startPage) % cards.size + cards.size) % cards.size
             val card = cards[realIndex]
-            // 跟手变形：相对本页偏移驱动相邻页缩小/淡出（堆叠层次）
-            val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
-                .coerceIn(-1f, 1f)
-            val scale = 1f - 0.08f * abs(pageOffset)
-            val alpha = 1f - 0.35f * abs(pageOffset)
             TimelineStackCard(
                 card = card,
                 onClick = { onSubjectClick(card.subjectId) },
@@ -123,10 +115,16 @@ fun TimelineSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight()
+                    // A.9-3 帧阶段：pageOffset / scale / alpha 原先在组合期算好再传进来——
+                    // pagerState 每帧变化就每帧重组，而它们只影响绘制。移进 graphicsLayer 的
+                    // block（绘制期读快照状态）后只重绘；观感数值一个都没改。
                     .graphicsLayer {
+                        val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+                            .coerceIn(-1f, 1f)
+                        val scale = 1f - 0.08f * abs(pageOffset)
                         scaleX = scale
                         scaleY = scale
-                        this.alpha = alpha
+                        alpha = 1f - 0.35f * abs(pageOffset)
                     },
             )
         }
@@ -145,7 +143,7 @@ private fun TimelineStackCard(
 ) {
     Box(
         modifier = modifier
-            .appleGlassCard(shape = RoundedCornerShape(20.dp))
+            .appleGlassCard(shape = NirikoShapes.CardShape)
             .clickable(onClick = onClick),
     ) {
         Row(
@@ -165,7 +163,6 @@ private fun TimelineStackCard(
                 Text(
                     text = card.primaryTitle,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

@@ -60,12 +60,18 @@ fun chartBarDefaultColor(): Color = themeChartPalette()[0]
 fun chartBarAccentColor(): Color {
     val primary = MaterialTheme.colorScheme.primary
     val isDark = LocalDarkTheme.current
-    return rememberChartHueColor(primary, isDark, 60f)
+    return chartHueColorFor(primary, isDark, 60f)
 }
 
 private val hueColorCache = java.util.concurrent.ConcurrentHashMap<Triple<Color, Boolean, Float>, Color>()
 
-private fun rememberChartHueColor(primary: Color, dark: Boolean, delta: Float): Color {
+/**
+ * [chartBarAccentColor] 的纯函数本体（无 @Composable、只做 HCT 派生 + 缓存）。
+ *
+ * 单独暴露出来是为了让对比度护栏（ChartPaletteContrastTest）能直接断言真实派生结果，
+ * 而不是在测试里复制一份派生逻辑——复制的逻辑永远不会和实现一起漂。
+ */
+internal fun chartHueColorFor(primary: Color, dark: Boolean, delta: Float): Color {
     val key = Triple(primary, dark, delta)
     hueColorCache[key]?.let { return it }
     val hct = Hct.fromInt(primary.toArgb())
@@ -82,18 +88,26 @@ private fun rememberChartHueColor(primary: Color, dark: Boolean, delta: Float): 
 fun themeChartPalette(): List<Color> {
     val primary = MaterialTheme.colorScheme.primary
     val isDark = LocalDarkTheme.current
-    return rememberChartPalette(primary, isDark)
+    return chartPaletteFor(primary, isDark)
 }
 
 private val chartCache = java.util.concurrent.ConcurrentHashMap<Pair<Color, Boolean>, List<Color>>()
 
-private fun rememberChartPalette(primary: Color, dark: Boolean): List<Color> {
+/**
+ * [themeChartPalette] 的纯函数本体。
+ *
+ * 同 [chartHueColorFor]：给 JVM 单测直接取真实色板用，避免测试复制派生逻辑变成假护栏。
+ */
+internal fun chartPaletteFor(primary: Color, dark: Boolean): List<Color> {
     val key = primary to dark
     chartCache[key]?.let { return it }
     val hct = Hct.fromInt(primary.toArgb())
     val hue = hct.hue
-    val tones = if (dark) doubleArrayOf(78.0, 74.0, 80.0, 72.0, 76.0, 70.0) else
+    val tones = if (dark) {
+        doubleArrayOf(78.0, 74.0, 80.0, 72.0, 76.0, 70.0)
+    } else {
         doubleArrayOf(46.0, 44.0, 48.0, 42.0, 50.0, 38.0)
+    }
     val chroma = if (dark) 56.0 else 50.0
     // 绿(hue≈0) → 青(+40) → 蓝(+95) → 蓝紫(+150) → 紫(+210) → 红橙(+270)，
     // 完整绕开"橄榄泥"黄绿区（原 -40 落在 hue≈88 的黄绿）。

@@ -7,13 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.otakup.niriko.data.local.entity.CollectionEntity
 import com.otakup.niriko.data.local.entity.SubjectEntity
 import com.otakup.niriko.data.match.AniListCandidateMapper
-import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.CharacterInfo
 import com.otakup.niriko.data.model.EpisodeInfo
 import com.otakup.niriko.data.model.StaffInfo
-import com.otakup.niriko.data.remote.SubjectRemoteDataSource
-import com.otakup.niriko.data.remote.SubjectRelationInfo
+import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.remote.InfoBoxEntry
+import com.otakup.niriko.data.remote.SubjectRelationInfo
+import com.otakup.niriko.data.remote.SubjectRemoteDataSource
 import com.otakup.niriko.data.repository.CollectionRepository
 import com.otakup.niriko.data.repository.DetailCacheStore
 import com.otakup.niriko.data.repository.SteamRepository
@@ -22,6 +22,8 @@ import com.otakup.niriko.data.repository.VndbRepository
 import com.otakup.niriko.util.AniListIdParser
 import com.otakup.niriko.util.CollectionSavePolicy
 import com.otakup.niriko.util.CompletionProgressPolicy
+import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,15 +34,14 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import java.time.LocalDate
 
 private const val TAG = "SubjectDetailVM"
 
@@ -276,9 +277,12 @@ class SubjectDetailViewModel(
     val episodeCompletionEvents = completionFeedback.progressEvents
 
     private val navigationSeed = com.otakup.niriko.util.SubjectNavigationSeed.takeSubject(subjectId)
-    private val _uiState = MutableStateFlow(SubjectDetailUiState(
-        subject = navigationSeed, isLoading = navigationSeed == null,
-    ))
+    private val _uiState = MutableStateFlow(
+        SubjectDetailUiState(
+            subject = navigationSeed,
+            isLoading = navigationSeed == null,
+        )
+    )
     val uiState: StateFlow<SubjectDetailUiState> = _uiState.asStateFlow()
 
     /** 保存原始 createTime，避免更新时被 System.currentTimeMillis() 覆盖。 */
@@ -293,7 +297,9 @@ class SubjectDetailViewModel(
      */
     private val extendedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    init { loadSubject() }
+    init {
+        loadSubject()
+    }
 
     override fun onCleared() {
         extendedScope.cancel()
@@ -321,9 +327,13 @@ class SubjectDetailViewModel(
 
             if (subject != null) {
                 // 有缓存 → 立即展示，后台刷新
-                _uiState.update { it.copy(
-                    subject = subject, isLoading = false, isRefreshing = true,
-                ) }
+                _uiState.update {
+                    it.copy(
+                        subject = subject,
+                        isLoading = false,
+                        isRefreshing = true,
+                    )
+                }
                 loadCollectionState(subject)
 
                 try {
@@ -351,7 +361,6 @@ class SubjectDetailViewModel(
 
                 // Step 3: 并行加载扩展数据（角色/制作人员/剧集）
                 extendedScope.launch { loadExtendedData(force = forceExtended) }
-
             } else {
                 // 无缓存 → 从远程获取
                 val fetched = try {
@@ -419,7 +428,7 @@ class SubjectDetailViewModel(
                 Log.d(TAG, "loadExtendedData: 命中缓存 subjectId=$subjectId")
                 // 恢复逻辑抽到 SubjectDetailSnapshot.kt 的纯函数里：
                 // 那里与写入映射同文件，并有反射用例锁住「写入与恢复一一对应」
-                //（此前 VNDB 匹配结果簇就因为只有写入、没有恢复，在二次进页面时整块消失）。
+                // （此前 VNDB 匹配结果簇就因为只有写入、没有恢复，在二次进页面时整块消失）。
                 _uiState.update { it.withExtendedSnapshot(snap).copy(isExtendedLoading = false) }
                 // 缓存命中路径同样要算洞察（否则二次进页面争议度会消失）
                 loadRatingInsights(snap.ratingDistribution)
@@ -499,13 +508,25 @@ class SubjectDetailViewModel(
                     }
                 }
                 val biliDeferred = async {
-                    try { fetchAndPersistBilibiliRating() } catch (_: Exception) { Unit }
+                    try {
+                        fetchAndPersistBilibiliRating()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val steamDeferred = async {
-                    try { loadSteamSupplement() } catch (_: Exception) { Unit }
+                    try {
+                        loadSteamSupplement()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val achievementsDeferred = async {
-                    try { loadAchievements() } catch (_: Exception) { Unit }
+                    try {
+                        loadAchievements()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 // 第 5 轮 D10：VNDB 匹配**不再并行发起**。
                 // 它需要 infobox（L1 的 vndb id、L2 的别名查询串），而 infobox 由下面那一路
@@ -514,17 +535,33 @@ class SubjectDetailViewModel(
                 // 于是「别名查询串全缺 + infobox id 永不命中」。
                 // 现在改为：等 infobox 到位、写进 state 之后，再串行发起。
                 val anilistDeferred = async {
-                    try { loadAniListSupplement() } catch (_: Exception) { Unit }
+                    try {
+                        loadAniListSupplement()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val anitabiDeferred = async {
-                    try { loadAnitabi() } catch (_: Exception) { Unit }
+                    try {
+                        loadAnitabi()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val guessDeferred = async {
-                    try { loadGuessYouLike() } catch (_: Exception) { Unit }
+                    try {
+                        loadGuessYouLike()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val externalRatingDeferred = async {
                     if (fetchExternalRatings) {
-                        try { loadExternalRatingData() } catch (_: Exception) { Unit }
+                        try {
+                            loadExternalRatingData()
+                        } catch (_: Exception) {
+                            Unit
+                        }
                         // loadExternalRatingData 把结果直接写进 _uiState（不是返回值式的），这里把它读出来落库。
                         // 失败时它保持空 → 只记失败信息，不覆盖上一次成功的数据。
                         val produced = _uiState.value.externalRatings
@@ -538,10 +575,18 @@ class SubjectDetailViewModel(
                     }
                 }
                 val episodeRatingDeferred = async {
-                    try { loadEpisodeRatingData() } catch (_: Exception) { Unit }
+                    try {
+                        loadEpisodeRatingData()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val tmdbDeferred = async {
-                    try { loadTmdbSupplement() } catch (_: Exception) { Unit }
+                    try {
+                        loadTmdbSupplement()
+                    } catch (_: Exception) {
+                        Unit
+                    }
                 }
                 val charactersResult = charactersDeferred.await()
                 val staffResult = staffDeferred.await()
@@ -556,7 +601,7 @@ class SubjectDetailViewModel(
                 if (fetchCollections) {
                     if (charactersResult.isSuccess && staffResult.isSuccess && relationsResult.isSuccess) {
                         // 三个都成功才写：否则会把「角色成功、关联失败」写成一整份看似完整的数据
-                        //（读侧要求三类要么一起给、要么都不给）。
+                        // （读侧要求三类要么一起给、要么都不给）。
                         runCatching { detailCacheStore?.writeCollections(subjectId, characters, staff, relations) }
                     } else {
                         runCatching { detailCacheStore?.markCollectionsFailure(subjectId, "collections fetch failed") }
@@ -1234,7 +1279,9 @@ class SubjectDetailViewModel(
                     )
                     if (score >= com.otakup.niriko.data.remote.steam.SteamTitleMatcher.MIN_CONFIDENCE) {
                         candidate to score
-                    } else null
+                    } else {
+                        null
+                    }
                 }
                 .maxByOrNull { it.second }
             if (m != null && (bestPair == null || m.second > bestPair.second)) bestPair = m
@@ -1269,7 +1316,9 @@ class SubjectDetailViewModel(
             withContext(Dispatchers.IO) { steam.unbind(subjectId) }
             _uiState.update {
                 it.copy(
-                    steam = null, achievements = null, chartRank = null,
+                    steam = null,
+                    achievements = null,
+                    chartRank = null,
                     snackbarMessage = "已解除 Steam 绑定",
                 )
             }
@@ -1287,8 +1336,15 @@ class SubjectDetailViewModel(
             }
             if (newId > 0) {
                 originalCreateTime = collection.createTime
-                _uiState.update { it.copy(isInCollection = true, collectionId = newId, collectionCreateTime = collection.createTime,
-                    currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false) }
+                _uiState.update {
+                    it.copy(
+                        isInCollection = true,
+                        collectionId = newId,
+                        collectionCreateTime = collection.createTime,
+                        currentStatus = WatchStatus.PLAN_TO_WATCH,
+                        isUpdating = false
+                    )
+                }
             } else {
                 _uiState.update { it.copy(isUpdating = false) }
             }
@@ -1315,34 +1371,46 @@ class SubjectDetailViewModel(
         _uiState.update { it.copy(isUpdating = true) }
         viewModelScope.launch {
             val written = withContext(Dispatchers.IO) {
-                collectionRepository.update(CollectionEntity(
-                    id = s.collectionId, subjectId = subjectId, status = newStatus,
+                collectionRepository.update(
+                    CollectionEntity(
+                        id = s.collectionId, subjectId = subjectId, status = newStatus,
+                        watchedEpisodes = progressTarget.watchedEpisodes,
+                        watchedVolumes = progressTarget.watchedVolumes,
+                        isPrivate = s.isPrivate, rating = s.myRating,
+                        personalTags = s.personalTags, personalImpression = s.personalImpression,
+                        remark = s.remark, startDate = newStart, finishDate = newFinish,
+                        watchedTrackIds = s.watchedTrackIds.toList(),
+                        createTime = originalCreateTime, updateTime = System.currentTimeMillis(),
+                    )
+                )
+            }
+            _uiState.update {
+                it.copy(
+                    currentStatus = newStatus,
                     watchedEpisodes = progressTarget.watchedEpisodes,
                     watchedVolumes = progressTarget.watchedVolumes,
-                    isPrivate = s.isPrivate, rating = s.myRating,
-                    personalTags = s.personalTags, personalImpression = s.personalImpression,
-                    remark = s.remark, startDate = newStart, finishDate = newFinish,
-                    watchedTrackIds = s.watchedTrackIds.toList(),
-                    createTime = originalCreateTime, updateTime = System.currentTimeMillis(),
-                ))
+                    startDate = newStart,
+                    finishDate = newFinish,
+                    isUpdating = false,
+                )
             }
-            _uiState.update { it.copy(
-                currentStatus = newStatus,
-                watchedEpisodes = progressTarget.watchedEpisodes,
-                watchedVolumes = progressTarget.watchedVolumes,
-                startDate = newStart, finishDate = newFinish, isUpdating = false,
-            ) }
             completionFeedback.onStatusWritten(subjectId, s.currentStatus, newStatus, written)
             completionFeedback.onProgressWritten(
                 subjectId,
                 com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
-                    s.watchedEpisodes, s.watchedVolumes, s.subject?.totalEpisodes, s.subject?.volumes,
+                    s.watchedEpisodes,
+                    s.watchedVolumes,
+                    s.subject?.totalEpisodes,
+                    s.subject?.volumes,
                 ),
                 com.otakup.niriko.util.EpisodeCompletionPolicy.ProgressSnapshot(
-                    progressTarget.watchedEpisodes, progressTarget.watchedVolumes,
-                    s.subject?.totalEpisodes, s.subject?.volumes,
+                    progressTarget.watchedEpisodes,
+                    progressTarget.watchedVolumes,
+                    s.subject?.totalEpisodes,
+                    s.subject?.volumes,
                 ),
-                s.subject?.type, written,
+                s.subject?.type,
+                written,
             )
         }
     }
@@ -1354,8 +1422,12 @@ class SubjectDetailViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isUpdating = true) }
             withContext(Dispatchers.IO) { collectionRepository.deleteBySubjectId(subjectId) }
-            _uiState.update { it.copy(isInCollection = false, collectionId = 0L, collectionCreateTime = null, currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false,
-                watchedEpisodes = null, watchedVolumes = null, isPrivate = false, myRating = null, personalTags = emptyList(), personalImpression = null, remark = null, watchedTrackIds = emptySet(), startDate = null, finishDate = null) }
+            _uiState.update {
+                it.copy(
+                    isInCollection = false, collectionId = 0L, collectionCreateTime = null, currentStatus = WatchStatus.PLAN_TO_WATCH, isUpdating = false,
+                    watchedEpisodes = null, watchedVolumes = null, isPrivate = false, myRating = null, personalTags = emptyList(), personalImpression = null, remark = null, watchedTrackIds = emptySet(), startDate = null, finishDate = null
+                )
+            }
         }
     }
 
@@ -1379,28 +1451,32 @@ class SubjectDetailViewModel(
         val finalWatched = if (isMusic) watchedTrackIds.size else watchedEpisodes
         viewModelScope.launch {
             // 乐观更新：先让 UI 立即反映新值，再后台写 Room；失败由 Snackbar 提示。
-            _uiState.update { it.copy(
-                isUpdating = true,
-                watchedEpisodes = watchedEpisodes,
-                watchedVolumes = watchedVolumes,
-                isPrivate = isPrivate,
-                myRating = myRating,
-                personalTags = personalTags,
-                personalImpression = personalImpression,
-                startDate = startDate,
-                finishDate = finishDate,
-                watchedTrackIds = watchedTrackIds,
-            ) }
+            _uiState.update {
+                it.copy(
+                    isUpdating = true,
+                    watchedEpisodes = watchedEpisodes,
+                    watchedVolumes = watchedVolumes,
+                    isPrivate = isPrivate,
+                    myRating = myRating,
+                    personalTags = personalTags,
+                    personalImpression = personalImpression,
+                    startDate = startDate,
+                    finishDate = finishDate,
+                    watchedTrackIds = watchedTrackIds,
+                )
+            }
             val written = withContext(Dispatchers.IO) {
-                collectionRepository.update(CollectionEntity(
-                    id = s.collectionId, subjectId = subjectId, status = s.currentStatus,
-                    watchedEpisodes = finalWatched, watchedVolumes = watchedVolumes,
-                    isPrivate = isPrivate, rating = myRating,
-                    personalTags = personalTags, personalImpression = personalImpression,
-                    remark = s.remark, startDate = startDate, finishDate = finishDate,
-                    watchedTrackIds = watchedTrackIds.toList(),
-                    createTime = originalCreateTime, updateTime = System.currentTimeMillis(),
-                ))
+                collectionRepository.update(
+                    CollectionEntity(
+                        id = s.collectionId, subjectId = subjectId, status = s.currentStatus,
+                        watchedEpisodes = finalWatched, watchedVolumes = watchedVolumes,
+                        isPrivate = isPrivate, rating = myRating,
+                        personalTags = personalTags, personalImpression = personalImpression,
+                        remark = s.remark, startDate = startDate, finishDate = finishDate,
+                        watchedTrackIds = watchedTrackIds.toList(),
+                        createTime = originalCreateTime, updateTime = System.currentTimeMillis(),
+                    )
+                )
             }
             // F14：这次写入是否**跨过**了总量（边沿判据在 EpisodeCompletionPolicy 里，纯函数、有单测）。
             // 读的是写入**前**的快照（s）与本次要写入的值 —— 因此初次加载/重复保存都不会触发。
@@ -1472,7 +1548,9 @@ class SubjectDetailViewModel(
         val ratings = repo.ratings(subject)
         val metacritic = if (subject.type == com.otakup.niriko.data.model.SubjectType.GAME) {
             repo.steamMetacritic(subject)
-        } else null
+        } else {
+            null
+        }
         val awards = manualAwardRepository?.awardsOf(subject.subjectId).orEmpty()
         _uiState.update {
             it.copy(
@@ -1552,32 +1630,33 @@ class SubjectDetailViewModel(
     // ==================== 豆瓣剧照（阶段 E）====================
 
     /** 读取设置（豆瓣通道的开关与头配方都在里面）。 */
-    private suspend fun readSettings(): com.otakup.niriko.data.settings.AppSettings? =
-        runCatching {
-            (context.applicationContext as com.otakup.niriko.NirikoApplication)
-                .settingsDataStore.settings.first()
-        }.getOrNull()
+    private suspend fun readSettings(): com.otakup.niriko.data.settings.AppSettings? = runCatching {
+        (context.applicationContext as com.otakup.niriko.NirikoApplication)
+            .settingsDataStore.settings.first()
+    }.getOrNull()
 
     private fun doubanHeaders(
         settings: com.otakup.niriko.data.settings.AppSettings,
-    ): com.otakup.niriko.data.remote.douban.DoubanClient.Headers =
-        com.otakup.niriko.data.remote.douban.DoubanClient.Headers(
-            apiRefererPrefix = settings.doubanApiReferer,
-            imageReferer = settings.doubanImageReferer,
-        )
+    ): com.otakup.niriko.data.remote.douban.DoubanClient.Headers = com.otakup.niriko.data.remote.douban.DoubanClient.Headers(
+        apiRefererPrefix = settings.doubanApiReferer,
+        imageReferer = settings.doubanImageReferer,
+    )
 
-    private fun doubanCategory(type: com.otakup.niriko.data.model.SubjectType) =
-        when (type) {
-            com.otakup.niriko.data.model.SubjectType.BOOK ->
-                com.otakup.niriko.data.remote.douban.DoubanCategory.BOOK
-            com.otakup.niriko.data.model.SubjectType.MUSIC ->
-                com.otakup.niriko.data.remote.douban.DoubanCategory.MUSIC
-            com.otakup.niriko.data.model.SubjectType.GAME ->
-                com.otakup.niriko.data.remote.douban.DoubanCategory.GAME
-            com.otakup.niriko.data.model.SubjectType.REAL ->
-                com.otakup.niriko.data.remote.douban.DoubanCategory.TV
-            else -> com.otakup.niriko.data.remote.douban.DoubanCategory.MOVIE
-        }
+    private fun doubanCategory(type: com.otakup.niriko.data.model.SubjectType) = when (type) {
+        com.otakup.niriko.data.model.SubjectType.BOOK ->
+            com.otakup.niriko.data.remote.douban.DoubanCategory.BOOK
+
+        com.otakup.niriko.data.model.SubjectType.MUSIC ->
+            com.otakup.niriko.data.remote.douban.DoubanCategory.MUSIC
+
+        com.otakup.niriko.data.model.SubjectType.GAME ->
+            com.otakup.niriko.data.remote.douban.DoubanCategory.GAME
+
+        com.otakup.niriko.data.model.SubjectType.REAL ->
+            com.otakup.niriko.data.remote.douban.DoubanCategory.TV
+
+        else -> com.otakup.niriko.data.remote.douban.DoubanCategory.MOVIE
+    }
 
     /** 豆瓣通道开启时：读绑定并拉剧照；未绑定则只标记状态（等用户点候选绑定）。 */
     private suspend fun launchDoubanIfEnabled(
@@ -1819,8 +1898,7 @@ class SubjectDetailViewModel(
         }.getOrDefault(emptyMap())
     }
 
-    private fun nirikoApp(): com.otakup.niriko.NirikoApplication =
-        context.applicationContext as com.otakup.niriko.NirikoApplication
+    private fun nirikoApp(): com.otakup.niriko.NirikoApplication = context.applicationContext as com.otakup.niriko.NirikoApplication
 
     private fun nirikoDatabase() = nirikoApp().database
 
@@ -1889,7 +1967,9 @@ class SubjectDetailViewModel(
                     com.otakup.niriko.data.model.SubjectType.MANGA,
                     com.otakup.niriko.data.model.SubjectType.BOOK,
                     -> "话"
+
                     com.otakup.niriko.data.model.SubjectType.MUSIC -> "首"
+
                     else -> "集"
                 }
                 episodes.mapIndexed { index, episode ->
@@ -1934,10 +2014,13 @@ class SubjectDetailViewModel(
             when (result?.state) {
                 com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEpisodeLoad.State.UNAVAILABLE ->
                     _emitSnackbar("未配置 OMDb API Key（设置 → 数据源与账号 → 权威数据源）")
+
                 com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEpisodeLoad.State.NOT_BOUND ->
                     _emitSnackbar("尚未绑定 TMDb 条目")
+
                 com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEpisodeLoad.State.FAILED ->
                     _emitSnackbar("IMDb 评分加载失败，请稍后重试")
+
                 com.otakup.niriko.data.repository.EpisodeRatingRepository.ImdbEpisodeLoad.State.OK ->
                     _emitSnackbar(
                         if (result.viaOmdbFallback > 0) {
@@ -1946,6 +2029,7 @@ class SubjectDetailViewModel(
                             "已加载 ${result.loaded} 集 IMDb 评分"
                         },
                     )
+
                 null -> Unit
             }
         }
@@ -1956,8 +2040,22 @@ class SubjectDetailViewModel(
         val subject = _uiState.value.subject ?: return
         val repo = externalRatingRepository ?: return
         extendedScope.launch {
-            val ratings = runCatching { repo.refresh(subject) }.getOrDefault(emptyList())
-            _uiState.update { it.copy(externalRatings = ratings) }
+            // F02：原来失败会 getOrDefault(emptyList()) 并把空列表写回 UiState ——
+            // 用户看到的是「评分整片消失」，像是权威源本来就没有数据，无从判断是网络问题。
+            // 现在失败不写 externalRatings（保留上一次成功的结果），只弹一条提示；
+            // 取消要原样抛回，否则协程取消也会被当成「刷新失败」。
+            val ratings = try {
+                repo.refresh(subject)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (ratings == null) {
+                _emitSnackbar("评分刷新失败，已保留上次结果")
+            } else {
+                _uiState.update { it.copy(externalRatings = ratings) }
+            }
         }
     }
 
@@ -2058,8 +2156,7 @@ class SubjectDetailViewModel(
         )
     }
 
-    private suspend fun settingsForSources(): com.otakup.niriko.data.settings.AppSettings =
-        nirikoApp().settingsDataStore.settings.first()
+    private suspend fun settingsForSources(): com.otakup.niriko.data.settings.AppSettings = nirikoApp().settingsDataStore.settings.first()
 
     /**
      * 统一匹配服务（第 4 轮 D）。
@@ -2068,10 +2165,9 @@ class SubjectDetailViewModel(
      * 季选择逻辑），AniList 走 [AniListRatingSource]（自动展示分数）。
      * 后续接 IGDB / RAWG / 豆瓣时**只需在这里加一行**，UI 与打分口径自动复用。
      */
-    private fun matchService(): com.otakup.niriko.data.match.ExternalMatchService =
-        com.otakup.niriko.data.match.ExternalMatchService(
-            listOf(com.otakup.niriko.data.match.VndbProviderMatcher())
-        )
+    private fun matchService(): com.otakup.niriko.data.match.ExternalMatchService = com.otakup.niriko.data.match.ExternalMatchService(
+        listOf(com.otakup.niriko.data.match.VndbProviderMatcher())
+    )
 
     /** 用户在候选列表里确认绑定 TMDb 条目（保守匹配：只有此处才会写库）。 */
     fun bindTmdb(candidate: com.otakup.niriko.data.remote.rating.RatingCandidate) {
@@ -2135,6 +2231,8 @@ class SubjectDetailViewModel(
                 )
             }
             loadTmdbSupplement()
+            // S07：解绑是破坏性动作，必须有回执（AniList/VNDB/Steam 早就有，TMDb 此前静默）。
+            _emitSnackbar("已解除 TMDb 绑定")
         }
     }
 
@@ -2239,7 +2337,6 @@ class SubjectDetailViewModel(
     private fun _emitSnackbar(message: String) {
         _uiState.update { it.copy(snackbarMessage = message) }
     }
-
 }
 
 class SubjectDetailViewModelFactory(

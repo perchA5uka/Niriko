@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.otakup.niriko.data.model.SuggestionItem
 import com.otakup.niriko.ui.components.LiquidGlassSurface
+import com.otakup.niriko.ui.theme.NirikoShapes
 
 /**
  * 搜索建议浮层。
@@ -75,7 +76,7 @@ fun SuggestionDropdown(
                 ),
             )
         },
-        shape = RoundedCornerShape(12.dp),
+        shape = NirikoShapes.ControlShape,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
@@ -101,6 +102,7 @@ fun SuggestionDropdown(
                             onClick = { onHistoryClick(item.keyword) },
                         )
                     }
+
                     is SuggestionItem.LocalSubject -> {
                         SubjectSuggestionRow(
                             title = item.subject.displayTitle,
@@ -110,6 +112,7 @@ fun SuggestionDropdown(
                             onClick = { onSubjectClick(item.subject.subjectId) },
                         )
                     }
+
                     is SuggestionItem.RemoteSuggestion -> {
                         SubjectSuggestionRow(
                             title = item.subject.displayTitle,
@@ -169,7 +172,7 @@ private fun SubjectSuggestionRow(
     ) {
         // 封面缩略图
         Box(
-            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)),
+            modifier = Modifier.size(36.dp).clip(NirikoShapes.RowInnerShape),
             contentAlignment = Alignment.Center,
         ) {
             if (imageUrl != null) {

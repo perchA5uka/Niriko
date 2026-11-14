@@ -1,9 +1,10 @@
 package com.otakup.niriko.util
 
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.orSnap
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 
@@ -20,13 +21,17 @@ import kotlinx.coroutines.CancellationException
  * 已经是顶部时**无条件空操作**：调用方不必自己先判一次（也避免两处判据漂移）。
  * 动画期间用户按下会取消协程 → 这里吞掉取消并**不强行回顶**，不会出现
  * 「用户往下滑、页面自己往上跑」。
+ *
+ * @param reduceMotion 「减少动态效果」开（含系统 animator_duration_scale=0）时弹簧降级为瞬时落位；
+ *   本函数是 suspend 工具、读不到 [com.otakup.niriko.ui.animation.LocalReduceMotion]，
+ *   由调用方（Composable 内的 LaunchedEffect）把当前值传进来。
  */
-suspend fun LazyListState.beginScrollToTop() {
+suspend fun LazyListState.beginScrollToTop(reduceMotion: Boolean = false) {
     if (isAtTop) return
     val distance = scrollDistanceToTop()
     if (distance != null && abs(distance) <= ONE_SCREEN_APPROX_PX) {
         try {
-            animateScrollBy(-distance, SPRING)
+            animateScrollBy(-distance, SPRING.orSnap(reduceMotion))
         } catch (cancelled: CancellationException) {
             throw cancelled
         }
@@ -42,7 +47,7 @@ suspend fun LazyListState.beginScrollToTop() {
  * **行**，把格换算成行需要一个稳定的列数 —— 布局信息里没有直接给出，所以这里只在**近处**
  * （第一行内）直接用 `animateScrollBy`；再远一点就落位，避免用错误的行高算出错误距离。
  */
-suspend fun LazyGridState.beginScrollToTop() {
+suspend fun LazyGridState.beginScrollToTop(reduceMotion: Boolean = false) {
     if (isAtTop) return
     // 只有「还停在第 0 行以内」时距离才等于纵向偏移；跨行时列数拿不到，直接落位。
     val first = layoutInfo.visibleItemsInfo.firstOrNull()
@@ -53,7 +58,7 @@ suspend fun LazyGridState.beginScrollToTop() {
     }
     if (distance != null) {
         try {
-            animateScrollBy(-distance, SPRING)
+            animateScrollBy(-distance, SPRING.orSnap(reduceMotion))
         } catch (cancelled: CancellationException) {
             throw cancelled
         }
@@ -87,4 +92,10 @@ fun LazyListState.scrollDistanceToTop(): Float? {
 /** 一屏的近似像素：决定「弹簧滚」还是「直接落位」（1080p 手机约 2200px）。 */
 private const val ONE_SCREEN_APPROX_PX = 2400f
 
-private val SPRING = spring<Float>(stiffness = 380f, dampingRatio = 0.9f)
+/**
+ * 回顶滚动用的弹簧（A.8：原来是 spring(380, 0.9) 的字面量）。
+ *
+ * 改成 spatialDefault（0.9 / 700）：阻尼比与原来相同（0.9，无过冲），刚度更高即「更快到位」。
+ * 审计把这处标成「现 380 明显慢于 700」，与 [NirikoMotionSpecs.spatialSlow]（300）比也确实偏慢一档。
+ */
+private val SPRING = NirikoMotionSpecs.spatialDefault<Float>()

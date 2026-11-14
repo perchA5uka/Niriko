@@ -41,7 +41,6 @@ fun HygieneSection(
                 Text(
                     text = "收藏健康度",
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
@@ -56,8 +55,11 @@ fun HygieneSection(
                         .fillMaxWidth()
                         .clickable {
                             // 「在看停滞」直接复用放送通知那条已接好的链路：切到作品库「在看」
-                            if (issue.kind == HygieneKind.WATCHING_STALE) onOpenWatching()
-                            else onOpenHygiene(issue.kind)
+                            if (issue.kind == HygieneKind.WATCHING_STALE) {
+                                onOpenWatching()
+                            } else {
+                                onOpenHygiene(issue.kind)
+                            }
                         },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

@@ -5,35 +5,33 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
+import com.otakup.niriko.ui.theme.LocalDarkTheme
 
-/**
- * 液态玻璃主题令牌。
- *
- * 来源：
- * - 材质语言与参数来自项目既有液态玻璃实现（GlassCard.kt）的默认参数
- *   （refractionHeight 20dp / refractionOffset -70dp / dispersion 0.5 / depthEffect 0.3）；
- * - 渲染 API 来自参考库 **Kyant0/AndroidLiquidGlass**（Apache-2.0），本项目通过
- *   `io.github.kyant0:backdrop:1.0.6` 使用其 `drawBackdrop` / `highlight` / `shadow` /
- *   `innerShadow` DSL。
- *   注：早前此处写「AndroidLiquidGlassView(QmDeve, MIT)」有误 —— QmDeve/AndroidLiquidGlassView
- *   是本项目 AGSL 着色器（app/src/main/res/raw/liquid_glass_effect.agsl）的上游（MIT），
- *   而**本文件的材质参数与 DSL 上游是 Kyant0/AndroidLiquidGlass（Apache-2.0）**。
- *
- * 设计原则：一切视觉参数收敛为 token，禁止在组件里散落魔数：
- * - 卡片玻璃（自含材质）：浅色磨砂底 + 顶部受光 + 底部沉降 + 对角边缘反射；
- * - 浮层玻璃（真折射）：背后有内容源时，API 33+ 用 AGSL 折射 / 色散，API 31-32 高斯模糊，
- *   低版本降级为 tint 玻璃；
- * - 深色模式：卡片回退 M3 surfaceContainer（保证可读性，取消玻璃层次）。
- *
- * 材质层：色令牌不再是「死令牌」——[LiquidGlassPalette] 的每一个颜色都被
- * [liquidGlassHighlight] / [liquidGlassShadow] / [liquidGlassInnerShadow] 消费，
- * 由 backdrop 的 Highlight / Shadow / InnerShadow DSL 绘制成真实材质层。
- */
+// 液态玻璃主题令牌。
+//
+// 来源：
+// - 材质语言与参数来自项目既有液态玻璃实现（GlassCard.kt）的默认参数
+//   （refractionHeight 20dp / refractionOffset -70dp / dispersion 0.5 / depthEffect 0.3）；
+// - 渲染 API 来自参考库 Kyant0/AndroidLiquidGlass（Apache-2.0），本项目通过
+//   io.github.kyant0:backdrop:1.0.6 使用其 drawBackdrop / highlight / shadow / innerShadow DSL。
+//   注：早前此处写「AndroidLiquidGlassView(QmDeve, MIT)」有误 —— QmDeve/AndroidLiquidGlassView
+//   是本项目 AGSL 着色器（app/src/main/res/raw/liquid_glass_effect.agsl）的上游（MIT），
+//   而本文件的材质参数与 DSL 上游是 Kyant0/AndroidLiquidGlass（Apache-2.0）。
+//
+// 设计原则：一切视觉参数收敛为 token，禁止在组件里散落魔数：
+// - 卡片玻璃（自含材质）：浅色磨砂底 + 顶部受光 + 底部沉降 + 对角边缘反射；
+// - 浮层玻璃（真折射）：背后有内容源时，API 33+ 用 AGSL 折射 / 色散，API 31-32 高斯模糊，
+//   低版本降级为 tint 玻璃；
+// - 深色模式：卡片回退 M3 surfaceContainer（保证可读性，取消玻璃层次）。
+//
+// 材质层：色令牌不再是「死令牌」——LiquidGlassPalette 的每一个颜色都被
+// liquidGlassHighlight / liquidGlassShadow / liquidGlassInnerShadow 消费，
+// 由 backdrop 的 Highlight / Shadow / InnerShadow DSL 绘制成真实材质层。
+// （行注释而非 KDoc：文件头 KDoc 后面接的是另一个声明自己的 KDoc，ktlint 判 dangling。）
 
 /** 液态玻璃渲染参数（像素级计算由使用方按 density 转换）。 */
 data class LiquidGlassConfig(
@@ -148,16 +146,39 @@ object LiquidGlassPalette {
     val CardInnerShadowLight: Color = Color.Black.copy(alpha = 0.14f)
 }
 
+/** 受光基准角（度）：逐字等于 backdrop `HighlightStyle.Default.angle` 的默认值 45f。 */
+const val LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES = 45f
+
+/**
+ * 按压倾斜带动的高光偏转幅度（度）。
+ *
+ * 为什么是 20：pressTilt 归一化后的 rotationY 上限是 7°（PressTilt.kt 的
+ * pressTiltRotation 先 coerceIn(-1..1) 再乘 maxRotation ≤ 8），直接拿 ±7° 当角度变化，
+ * 肉眼几乎看不出边缘亮边「转了个方向」；放大到 ±20° 才有「跟着手指换受光面」的感觉。
+ * 再大（>25°）亮边会跑到对侧、看起来像描边错位而不是受光。
+ */
+const val LIQUID_GLASS_HIGHLIGHT_TILT_DEGREES = 20f
+
 /**
  * 卡片边缘镜面反射（backdrop Highlight DSL）。
  *
  * @param alpha 交互亮度（既有按压动画 0.65 → 0.95），由调用方传入
+ * @param angleDegrees 受光方向（度）。默认值 [LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES]（= 45f）
+ *   就是 backdrop 库默认值，即 v1.2.2 之前的观感：不传角度时逐像素等价，动了角度才有变化。
+ *   注意上游 `HighlightStyle.Default.createShader` 只在 SDK ≥ 33（TIRAMISU）返回 shader，
+ *   API 26–32 走 null 降级路径 —— 角度在这些版本没有视觉效果，属于库的既有降级，不是 bug。
  */
-fun liquidGlassHighlight(alpha: Float): Highlight = Highlight.Default.copy(
+fun liquidGlassHighlight(
+    alpha: Float,
+    angleDegrees: Float = LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES,
+): Highlight = Highlight.Default.copy(
     width = 1.dp,
     blurRadius = 0.5.dp,
     alpha = alpha,
-    style = HighlightStyle.Default(color = LiquidGlassPalette.BorderLight),
+    style = HighlightStyle.Default(
+        color = LiquidGlassPalette.BorderLight,
+        angle = angleDegrees.coerceIn(0f, 360f),
+    ),
 )
 
 /**
@@ -195,5 +216,4 @@ fun liquidGlassSurfaceGradient(isDark: Boolean): List<Color> = if (isDark) {
 
 /** 当前主题下的浮层 tint 色（由 NirikoTheme 的 LocalDarkTheme 决定，非系统值）。 */
 @Composable
-fun liquidGlassTint(): Color =
-    if (LocalDarkTheme.current) LiquidGlassPalette.DarkTint else LiquidGlassPalette.LightTint
+fun liquidGlassTint(): Color = if (LocalDarkTheme.current) LiquidGlassPalette.DarkTint else LiquidGlassPalette.LightTint

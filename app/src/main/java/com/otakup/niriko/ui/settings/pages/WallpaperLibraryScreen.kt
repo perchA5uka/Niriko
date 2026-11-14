@@ -26,7 +26,6 @@ import androidx.compose.material.icons.outlined.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -49,14 +48,15 @@ import coil.request.ImageRequest
 import com.otakup.niriko.data.wallpaper.WallpaperLibraryEntry
 import com.otakup.niriko.data.wallpaper.WallpaperLibraryFiles
 import com.otakup.niriko.data.wallpaper.WallpaperRotation
+import com.otakup.niriko.ui.components.NirikoTextField
 import com.otakup.niriko.ui.settings.SettingsActionRow
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
 import com.otakup.niriko.ui.settings.SettingsSplitGroup
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.settings.SingleChoiceDialog
-import com.otakup.niriko.util.WallpaperPage
 import com.otakup.niriko.ui.theme.NirikoShapes
+import com.otakup.niriko.util.WallpaperPage
 import com.otakup.niriko.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
 
@@ -134,58 +134,60 @@ fun WallpaperLibraryContent(
             text = "壁纸库",
             description = "库中 " + entries.size + " 张 · 收藏 " + entries.count { it.favorite } + " 张",
         )
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.AddPhotoAlternate,
-                    title = "导入壁纸",
-                    description = "可多选，导入后复制进应用私有目录",
-                    value = null,
-                    showChevron = false,
-                    onClick = { importLauncher.launch(arrayOf("image/*")) },
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Collections,
-                    title = "每日轮换",
-                    description = "每天自动从壁纸库换一张（只改全局壁纸槽位）",
-                    checked = settings.wallpaperRotationEnabled,
-                    onCheckedChange = viewModel::setWallpaperRotationEnabled,
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.AutoAwesome,
-                    title = "只轮换收藏",
-                    description = "打开后只从收藏的壁纸里轮换，没有收藏时保持现状",
-                    checked = settings.wallpaperRotationFavoritesOnly,
-                    enabled = settings.wallpaperRotationEnabled,
-                    onCheckedChange = viewModel::setWallpaperRotationFavoritesOnly,
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Shuffle,
-                    title = "立即换一张",
-                    description = if (candidates.isEmpty()) "壁纸库为空或没有收藏，先导入壁纸" else "候选 " + candidates.size + " 张",
-                    value = null,
-                    showChevron = false,
-                    isLoading = false,
-                    enabled = candidates.isNotEmpty(),
-                    onClick = {
-                        val next = WallpaperRotation.next(
-                            entries = entries,
-                            currentUri = settings.wallpaperUri,
-                            favoritesOnly = settings.wallpaperRotationFavoritesOnly,
-                        ) ?: return@SettingsActionRow
-                        viewModel.setWallpaperUri(next.uri)
-                        viewModel.setWallpaperEnabled(true)
-                        scope.launch { snackbarHostState.showSnackbar("已换一张壁纸") }
-                    },
-                )
-            },
-        ))
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.AddPhotoAlternate,
+                        title = "导入壁纸",
+                        description = "可多选，导入后复制进应用私有目录",
+                        value = null,
+                        showChevron = false,
+                        onClick = { importLauncher.launch(arrayOf("image/*")) },
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Collections,
+                        title = "每日轮换",
+                        description = "每天自动从壁纸库换一张（只改全局壁纸槽位）",
+                        checked = settings.wallpaperRotationEnabled,
+                        onCheckedChange = viewModel::setWallpaperRotationEnabled,
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.AutoAwesome,
+                        title = "只轮换收藏",
+                        description = "打开后只从收藏的壁纸里轮换，没有收藏时保持现状",
+                        checked = settings.wallpaperRotationFavoritesOnly,
+                        enabled = settings.wallpaperRotationEnabled,
+                        onCheckedChange = viewModel::setWallpaperRotationFavoritesOnly,
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Shuffle,
+                        title = "立即换一张",
+                        description = if (candidates.isEmpty()) "壁纸库为空或没有收藏，先导入壁纸" else "候选 " + candidates.size + " 张",
+                        value = null,
+                        showChevron = false,
+                        isLoading = false,
+                        enabled = candidates.isNotEmpty(),
+                        onClick = {
+                            val next = WallpaperRotation.next(
+                                entries = entries,
+                                currentUri = settings.wallpaperUri,
+                                favoritesOnly = settings.wallpaperRotationFavoritesOnly,
+                            ) ?: return@SettingsActionRow
+                            viewModel.setWallpaperUri(next.uri)
+                            viewModel.setWallpaperEnabled(true)
+                            scope.launch { snackbarHostState.showSnackbar("已换一张壁纸") }
+                        },
+                    )
+                },
+            )
+        )
 
         SettingsGroupTitle(
             text = "库中壁纸",
@@ -289,7 +291,7 @@ fun WallpaperLibraryContent(
             onDismissRequest = { tagging = null },
             title = { Text("编辑标签") },
             text = {
-                OutlinedTextField(
+                NirikoTextField(
                     value = tagDraft,
                     onValueChange = { tagDraft = it },
                     label = { Text("用逗号分隔，例如 风景, 夜景") },
@@ -326,7 +328,7 @@ private fun WallpaperThumbnail(
     Box(
         modifier = modifier
             .aspectRatio(2f / 3f)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(NirikoShapes.SectionShape)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         AsyncImage(
@@ -360,4 +362,3 @@ private fun WallpaperThumbnail(
         }
     }
 }
-

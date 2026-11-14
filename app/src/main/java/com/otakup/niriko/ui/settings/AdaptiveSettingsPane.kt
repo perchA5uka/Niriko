@@ -11,12 +11,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CollectionsBookmark
@@ -27,12 +26,10 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.VolunteerActivism
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +38,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -54,9 +50,10 @@ import com.otakup.niriko.navigation.LocalSettingsSeed
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.animation.AnimDurationShort
 import com.otakup.niriko.ui.animation.AnimEasingDefault
-import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.motionEnabled
 import com.otakup.niriko.ui.common.reportBottomBarScroll
+import com.otakup.niriko.ui.components.nirikoRowIndication
 import com.otakup.niriko.ui.settings.pages.AboutSettingsContent
 import com.otakup.niriko.ui.settings.pages.AppearanceSettingsContent
 import com.otakup.niriko.ui.settings.pages.DataSourceSettingsContent
@@ -65,6 +62,7 @@ import com.otakup.niriko.ui.settings.pages.LibrarySettingsContent
 import com.otakup.niriko.ui.settings.pages.RefreshDiagnosticsContent
 import com.otakup.niriko.ui.settings.pages.SearchSettingsContent
 import com.otakup.niriko.ui.settings.pages.SyncBackupSettingsContent
+import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.viewmodel.BackupViewModel
 import com.otakup.niriko.viewmodel.BackupViewModelFactory
 import com.otakup.niriko.viewmodel.SettingsViewModel
@@ -91,7 +89,9 @@ fun SettingsExpandedScreen(
     Row(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            // V-05：左右内缩不再由外层写死 12dp —— 左列标题/组标题与右列组卡各自内部
+            // 引用同一个 16dp 基线，两栏才不会出现"左列 12+16、右列 12+16"与组标题错位。
+            .padding(vertical = 8.dp),
     ) {
         SettingsCategoryNavColumn(
             selected = selected,
@@ -144,7 +144,13 @@ private fun SettingsCategoryNavColumn(
         Text(
             text = "设置",
             style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp),
+            // V-05：与窄屏设置主页同一水平基线（此前 20dp）
+            modifier = Modifier.padding(
+                start = SettingsPageHorizontalInset,
+                end = SettingsPageHorizontalInset,
+                top = 20.dp,
+                bottom = 4.dp,
+            ),
         )
         Spacer(Modifier.height(4.dp))
 
@@ -183,8 +189,8 @@ private fun SettingsCategoryNavGroup(
 }
 
 /**
- * 左列单个分类行：沿用窄屏 SettingsCategoryRow 的视觉（36dp 圆形图标底 + 标题 + 描述），
- * 只把尾部的 ChevronRight 换成选中态（背景色 + 标题加粗）。
+ * 左列单个分类行：与窄屏 [SettingsCategoryRow] 同一套解剖
+ * （36dp 圆角方片图标 + 标题 + 描述 + chevron），用选中态表达"当前页"。
  */
 @Composable
 private fun SettingsNavRow(
@@ -192,37 +198,40 @@ private fun SettingsNavRow(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val interactionSource = rememberRowInteractionSource()
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // V-08：选中态原来是一条 edge-to-edge 的 55% 绿底、无圆角也无箭头，
+            // 压在玻璃卡上边界糊不清，和右侧正文页也没有指向关系。改成 CardShape 圆角的
+            // 浅色实底（35% secondaryContainer）+ 行尾 chevron：边界清楚，指向关系也回来了。
             .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
-                else Color.Transparent,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
+                } else {
+                    Color.Transparent
+                },
+                shape = NirikoShapes.CardShape,
             )
+            // V-07：与窄屏分类行同一行高基准（标题 + 说明 = 72dp）
+            .heightIn(min = SettingsRowTwoLineMinHeight)
             .selectable(
                 selected = selected,
-                interactionSource = rememberRowInteractionSource(),
-                indication = ripple(),
+                interactionSource = interactionSource,
+                // M1：去掉 M3 矩形水波，改整行圆角覆盖
+                indication = null,
                 role = Role.Tab,
                 onClick = onClick,
             )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .nirikoRowIndication(
+                interactionSource = interactionSource,
+                cornerRadius = NirikoShapes.RowInner,
+            )
+            .padding(horizontal = SettingsPageHorizontalInset, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.secondaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = category.icon(),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        // V-08：实心圆球换成与组卡同族的玻璃方片
+        SettingsRowIconChip(category.icon())
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -241,6 +250,9 @@ private fun SettingsNavRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(8.dp))
+        // 选中行的底是 35% 浅色实底，chevron 用不透明色，避免 0.9 alpha 在实底上显得发灰
+        SettingsChevron(onDark = selected)
     }
 }
 

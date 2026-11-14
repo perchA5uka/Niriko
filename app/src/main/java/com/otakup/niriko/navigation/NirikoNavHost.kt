@@ -2,76 +2,80 @@ package com.otakup.niriko.navigation
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.otakup.niriko.data.settings.AppSettings
-import com.otakup.niriko.ui.animation.NavEntryReturnedEffect
-import com.otakup.niriko.ui.animation.SubjectReturnGlow
-import com.kyant.backdrop.Backdrop
-import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
 import androidx.navigation.NavHostController
-import androidx.navigation.navArgument
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import com.kyant.backdrop.Backdrop
+import com.otakup.niriko.data.settings.AppSettings
 import com.otakup.niriko.nirikoApp
+import com.otakup.niriko.ui.adaptive.NirikoWindowLayout
+import com.otakup.niriko.ui.animation.LocalReduceMotion
+import com.otakup.niriko.ui.animation.NavEntryReturnedEffect
+import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.animation.SubjectReturnGlow
+import com.otakup.niriko.ui.animation.enterFromLeft
+import com.otakup.niriko.ui.animation.enterFromRight
 import com.otakup.niriko.ui.animation.enterSharedAxisZ
 import com.otakup.niriko.ui.animation.exitSharedAxisZ
+import com.otakup.niriko.ui.animation.exitToLeft
+import com.otakup.niriko.ui.animation.exitToRight
 import com.otakup.niriko.ui.animation.popEnterSharedAxisZ
 import com.otakup.niriko.ui.animation.popExitSharedAxisZ
-import com.otakup.niriko.ui.animation.LocalReduceMotion
-import com.otakup.niriko.ui.animation.NirikoMotionSpecs
+import com.otakup.niriko.ui.bilibili.BilibiliSyncScreen
+import com.otakup.niriko.ui.bilibili.BilibiliSyncViewModelFactory
 import com.otakup.niriko.ui.character.CharacterDetailScreen
 import com.otakup.niriko.ui.episode.EpisodeDetailScreen
 import com.otakup.niriko.ui.person.PersonDetailScreen
 import com.otakup.niriko.ui.settings.pages.AboutSettingsScreen
-import com.otakup.niriko.ui.settings.pages.DonateSettingsScreen
 import com.otakup.niriko.ui.settings.pages.AppearanceSettingsScreen
-import com.otakup.niriko.ui.settings.pages.DetailSectionsSettingsScreen
-import com.otakup.niriko.ui.settings.pages.WallpaperLibraryScreen
 import com.otakup.niriko.ui.settings.pages.DataSourceSettingsScreen
+import com.otakup.niriko.ui.settings.pages.DetailSectionsSettingsScreen
+import com.otakup.niriko.ui.settings.pages.DonateSettingsScreen
 import com.otakup.niriko.ui.settings.pages.LibrarySettingsScreen
 import com.otakup.niriko.ui.settings.pages.SearchSettingsScreen
 import com.otakup.niriko.ui.settings.pages.SyncBackupSettingsScreen
-import com.otakup.niriko.viewmodel.BackupViewModel
-import com.otakup.niriko.viewmodel.BackupViewModelFactory
-import com.otakup.niriko.viewmodel.SettingsViewModel
-import com.otakup.niriko.viewmodel.SettingsViewModelFactory
-import com.otakup.niriko.viewmodel.CharacterDetailViewModel
-import com.otakup.niriko.viewmodel.CharacterDetailViewModelFactory
-import com.otakup.niriko.viewmodel.PersonDetailViewModel
-import com.otakup.niriko.viewmodel.EpisodeDetailViewModel
-import com.otakup.niriko.viewmodel.EpisodeDetailViewModelFactory
-import com.otakup.niriko.viewmodel.PersonDetailViewModelFactory
-import com.otakup.niriko.ui.subject.SubjectDetailScreen
-import com.otakup.niriko.ui.subject.StaffListScreen
-import com.otakup.niriko.ui.subject.SubjectSearchScreen
-import com.otakup.niriko.ui.bilibili.BilibiliSyncScreen
-import com.otakup.niriko.ui.bilibili.BilibiliSyncViewModelFactory
+import com.otakup.niriko.ui.settings.pages.WallpaperLibraryScreen
 import com.otakup.niriko.ui.steam.SteamSyncScreen
 import com.otakup.niriko.ui.steam.SteamSyncViewModelFactory
+import com.otakup.niriko.ui.subject.StaffListScreen
+import com.otakup.niriko.ui.subject.SubjectDetailScreen
+import com.otakup.niriko.ui.subject.SubjectSearchScreen
+import com.otakup.niriko.viewmodel.BackupViewModel
+import com.otakup.niriko.viewmodel.BackupViewModelFactory
+import com.otakup.niriko.viewmodel.CharacterDetailViewModel
+import com.otakup.niriko.viewmodel.CharacterDetailViewModelFactory
+import com.otakup.niriko.viewmodel.EpisodeDetailViewModel
+import com.otakup.niriko.viewmodel.EpisodeDetailViewModelFactory
+import com.otakup.niriko.viewmodel.PersonDetailViewModel
+import com.otakup.niriko.viewmodel.PersonDetailViewModelFactory
+import com.otakup.niriko.viewmodel.SettingsViewModel
+import com.otakup.niriko.viewmodel.SettingsViewModelFactory
 import com.otakup.niriko.viewmodel.StaffListViewModel
 import com.otakup.niriko.viewmodel.StaffListViewModelFactory
 import com.otakup.niriko.viewmodel.SubjectDetailViewModel
 import com.otakup.niriko.viewmodel.SubjectDetailViewModelFactory
 import com.otakup.niriko.viewmodel.SubjectSearchViewModel
 import com.otakup.niriko.viewmodel.SubjectSearchViewModelFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 顶层页面路由：HorizontalPager 承载（见 [MainPager]）。 */
 const val MAIN_ROUTE = "main"
@@ -89,8 +93,11 @@ internal val LocalSettingsSeed: ProvidableCompositionLocal<StateFlow<AppSettings
     compositionLocalOf { null }
 
 private val subjectCoverSourceRoutes = setOf(
-    MAIN_ROUTE, "subject_search", "subject_detail/{subjectId}",
-    "character_detail/{characterId}", "person_detail/{personId}",
+    MAIN_ROUTE,
+    "subject_search",
+    "subject_detail/{subjectId}",
+    "character_detail/{characterId}",
+    "person_detail/{personId}",
 )
 
 internal fun usesSubjectCoverTransition(initialRoute: String?, targetRoute: String?): Boolean {
@@ -104,15 +111,21 @@ internal fun usesSubjectCoverTransition(initialRoute: String?, targetRoute: Stri
     val target = normalize(targetRoute)
     return (source == "subject_detail/{subjectId}" && target in subjectCoverSourceRoutes) ||
         (target == "subject_detail/{subjectId}" && source in subjectCoverSourceRoutes) ||
-        (source in subjectCoverSourceRoutes && target in subjectCoverSourceRoutes &&
-            (source?.startsWith("character_detail/") == true || source?.startsWith("person_detail/") == true ||
-                target?.startsWith("character_detail/") == true || target?.startsWith("person_detail/") == true))
+        (
+            source in subjectCoverSourceRoutes && target in subjectCoverSourceRoutes &&
+                (
+                    source?.startsWith("character_detail/") == true || source?.startsWith("person_detail/") == true ||
+                        target?.startsWith("character_detail/") == true || target?.startsWith("person_detail/") == true
+                    )
+            )
 }
 
 // ===== 设置二级页路由（分类导航，见 ui/settings/SettingsScreen.kt 主页） =====
 const val SETTINGS_APPEARANCE_ROUTE = "settings_appearance"
+
 /** 外观 → 壁纸库（R3）。 */
 const val SETTINGS_WALLPAPER_LIBRARY_ROUTE = "settings_wallpaper_library"
+
 /** 外观 → 详情部件（F06）。 */
 const val SETTINGS_DETAIL_SECTIONS_ROUTE = "settings_detail_sections"
 const val SETTINGS_LIBRARY_ROUTE = "settings_library"
@@ -120,6 +133,7 @@ const val SETTINGS_SEARCH_ROUTE = "settings_search"
 const val SETTINGS_DATASOURCE_ROUTE = "settings_datasource"
 const val SETTINGS_SYNC_ROUTE = "settings_sync"
 const val SETTINGS_ABOUT_ROUTE = "settings_about"
+
 /** 设置 → 其他 → 向开发者捐赠（F19）。 */
 const val SETTINGS_DONATE_ROUTE = "settings_donate"
 const val SETTINGS_REFRESH_ROUTE = "settings_refresh"
@@ -150,6 +164,7 @@ fun NirikoNavHost(
     modifier: Modifier = Modifier,
 ) {
     val navigationContext = LocalContext.current
+
     /**
      * X3：设置二级页的「首帧种子」。
      *
@@ -189,29 +204,55 @@ fun NirikoNavHost(
         navController = navController,
         startDestination = MAIN_ROUTE,
         modifier = modifier,
+        // D2：二级设置页走「横向推入」，其余页保持 SharedAxisZ（封面共享过渡优先级最高）。
+        // 顺序不能换：cover 分支必须最先判，否则封面飞行会被设置页规则抢走。
         enterTransition = {
-            if (reduceMotion) androidx.compose.animation.EnterTransition.None
-            else if (usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route))
-                androidx.compose.animation.fadeIn(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
-            else enterSharedAxisZ(specs)
+            when {
+                reduceMotion -> androidx.compose.animation.EnterTransition.None
+
+                usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route) ->
+                    androidx.compose.animation.fadeIn(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
+
+                usesSettingsPushTransition(initialState.destination.route, targetState.destination.route) -> enterFromRight(specs)
+
+                else -> enterSharedAxisZ(specs)
+            }
         },
         exitTransition = {
-            if (reduceMotion) androidx.compose.animation.ExitTransition.None
-            else if (usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route))
-                androidx.compose.animation.fadeOut(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
-            else exitSharedAxisZ(specs)
+            when {
+                reduceMotion -> androidx.compose.animation.ExitTransition.None
+
+                usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route) ->
+                    androidx.compose.animation.fadeOut(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
+
+                usesSettingsPushTransition(initialState.destination.route, targetState.destination.route) -> exitToLeft(specs)
+
+                else -> exitSharedAxisZ(specs)
+            }
         },
         popEnterTransition = {
-            if (reduceMotion) androidx.compose.animation.EnterTransition.None
-            else if (usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route))
-                androidx.compose.animation.fadeIn(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
-            else popEnterSharedAxisZ(specs)
+            when {
+                reduceMotion -> androidx.compose.animation.EnterTransition.None
+
+                usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route) ->
+                    androidx.compose.animation.fadeIn(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
+
+                usesSettingsPushTransition(initialState.destination.route, targetState.destination.route) -> enterFromLeft(specs)
+
+                else -> popEnterSharedAxisZ(specs)
+            }
         },
         popExitTransition = {
-            if (reduceMotion) androidx.compose.animation.ExitTransition.None
-            else if (usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route))
-                androidx.compose.animation.fadeOut(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
-            else popExitSharedAxisZ(specs)
+            when {
+                reduceMotion -> androidx.compose.animation.ExitTransition.None
+
+                usesSubjectCoverTransition(initialState.destination.route, targetState.destination.route) ->
+                    androidx.compose.animation.fadeOut(specs.subjectCoverSeek(contracting = targetState.destination.route?.startsWith("subject_detail/") != true))
+
+                usesSettingsPushTransition(initialState.destination.route, targetState.destination.route) -> exitToRight(specs)
+
+                else -> popExitSharedAxisZ(specs)
+            }
         },
     ) {
         composable(MAIN_ROUTE) {
@@ -303,7 +344,11 @@ fun NirikoNavHost(
             "subject_detail/{subjectId}?heroKey={heroKey}",
             arguments = listOf(
                 navArgument("subjectId") { type = NavType.LongType },
-                navArgument("heroKey") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("heroKey") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
         ) { backStackEntry ->
             val subjectId = backStackEntry.arguments?.getLong("subjectId") ?: return@composable
@@ -334,25 +379,27 @@ fun NirikoNavHost(
             NavEntryReturnedEffect(backStackEntry) { SubjectReturnGlow.request(subjectId) }
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalDetailNavigationState provides backStackEntry.savedStateHandle,
-                LocalDetailHeroKey provides (backStackEntry.arguments?.getString("heroKey")
-                    ?: backStackEntry.savedStateHandle.get<String>("detail_hero_key")),
+                LocalDetailHeroKey provides (
+                    backStackEntry.arguments?.getString("heroKey")
+                        ?: backStackEntry.savedStateHandle.get<String>("detail_hero_key")
+                    ),
                 LocalDetailSubjectId provides subjectId,
             ) {
-            SubjectDetailScreen(
-                viewModel = viewModel,
-                onBack = { navController.popBackStack() },
-                onCharacterClick = { characterId -> navController.navigate("character_detail/$characterId") },
-                onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
-                onRelationClick = openSubject,
-                onViewAllStaffClick = { navController.navigate("staff_list/$subjectId") },
-                onOpenEpisodeDetail = { epId ->
-                    navController.navigate("episode_detail/$subjectId/$epId")
-                },
-                sharedTransitionScope = sharedTransitionScope,
-                animatedVisibilityScope = this@composable,
-                // Full-window viewport; floating controls alone avoid the status bar.
-                modifier = Modifier,
-            )
+                SubjectDetailScreen(
+                    viewModel = viewModel,
+                    onBack = { navController.popBackStack() },
+                    onCharacterClick = { characterId -> navController.navigate("character_detail/$characterId") },
+                    onPersonClick = { personId -> navController.navigate("person_detail/$personId") },
+                    onRelationClick = openSubject,
+                    onViewAllStaffClick = { navController.navigate("staff_list/$subjectId") },
+                    onOpenEpisodeDetail = { epId ->
+                        navController.navigate("episode_detail/$subjectId/$epId")
+                    },
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = this@composable,
+                    // Full-window viewport; floating controls alone avoid the status bar.
+                    modifier = Modifier,
+                )
             }
         }
         composable(
@@ -462,11 +509,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 AppearanceSettingsScreen(
@@ -484,11 +534,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 WallpaperLibraryScreen(
@@ -505,11 +558,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 DetailSectionsSettingsScreen(
@@ -525,11 +581,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 LibrarySettingsScreen(
@@ -545,11 +604,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 SearchSettingsScreen(
@@ -565,11 +627,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 DataSourceSettingsScreen(
@@ -587,11 +652,14 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                ),
             )
             val backupVm = viewModel<BackupViewModel>(
                 factory = BackupViewModelFactory(app.backupManager, app.settingsDataStore),
@@ -611,21 +679,24 @@ fun NirikoNavHost(
             val app = context.nirikoApp
             val vm = viewModel<SettingsViewModel>(
                 factory = SettingsViewModelFactory(
-                        app.settingsDataStore, app.pluginManager, app.syncManager,
-                        app.bangumiSyncManager, app.refreshCoordinator,
-                        // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
-                        initialSettings = rootSettings.value,
-                        // C-1 数据体检：只读计数由宿主用 DAO 构造后注入（ViewModel 不 new DAO）
-                        collectionCountsProvider = com.otakup.niriko.data.diagnose.CollectionCountsProvider {
-                            val dao = app.database.collectionDao()
-                            com.otakup.niriko.data.diagnose.CollectionCounts(
-                                total = dao.countAll(),
-                                withoutProgress = dao.countWithoutProgress(),
-                                withoutRating = dao.countWithoutRating(),
-                                registeredSources = app.pluginManager.plugins.size,
-                            )
-                        },
-                    ),
+                    app.settingsDataStore,
+                    app.pluginManager,
+                    app.syncManager,
+                    app.bangumiSyncManager,
+                    app.refreshCoordinator,
+                    // X3：首帧即真实值（见 rootSettings 的注释），Switch 不再重放动画
+                    initialSettings = rootSettings.value,
+                    // C-1 数据体检：只读计数由宿主用 DAO 构造后注入（ViewModel 不 new DAO）
+                    collectionCountsProvider = com.otakup.niriko.data.diagnose.CollectionCountsProvider {
+                        val dao = app.database.collectionDao()
+                        com.otakup.niriko.data.diagnose.CollectionCounts(
+                            total = dao.countAll(),
+                            withoutProgress = dao.countWithoutProgress(),
+                            withoutRating = dao.countWithoutRating(),
+                            registeredSources = app.pluginManager.plugins.size,
+                        )
+                    },
+                ),
             )
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 com.otakup.niriko.ui.settings.pages.RefreshDiagnosticsScreen(

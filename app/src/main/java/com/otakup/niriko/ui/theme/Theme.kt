@@ -165,8 +165,7 @@ val ThemePalettes: List<ThemePalette> = listOf(
 )
 
 /** 取主题色组（越界回退绿色默认）。 */
-fun themePaletteAt(index: Int): ThemePalette =
-    ThemePalettes.getOrElse(index.coerceAtLeast(0)) { ThemePalettes.first() }
+fun themePaletteAt(index: Int): ThemePalette = ThemePalettes.getOrElse(index.coerceAtLeast(0)) { ThemePalettes.first() }
 
 private fun buildLightScheme(seed: ColorSchemeSeed) = lightColorScheme(
     primary = seed.primary,
@@ -240,12 +239,15 @@ fun NirikoTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
+
         // 任意种子色（HCT TONAL_SPOT 配方）；未设置时回退预置色板（默认绿）
         customSeedColor != SeedColorScheme.UnsetSeed -> {
             val seedColor = Color(customSeedColor)
             if (darkTheme) SeedColorScheme.dark(seedColor, oledDark) else SeedColorScheme.light(seedColor)
         }
+
         darkTheme -> buildDarkScheme(seed.dark, oledDark)
+
         else -> buildLightScheme(seed.light)
     }
 
@@ -271,6 +273,9 @@ fun NirikoTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = NirikoTypography,
+            // R1：不传 shapes 时 MaterialTheme.shapes 是 M3 默认的 4/8/12/16/28，
+            // 与应用自己的 NirikoShapes 构成两套口径（见 NirikoMaterialShapes 的说明）。
+            shapes = NirikoMaterialShapes,
             content = content,
         )
     }

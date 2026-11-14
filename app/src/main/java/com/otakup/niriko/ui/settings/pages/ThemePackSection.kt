@@ -39,8 +39,8 @@ import com.otakup.niriko.data.themepack.ThemePackMeta
 import com.otakup.niriko.nirikoApp
 import com.otakup.niriko.ui.settings.SettingsActionRow
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
+import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
 import com.otakup.niriko.ui.settings.SettingsPickerRow
-import com.otakup.niriko.ui.settings.SettingsSplitGroup
 import com.otakup.niriko.util.WallpaperPage
 import com.otakup.niriko.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -97,6 +97,7 @@ fun ThemePackSection(
                     applyPack(result.meta)
                     snackbarHostState.showSnackbar("已导入并应用主题：「" + result.meta.name + "」")
                 }
+
                 is ThemePackImportResult.Failure -> {
                     snackbarHostState.showSnackbar(result.reason)
                 }
@@ -168,41 +169,47 @@ fun ThemePackSection(
 
     Column(modifier = modifier.fillMaxWidth()) {
         SettingsGroupTitle("主题包")
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.FileOpen,
-                    title = "导入主题包",
-                    description = ".nirikotheme 文件（≤50MB，支持图片/视频壁纸）",
-                    isLoading = importing,
-                    showChevron = false,
-                    onClick = { importLauncher.launch(arrayOf("*/*")) },
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.IosShare,
-                    title = "导出当前为主题包",
-                    description = "打包当前配色与壁纸，分享给他人",
-                    showChevron = false,
-                    onClick = { exportAndShare() },
-                )
-            },
-        ))
+        // V-06：外观页里只有这两组还是 20dp 组卡（其余 9 组已是 24dp 二级页规格），
+        // 同页两种大圆角会让人以为"这两组不是同一层级"，统一到 SettingsPageSplitGroup。
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.FileOpen,
+                        title = "导入主题包",
+                        description = ".nirikotheme 文件（≤50MB，支持图片/视频壁纸）",
+                        isLoading = importing,
+                        showChevron = false,
+                        onClick = { importLauncher.launch(arrayOf("*/*")) },
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.IosShare,
+                        title = "导出当前为主题包",
+                        description = "打包当前配色与壁纸，分享给他人",
+                        showChevron = false,
+                        onClick = { exportAndShare() },
+                    )
+                },
+            )
+        )
 
         if (packs.isNotEmpty()) {
             SettingsGroupTitle("已安装")
-            SettingsSplitGroup(content = packs.map { pack ->
-                {
-                    InstalledPackRow(
-                        pack = pack,
-                        active = pack.id == settings.activeThemePackId,
-                        onApply = { applyPack(pack) },
-                        onShare = { shareInstalled(pack) },
-                        onDelete = { deletePack(pack) },
-                    )
+            SettingsPageSplitGroup(
+                content = packs.map { pack ->
+                    {
+                        InstalledPackRow(
+                            pack = pack,
+                            active = pack.id == settings.activeThemePackId,
+                            onApply = { applyPack(pack) },
+                            onShare = { shareInstalled(pack) },
+                            onDelete = { deletePack(pack) },
+                        )
+                    }
                 }
-            })
+            )
         }
     }
 

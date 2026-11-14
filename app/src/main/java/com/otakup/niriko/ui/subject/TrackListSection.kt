@@ -24,10 +24,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.model.EpisodeInfo
+import com.otakup.niriko.ui.components.SectionHeader
 import com.otakup.niriko.util.TrackListPolicy
 
 /**
@@ -64,11 +64,8 @@ internal fun TrackListSection(
     val watched = remember(rows, watchedTrackIds) { TrackListPolicy.watchedCount(rows, watchedTrackIds) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            TrackListPolicy.headerText(watched, rows.size),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+        // V-15：分区标题统一走 SectionHeader（计数已包含在 headerText 里）。
+        SectionHeader(title = TrackListPolicy.headerText(watched, rows.size))
         Text(
             "点击曲目标记/取消已听",
             style = MaterialTheme.typography.labelSmall,
