@@ -45,17 +45,30 @@ object SharePosterExport {
         true
     }.getOrDefault(false)
 
-    private suspend fun loadCovers(context: Context, urls: List<String>): List<Bitmap?> =
-        withContext(Dispatchers.IO) {
-            urls.map { url ->
-                runCatching {
-                    val request = ImageRequest.Builder(context)
-                        .data(url)
-                        .size(300)
-                        .allowHardware(false)
-                        .build()
-                    (Coil.imageLoader(context).execute(request).drawable as? BitmapDrawable)?.bitmap
-                }.getOrNull()
-            }
+    /** 日历分享卡：渲染一张 1080×1400 的图并交给系统 Sharesheet；失败静默。 */
+    suspend fun shareCalendar(context: Context, data: CalendarShareCardData): Boolean = runCatching {
+        val host = ShareBitmapHost()
+        val bitmap = ShareCardVariants.renderCalendar(context, host, data)
+        val uri = ShareFlow.saveAndGetUri(context, bitmap, "calendar_" + System.currentTimeMillis() + ".png")
+        context.startActivity(
+            ShareFlow.buildChooser(
+                ShareFlow.buildShareIntent(uri, data.monthLabel + " · 来自 Niriko"),
+                "分享追番日历",
+            ),
+        )
+        true
+    }.getOrDefault(false)
+
+    private suspend fun loadCovers(context: Context, urls: List<String>): List<Bitmap?> = withContext(Dispatchers.IO) {
+        urls.map { url ->
+            runCatching {
+                val request = ImageRequest.Builder(context)
+                    .data(url)
+                    .size(300)
+                    .allowHardware(false)
+                    .build()
+                (Coil.imageLoader(context).execute(request).drawable as? BitmapDrawable)?.bitmap
+            }.getOrNull()
         }
+    }
 }

@@ -27,7 +27,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,6 +54,9 @@ object ShareCardVariants {
     suspend fun renderWeekly(context: Context, host: ShareBitmapHost, data: WeeklyReportCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { WeeklyReportCard(data) }
 
     suspend fun renderPartitionPage(context: Context, host: ShareBitmapHost, data: PartitionPosterCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { PartitionPosterCard(data) }
+
+    /** 日历分享卡：7 列固定网格，行数与前置空格由 [CalendarShareLayoutPolicy] 算出。 */
+    suspend fun renderCalendar(context: Context, host: ShareBitmapHost, data: CalendarShareCardData): Bitmap = host.renderContent(context, PAGE_WIDTH, PAGE_HEIGHT) { CalendarShareCard(data) }
 
     /**
      * 把一整个分区切成若干页（每页 12 部，见 ShareCardLayoutPolicy.pages）。
@@ -103,6 +108,21 @@ data class WeeklyReportCardData(
     val finishedCount: Int,
     val highlightTitle: String? = null,
     val highlightCover: Bitmap? = null,
+)
+
+/** 日历分享卡的一格（天号 + 当天放送作品数）。 */
+data class CalendarShareDay(
+    val dayOfMonth: Int,
+    val subjectCount: Int,
+)
+
+/** 日历分享卡的数据（由日历页当月的 dayEvents 现算，不落库）。 */
+data class CalendarShareCardData(
+    val monthLabel: String,
+    val headerMeta: String,
+    val stats: List<Pair<String, String>> = emptyList(),
+    val days: List<CalendarShareDay> = emptyList(),
+    val leadingBlanks: Int = 0,
 )
 
 /** 8.5 分区海报的一页（封面已由调用方预加载成 Bitmap，渲染是同步的）。 */
@@ -302,6 +322,138 @@ private fun PartitionPosterCard(data: PartitionPosterCardData) {
             }
             Spacer(Modifier.weight(1f))
             BrandFooter()
+        }
+    }
+}
+
+/**
+ * 日历分享卡（1080×1400）：月份大字标题 + 7 列网格 + 底部三项统计。
+ *
+ * 行数、前置空格、点数上限全部走 [CalendarShareLayoutPolicy]，卡面只负责画。
+ */
+@Composable
+private fun CalendarShareCard(data: CalendarShareCardData) {
+    val rows = CalendarShareLayoutPolicy.rowCount(
+        dayCount = data.days.size,
+        leadingBlanks = data.leadingBlanks,
+    )
+    CardBase(ShareCardVariants.PAGE_WIDTH, ShareCardVariants.PAGE_HEIGHT) {
+        Column(modifier = Modifier.fillMaxSize().padding(64.dp)) {
+            Text(
+                "Niriko 追番日历",
+                style = TextStyle(fontSize = 26.sp),
+                color = ShareCompose.Primary,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                data.monthLabel,
+                style = TextStyle(fontSize = 52.sp),
+                color = ShareCompose.Ink,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                data.headerMeta,
+                style = TextStyle(fontSize = 24.sp),
+                color = ShareCompose.Ink3,
+            )
+            Spacer(Modifier.height(36.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CalendarShareLayoutPolicy.WeekdayLabels.forEach { label ->
+                    Text(
+                        label,
+                        style = TextStyle(fontSize = 20.sp),
+                        color = ShareCompose.Ink3,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            val byDay = data.days.associateBy { it.dayOfMonth }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                repeat(rows) { row ->
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        repeat(CalendarShareLayoutPolicy.COLUMNS) { col ->
+                            val dayNumber = row * CalendarShareLayoutPolicy.COLUMNS + col - data.leadingBlanks + 1
+                            CalendarShareCell(
+                                dayNumber = dayNumber,
+                                dayCount = data.days.size,
+                                subjectCount = byDay[dayNumber]?.subjectCount ?: 0,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.weight(1f))
+            if (data.stats.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    data.stats.forEach { (label, value) ->
+                        Column {
+                            Text(
+                                value,
+                                style = TextStyle(fontSize = 44.sp),
+                                color = ShareCompose.Ink,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                label,
+                                style = TextStyle(fontSize = 22.sp),
+                                color = ShareCompose.Ink3,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+            BrandFooter()
+        }
+    }
+}
+
+/** 单日格：天号 + 放送点数；不属于本月的格子只占位不画。 */
+@Composable
+private fun CalendarShareCell(dayNumber: Int, dayCount: Int, subjectCount: Int, modifier: Modifier = Modifier) {
+    // 月末余位不是「31 号」：按当月实际天数判断，否则 11 月会出现一个不该存在的 31 格。
+    if (!CalendarShareLayoutPolicy.isInMonth(dayNumber, dayCount)) {
+        Box(modifier = modifier.height(120.dp))
+        return
+    }
+    Column(
+        modifier = modifier
+            .height(120.dp)
+            .clip(NirikoShapes.ControlShape)
+            .background(if (subjectCount > 0) ShareCompose.CoverBg else Color.Transparent)
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            dayNumber.toString(),
+            style = TextStyle(fontSize = 22.sp),
+            color = if (subjectCount > 0) ShareCompose.Ink else ShareCompose.Ink3,
+            fontWeight = if (subjectCount > 0) FontWeight.Bold else FontWeight.Normal,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            repeat(CalendarShareLayoutPolicy.dotCount(subjectCount)) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(ShareCompose.Primary),
+                )
+            }
         }
     }
 }

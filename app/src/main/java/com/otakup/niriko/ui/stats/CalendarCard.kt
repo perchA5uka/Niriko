@@ -102,6 +102,8 @@ import com.otakup.niriko.ui.components.NirikoActionPill
 import com.otakup.niriko.ui.components.NirikoFilterPill
 import com.otakup.niriko.ui.components.NirikoSegmentedControl
 import com.otakup.niriko.ui.components.appleGlassCard
+import com.otakup.niriko.ui.share.SharePosterExport
+import com.otakup.niriko.ui.share.buildCalendarShareData
 import com.otakup.niriko.ui.theme.CalendarAccents
 import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.NirikoTheme
@@ -307,6 +309,18 @@ fun CalendarCard(
                 IcsExportEntry(
                     enabled = !exportBusy,
                     onOpen = { showExportDialog = true },
+                    onShare = {
+                        // 当月的日事件 → 每天放送数；卡面网格与行数交给 CalendarShareLayoutPolicy 算
+                        val countByDate = dayEvents
+                            .filterKeys { !it.isBefore(monthStart) && !it.isAfter(monthEnd) }
+                            .mapValues { it.value.broadcastSubjects.size }
+                        val data = buildCalendarShareData(
+                            month = YearMonth.from(monthStart),
+                            subjectCountByDate = countByDate,
+                            monthSubjectCount = monthSubjects.size,
+                        )
+                        exportScope.launch { SharePosterExport.shareCalendar(context, data) }
+                    },
                 )
             }
             if (showExportDialog) {
@@ -631,7 +645,7 @@ private fun BroadcastStatusHint(
 
 /** 4.8：导出入口（放在放送状态行下方，与「刷新」同一区）。 */
 @Composable
-private fun IcsExportEntry(enabled: Boolean, onOpen: () -> Unit) {
+private fun IcsExportEntry(enabled: Boolean, onOpen: () -> Unit, onShare: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -640,6 +654,15 @@ private fun IcsExportEntry(enabled: Boolean, onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // 9sp 裸文字（命中区约 20×14dp）→ 动作胶囊：与「刷新」同族，且形状本身就在说「可点」。
+        if (onShare != null) {
+            NirikoActionPill(
+                text = "分享日历图",
+                onClick = onShare,
+                enabled = enabled,
+                modifier = Modifier.heightIn(min = 48.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         NirikoActionPill(
             text = "放送日历导出 .ics",
             onClick = onOpen,
