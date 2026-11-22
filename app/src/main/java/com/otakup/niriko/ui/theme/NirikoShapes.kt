@@ -117,6 +117,18 @@ object NirikoShapes {
     /** 按高度派生的胶囊（开关轨道等）：等价既有 `RoundedCornerShape(height / 2)`。 */
     fun capsule(height: Dp): Shape = RoundedCornerShape(height / 2)
 
+    /** 同心圆角的下限：再小就看不出是圆角了（4dp，与 [RowInner] 同值的最小可见圆角）。 */
+    private val ConcentricMinRadius: Dp = 4.dp
+
+    /**
+     * 同心圆角：内层圆角 = 外层圆角 − 内边距，下限 [ConcentricMinRadius]。
+     *
+     * 为什么要这条规则：外层 20dp 的卡片里放内边距 6dp 的子块，子块圆角取 14dp 才会和外框
+     * 圆心重合；取 4dp 或 20dp 都会在拐角处露出一条宽窄不一的缝（Niriko 27 §3.2）。
+     * 纯函数，S2 接入分组、卡内小块时直接使用。
+     */
+    fun concentric(outer: Dp, inset: Dp): Dp = maxOf(outer - inset, ConcentricMinRadius)
+
     /** 平滑圆角默认平滑度：0 = 普通圆角（与 [rounded] 完全等价），1 = 最大连续曲率。 */
     const val DefaultSmoothing: Float = 0.6f
 
