@@ -11,7 +11,7 @@
 
 ## 0. 一句话结论
 
-现在的 Niriko 不是「没有玻璃」，而是**玻璃太厚、层太少、规矩太散**：一张卡片是 85% 不透明的白罩子 + 单层折射，
+现在的 Niriko 不是「没有玻璃」，而是**各层玻璃各自为政、规矩太散**：列表卡、详情区块、区块降级、无封面区块底，四处底色不透明度各写各的，
 弹窗却还是 Material 默认白底，间距的事实基数是 10dp 而不是 8，圆角有 11 种取值（59 处字面量），按钮按下有 5 套以上的反应。
 本计划要把「拼起来的玻璃」改成一整套**分层的光**——先有一份母版（single source of truth），
 再逐层收敛实现，最后逐页套用，每一层都有可执行的验收。
@@ -94,9 +94,22 @@
 | L3 | `Floating` | 底栏、dock、浮动按钮 | 24dp | 0.14 / 0.18 | 1dp 受光 22% | 0 8dp 24dp 12% |
 | L4 | `Modal` | sheet、dialog、菜单 | 28dp | 0.20 / 0.24 | 1dp 受光 26% | 0 16dp 40dp 18% |
 
-关键改动：把 `LightGlassBase = White α0.85`（`LiquidGlassTokens.kt:101`）这种「卡片直接 85% 白」的写法，
+关键改动（2026-11-22 S1 查证后更正）：原稿此处写「`LightGlassBase = White α0.85` 是卡片底色」，**这是错的**——该令牌零引用，已删除。
+卡片真实底色是 `appleGlassCard` 里 α0.14–0.42 的亮度自适应值，并不厚。真正要解决的是各表面不透明度各自为政（见下表「现状实测」），
+而不是把「厚罩子」换成「分层」。下面的 L1–L4 是**目标梯子**，是否收敛过去要等真机对照（S1b）。
 换成 **L2 = blur + tint α0.10 + 受光 + 阴影** 的叠加。结果会明显更透、更有层次；
-因为 tint 按层给，深色模式也不必再「取消玻璃层次」（现状见 `LiquidGlassTokens.kt` 头部注释）。
+深色模式也不存在「回退 `surfaceContainer`」：`appleGlassCard` 深色走黑色 tint（α0.22–0.42），那条头部注释已过期并已更正。
+
+**现状实测（2026-11-22，默认观感，亮度自适应的卡片给出区间）**
+
+| 表面 | tint 来源 | 浅色 α | 深色 α |
+|---|---|---|---|
+| 列表卡 `appleGlassCard` | 白 / 黑 | 0.14–0.32 | 0.22–0.42 |
+| 详情区块（真折射）`GlassSectionCard` | `surfaceContainerHigh` | 0.50 | 0.38 |
+| 同一区块的降级 `BlurredGlassSurface` | `surfaceContainerHigh` | 0.35 | 0.45 |
+| 无封面时的区块底 | `surfaceContainerHigh` | 0.75 | 0.55 |
+
+同一个「区块」会因为有没有折射源在 0.50 / 0.35 / 0.75 之间跳；区块比卡片更实是有意的（压在封面大图上要保文字可读）。
 
 表内数值是**起始值**，S1 在真机上调参后定稿并回写本表。它们不是凭感觉拍的：以 iOS 27「提高对比度」为前提，L2 的 tint 上限由 4.5:1 反推（tint 后背景与 `onSurface` 的对比不得低于 4.5），验证见 §10.3。
 
@@ -187,12 +200,12 @@ S3 的 `NirikoRow` 按后者做；这会替换掉设置页现有的圆角 morph 
 
 | # | 现象 | 证据 | 判定 | 改法 | 优先 |
 |---|---|---|---|---|---|
-| A1 | 卡片是 85% 不透明白罩 | `LiquidGlassTokens.kt:101` `LightGlassBase = White α0.85` | 与 iOS 27「多层、更高对比」相反：像磨砂塑料，不像玻璃 | 换 §3.1 四层材质 | **P0** |
+| A1 | 各表面底色不透明度各自为政 | 列表卡 α0.14–0.42、区块 0.50 / 0.38、区块降级 0.35 / 0.45、无封面区块底 0.75 / 0.55（见 §3.1 现状实测）；同一区块在有无折射源时会在 0.50 / 0.35 / 0.75 间跳 | 观感不稳定；也没有用户可调的入口。**原稿「85% 白罩」的判断不成立**（该令牌零引用，S1 已删） | S1 先做玻璃强度滑条（默认零回归）；S1b 真机对照后再定是否收敛成目标梯子 | **P0** |
 | A2 | 三套模糊引擎并存 | kyant 16 文件 / miuix 12 文件 / 直接 `RuntimeShader`+`RenderEffect` 8 文件 | 同屏折射半径、色散、边缘亮度各不相同 →「玻璃有几种质感」 | 只留两套并封装，第三套进 `GlassSource` | **P0** |
 | A3 | 圆角 11 种取值、59 处字面量 | 0/2/3/6/8/10/11/14/28/48/50dp，全部是 v1.2.2 **刻意保留**、由 `ShapeLiteralPolicyTest` 以精确相等表锁死的 | 令牌只覆盖 4/12/16/20/24/999，6/8/10dp 这批最常用的小件没有档位，所以同一个小件在不同页圆角不同 | 补 `Micro` 档并把 6/8/10 归并；每批在同一提交里重算 Policy 表 | **P0** |
 | A4 | 已有平滑圆角但零调用 | `NirikoShapes.kt:129`；theme 外调用 0；136 处 `NirikoShapes.*` 全是线性 rounded | 最像 iOS 的资产没接 | S2 全量切 squircle | **P0** |
 | A5 | 玻璃只有 3 档枚举 | `GlassEffectLevel` OFF/REDUCED/FULL + `CardGlassLevel`；iOS 27 是滑条 | 中间态不可达 | 连续 tint 滑条 + 自动旁路（N1） | P1 |
-| A6 | 深色模式取消玻璃层次 | `LiquidGlassTokens.kt` 头注：「深色模式：卡片回退 M3 surfaceContainer（保证可读性，取消玻璃层次）」 | 深色变成「另一套设计」 | 深色同样走 L1–L4，只换 tint 与受光 | P1 |
+| A6 | `LiquidGlassTokens.kt` 头注与实现不符 | 头注写「深色模式：卡片回退 M3 surfaceContainer」，实际深色走黑色 tint（`GlassCard.kt` 的 `appleGlassCard`） | 误导后续维护；**原稿据此判断「深色变成另一套设计」不成立** | S1 已更正头注 | P2 |
 
 ### B. 控件语言（最刺眼的部分）
 
@@ -310,12 +323,26 @@ S3 的 `NirikoRow` 按后者做；这会替换掉设置页现有的圆角 morph 
 - **落地情况（2026-11-22，分支 `feat/s0-design-tokens`）**：以上全部完成。playground 路由是 `settings_design`（不是 `internal://design`），只在 debug 构建注册，入口在「设置 → 关于」页底部「开发」分组。
 - **S0 过程中发现并纠正的计划错误**：① 字号护栏已有，不重复建；② 计划里的 `SurfaceTokens.kt` 会与已有的 `SurfaceTokensTest`（B7a 圆角令牌的测试）混淆，改名 `SurfaceLevels.kt`；③ 计划里多处数字是 `rg` 直接数的（含注释与 `share/`），已按护栏测试的口径（剥注释）重数并回写；④ 间距 75 处应为 67 处。
 
-### S1 · 材质层（3–4 天）
+### S1 · 玻璃强度与材质（3–4 天，已拆为 S1a / S1b）
 
-- 实现 §3.1 的 L1–L4；`appleGlassCard` / `GlassSectionCard` / `LiquidGlassSurface` / `BlurredGlassSurface` 收进 `NirikoSurface`；
-- 第三套（直接 `RuntimeShader`）接到 `GlassSource` 单一入口；
-- 深色模式去掉「回退 surfaceContainer」，改 tint。
-- 验收：playground 四层并排；详情页 / 统计页截图对照；同屏 RenderEffect 构造点 ≤ 2（沿用既有护栏测试）；对比度脚本全绿。
+**S1a · 玻璃强度滑条（N1）——已落地**（分支 `feat/s1-glass-strength`）
+
+- `GlassStrength`：强度 0..1 → tint 倍率，分段线性，**默认 0.6 的倍率恰好为 1.0**，默认观感与改动前逐位一致；
+  两端 0 → ×0.4（极致清晰）、1 → ×1.8（完全着色），缩放后不透明度夹在 0.92 以内。
+- 只缩放 4 处底色 tint（`appleGlassCard`、`GlassSectionCard`、`BlurredGlassSurface` 的两处），不动折射、模糊、边缘高光、阴影。
+- 链路：`AppSettings.glassStrength` → DataStore 键 `glass_strength`（读取与写入都夹值）→ 备份读写 → `SettingsViewModel.setGlassStrength`
+  → `LocalGlassStrength` → 设置 → 外观 → 「玻璃强度」滑条（10 档，松手落库）。
+- 护栏：`GlassStrengthTest`（默认零回归、单调、夹值）、`GlassStrengthWiringTest`（每个表面都在用、备份读写对称、死令牌不回来）。
+- **查证后更正的前提**：见 §3.1「现状实测」——卡片并不是 85% 白罩，S1 原定的「按梯子重写四套表面」因此**暂缓**，
+  不在看不到画面的情况下改变默认观感。顺手删除了零引用的 `LightGlassBase`，更正了 `LiquidGlassTokens.kt` 过期的头注。
+- 刻意没做：「自动对比」。`appleGlassCard` 本来就按壁纸亮度自适应（±0.05），再叠一层自动旁路缺乏依据，真机反馈后再定。
+
+**S1b · 收敛各表面（待真机对照后再做）**
+
+- 先在设计对照页并排摆出四处表面在同一背景上的实际样子，再决定：是把现状收敛成 §3.1 的目标梯子，还是保留「区块比卡片更实」。
+- 若收敛：`appleGlassCard` / `GlassSectionCard` / `BlurredGlassSurface` / `LiquidGlassSurface` 收进 `NirikoSurface`，第三套直接 `RuntimeShader` 接到 `GlassSource`；
+  同时重写 `GlassDecision` 两处「有意不对称」的判定与其真值表测试（§12 第 6 条已决定重开 D1）。
+- 验收：设计对照页四层并排；详情页 / 统计页截图对照；同屏 RenderEffect 构造点 ≤ 2（沿用既有护栏测试）；对比度脚本全绿。
 
 ### S2 · 形状与间距（3–4 天）
 
