@@ -138,6 +138,9 @@ const val SETTINGS_ABOUT_ROUTE = "settings_about"
 const val SETTINGS_DONATE_ROUTE = "settings_donate"
 const val SETTINGS_REFRESH_ROUTE = "settings_refresh"
 
+/** 设计对照页（Niriko 27 · S0）：只在 debug 构建注册；沿用 settings_ 前缀以走二级设置页的横向推入转场。 */
+const val SETTINGS_DESIGN_ROUTE = "settings_design"
+
 /**
  * 导航宿主。顶层四页由 [MainPager]（HorizontalPager）承载，二级页面（详情/搜索等）走 NavHost 路由覆盖其上。
  * [pagerState] 由 MainActivity 创建并共享给 MainPager 与 NirikoBottomBar（指示器跟手联动）。
@@ -711,6 +714,7 @@ fun NirikoNavHost(
             Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
                 AboutSettingsScreen(
                     onBack = { navController.popBackStack() },
+                    onOpenDesignPlayground = { navController.navigate(SETTINGS_DESIGN_ROUTE) },
                 )
             }
         }
@@ -721,6 +725,15 @@ fun NirikoNavHost(
                 DonateSettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
+            }
+        }
+        if (com.otakup.niriko.BuildConfig.DEBUG) {
+            composable(SETTINGS_DESIGN_ROUTE) {
+                Box(Modifier.fillMaxSize().padding(top = contentTopInset)) {
+                    com.otakup.niriko.ui.design.DesignPlaygroundScreen(
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
         }
     }
