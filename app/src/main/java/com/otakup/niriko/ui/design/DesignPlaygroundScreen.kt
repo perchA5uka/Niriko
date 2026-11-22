@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.data.settings.GlassStrength
 import com.otakup.niriko.ui.components.GlassSlider
 import com.otakup.niriko.ui.components.GlassToggle
 import com.otakup.niriko.ui.components.NirikoActionPill
@@ -45,6 +46,7 @@ import com.otakup.niriko.ui.components.NirikoTagPill
 import com.otakup.niriko.ui.components.NirikoTextField
 import com.otakup.niriko.ui.components.appleGlassCard
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
+import com.otakup.niriko.ui.theme.LocalGlassStrength
 import com.otakup.niriko.ui.theme.NirikoShapes
 import com.otakup.niriko.ui.theme.NirikoSpacing
 import com.otakup.niriko.ui.theme.SurfaceLevel
@@ -165,9 +167,14 @@ private fun ShapeSwatch(shape: androidx.compose.ui.graphics.Shape) {
 @Composable
 private fun SurfaceLevelSection() {
     PlaygroundSection(
-        title = "材质层级（起始值）",
-        hint = "SurfaceLevel 的参数表；S1 把四套现有表面接到这里之前，只是数据，界面上还没有对应的实物。",
+        title = "材质层级（目标梯子）与玻璃强度",
+        hint = "SurfaceLevel 是目标梯子，尚未接线；现状各表面 tint 不成梯子（见 SurfaceLevels 的说明）。玻璃强度（N1）在「设置 → 外观 → 玻璃强度」调节，调完回到本页看各卡片底色变化。",
     ) {
+        val glassStrength = LocalGlassStrength.current
+        Text(
+            text = "当前强度 " + GlassStrength.label(glassStrength) + " · 倍率 ×" + GlassStrength.tintMultiplier(glassStrength),
+            style = MaterialTheme.typography.bodyMedium,
+        )
         SurfaceLevel.entries.forEach { level ->
             val shadow = level.shadow?.let { "投影 " + it.offsetY.value.toInt() + "/" + it.blur.value.toInt() + "dp α" + it.alpha } ?: "无投影"
             Text(

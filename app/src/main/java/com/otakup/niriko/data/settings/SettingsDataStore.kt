@@ -3,6 +3,7 @@ package com.otakup.niriko.data.settings
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -25,7 +26,7 @@ class SettingsDataStore(private val context: Context) {
 
     private object Keys {
         // 外观
-        val THEME_MODE = intPreferencesKey("theme_mode")           // 0=SYSTEM, 1=LIGHT, 2=DARK
+        val THEME_MODE = intPreferencesKey("theme_mode") // 0=SYSTEM, 1=LIGHT, 2=DARK
         val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         val OLED_DARK = booleanPreferencesKey("oled_dark")
         val THEME_COLOR_INDEX = intPreferencesKey("theme_color_index")
@@ -59,15 +60,19 @@ class SettingsDataStore(private val context: Context) {
         val WALLPAPER_STATS_URI = stringPreferencesKey("wallpaper_stats_uri")
         val WALLPAPER_SETTINGS_URI = stringPreferencesKey("wallpaper_settings_uri")
         val WALLPAPER_BLUR_DP = intPreferencesKey("wallpaper_blur_dp")
-        val WALLPAPER_ATMOSPHERE = stringPreferencesKey("wallpaper_atmosphere")  // WallpaperAtmosphere.name
-        val WALLPAPER_LIBRARY = stringPreferencesKey("wallpaper_library")  // JSON（WallpaperLibraryCodec）
+        val WALLPAPER_ATMOSPHERE = stringPreferencesKey("wallpaper_atmosphere") // WallpaperAtmosphere.name
+        val WALLPAPER_LIBRARY = stringPreferencesKey("wallpaper_library") // JSON（WallpaperLibraryCodec）
         val WALLPAPER_ROTATION_ENABLED = booleanPreferencesKey("wallpaper_rotation_enabled")
         val WALLPAPER_ROTATION_FAVORITES_ONLY = booleanPreferencesKey("wallpaper_rotation_favorites_only")
-        val CARD_GLASS_LEVEL = stringPreferencesKey("card_glass_level")  // CardGlassLevel.name
+        val CARD_GLASS_LEVEL = stringPreferencesKey("card_glass_level") // CardGlassLevel.name
         val SPLASH_ENABLED = booleanPreferencesKey("splash_enabled")
         val ACTIVE_THEME_PACK_ID = stringPreferencesKey("active_theme_pack_id")
         val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
-        val GLASS_EFFECT = stringPreferencesKey("glass_effect")   // GlassEffectLevel.name
+        val GLASS_EFFECT = stringPreferencesKey("glass_effect") // GlassEffectLevel.name
+
+        // Niriko 27 · N1：玻璃强度 0..1（默认 GlassStrength.Default）
+        val GLASS_STRENGTH = floatPreferencesKey("glass_strength")
+
         // 10.1 玻璃自动档：AUTO / MANUAL（批次 C 新增的 DataStore 键）
         val GLASS_AUTO_TIER = stringPreferencesKey("glass_auto_tier")
         val CUSTOM_ICON_MODE = stringPreferencesKey("custom_icon_mode")
@@ -76,7 +81,7 @@ class SettingsDataStore(private val context: Context) {
         val SHARE_INCLUDE_TAGS = booleanPreferencesKey("share_include_tags")
 
         // 收藏
-        val DEFAULT_SORT_ORDER = stringPreferencesKey("default_sort_order")  // SortOrder.name
+        val DEFAULT_SORT_ORDER = stringPreferencesKey("default_sort_order") // SortOrder.name
         val SHOW_STATUS_TAGS = booleanPreferencesKey("show_status_tags")
         val SHOW_PROGRESS_BAR = booleanPreferencesKey("show_progress_bar")
 
@@ -91,6 +96,7 @@ class SettingsDataStore(private val context: Context) {
         // 统计与启动
         val SHOW_ANNUALLY_SUMMARY = booleanPreferencesKey("show_annually_summary")
         val START_PAGE = stringPreferencesKey("start_page")
+
         // 首次启动引导（计划 B1-1）
         val FIRST_RUN_COMPLETED = booleanPreferencesKey("first_run_completed")
 
@@ -136,7 +142,7 @@ class SettingsDataStore(private val context: Context) {
         val BANGUMI_TOKEN_TYPE = stringPreferencesKey("bangumi_token_type")
         val BANGUMI_USERNAME = stringPreferencesKey("bangumi_username")
         val BANGUMI_SYNC_ENABLED = booleanPreferencesKey("bangumi_sync_enabled")
-        val BANGUMI_SYNC_PRIORITY = stringPreferencesKey("bangumi_sync_priority")  // BangumiSyncPriority.name
+        val BANGUMI_SYNC_PRIORITY = stringPreferencesKey("bangumi_sync_priority") // BangumiSyncPriority.name
         val BANGUMI_AUTO_SYNC = booleanPreferencesKey("bangumi_auto_sync")
 
         // Bangumi OAuth（用户自建应用，不内置）
@@ -179,21 +185,34 @@ class SettingsDataStore(private val context: Context) {
             wallpaperSettingsUri = prefs[Keys.WALLPAPER_SETTINGS_URI] ?: defaults.wallpaperSettingsUri,
             wallpaperBlurDp = prefs[Keys.WALLPAPER_BLUR_DP] ?: defaults.wallpaperBlurDp,
             wallpaperAtmosphere = prefs[Keys.WALLPAPER_ATMOSPHERE]?.let { name ->
-                try { WallpaperAtmosphere.valueOf(name) } catch (_: IllegalArgumentException) { defaults.wallpaperAtmosphere }
+                try {
+                    WallpaperAtmosphere.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    defaults.wallpaperAtmosphere
+                }
             } ?: defaults.wallpaperAtmosphere,
             wallpaperLibraryEntries = com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.decode(prefs[Keys.WALLPAPER_LIBRARY]),
             wallpaperRotationEnabled = prefs[Keys.WALLPAPER_ROTATION_ENABLED] ?: defaults.wallpaperRotationEnabled,
             wallpaperRotationFavoritesOnly = prefs[Keys.WALLPAPER_ROTATION_FAVORITES_ONLY] ?: defaults.wallpaperRotationFavoritesOnly,
             cardGlassLevel = prefs[Keys.CARD_GLASS_LEVEL]?.let { name ->
-                try { CardGlassLevel.valueOf(name) } catch (_: IllegalArgumentException) { defaults.cardGlassLevel }
+                try {
+                    CardGlassLevel.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    defaults.cardGlassLevel
+                }
             } ?: defaults.cardGlassLevel,
             splashEnabled = prefs[Keys.SPLASH_ENABLED] ?: defaults.splashEnabled,
             activeThemePackId = prefs[Keys.ACTIVE_THEME_PACK_ID] ?: defaults.activeThemePackId,
             reduceMotion = prefs[Keys.REDUCE_MOTION] ?: defaults.reduceMotion,
             glassAutoTier = prefs[Keys.GLASS_AUTO_TIER] ?: defaults.glassAutoTier,
             glassEffect = prefs[Keys.GLASS_EFFECT]?.let { name ->
-                try { GlassEffectLevel.valueOf(name) } catch (_: IllegalArgumentException) { defaults.glassEffect }
+                try {
+                    GlassEffectLevel.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    defaults.glassEffect
+                }
             } ?: defaults.glassEffect,
+            glassStrength = prefs[Keys.GLASS_STRENGTH]?.let(GlassStrength::clamp) ?: defaults.glassStrength,
             customIconMode = prefs[Keys.CUSTOM_ICON_MODE] ?: defaults.customIconMode,
             shareIncludeRating = prefs[Keys.SHARE_INCLUDE_RATING] ?: defaults.shareIncludeRating,
             shareIncludeProgress = prefs[Keys.SHARE_INCLUDE_PROGRESS] ?: defaults.shareIncludeProgress,
@@ -201,7 +220,11 @@ class SettingsDataStore(private val context: Context) {
 
             // 收藏
             defaultSortOrder = prefs[Keys.DEFAULT_SORT_ORDER]?.let { name ->
-                try { SortOrder.valueOf(name) } catch (_: IllegalArgumentException) { defaults.defaultSortOrder }
+                try {
+                    SortOrder.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    defaults.defaultSortOrder
+                }
             } ?: defaults.defaultSortOrder,
             showStatusTags = prefs[Keys.SHOW_STATUS_TAGS] ?: defaults.showStatusTags,
             showProgressBar = prefs[Keys.SHOW_PROGRESS_BAR] ?: defaults.showProgressBar,
@@ -219,7 +242,11 @@ class SettingsDataStore(private val context: Context) {
 
             // 数据源
             bangumiEndpoint = prefs[Keys.BANGUMI_ENDPOINT]?.let { name ->
-                try { BangumiEndpoint.valueOf(name) } catch (_: IllegalArgumentException) { defaults.bangumiEndpoint }
+                try {
+                    BangumiEndpoint.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    defaults.bangumiEndpoint
+                }
             } ?: defaults.bangumiEndpoint,
             steamApiKey = prefs[Keys.STEAM_API_KEY] ?: defaults.steamApiKey,
             steamId64 = prefs[Keys.STEAM_ID64] ?: defaults.steamId64,
@@ -256,7 +283,11 @@ class SettingsDataStore(private val context: Context) {
             bangumiUsername = prefs[Keys.BANGUMI_USERNAME] ?: defaults.bangumiUsername,
             bangumiSyncEnabled = prefs[Keys.BANGUMI_SYNC_ENABLED] ?: defaults.bangumiSyncEnabled,
             bangumiSyncPriority = prefs[Keys.BANGUMI_SYNC_PRIORITY]?.let { name ->
-                try { BangumiSyncPriority.valueOf(name) } catch (_: IllegalArgumentException) { defaults.bangumiSyncPriority }
+                try {
+                    BangumiSyncPriority.valueOf(name)
+                } catch (_: IllegalArgumentException) {
+                    defaults.bangumiSyncPriority
+                }
             } ?: defaults.bangumiSyncPriority,
             bangumiAutoSync = prefs[Keys.BANGUMI_AUTO_SYNC] ?: defaults.bangumiAutoSync,
             bangumiClientId = prefs[Keys.BANGUMI_CLIENT_ID] ?: defaults.bangumiClientId,
@@ -387,6 +418,11 @@ class SettingsDataStore(private val context: Context) {
         runCatching { context.dataStore.edit { it[Keys.GLASS_EFFECT] = level.name } }
     }
 
+    /** 设置玻璃强度（N1）；写入前夹到 0..1。 */
+    suspend fun setGlassStrength(strength: Float) {
+        runCatching { context.dataStore.edit { it[Keys.GLASS_STRENGTH] = GlassStrength.clamp(strength) } }
+    }
+
     /** 10.1：玻璃自动降档开关（AUTO / MANUAL）。 */
     suspend fun setGlassAutoTier(mode: String) {
         runCatching { context.dataStore.edit { it[Keys.GLASS_AUTO_TIER] = mode } }
@@ -411,8 +447,11 @@ class SettingsDataStore(private val context: Context) {
     suspend fun setCustomSeedColor(argb: Int?) {
         runCatching {
             context.dataStore.edit { prefs ->
-                if (argb == null) prefs.remove(Keys.CUSTOM_SEED_COLOR)
-                else prefs[Keys.CUSTOM_SEED_COLOR] = argb
+                if (argb == null) {
+                    prefs.remove(Keys.CUSTOM_SEED_COLOR)
+                } else {
+                    prefs[Keys.CUSTOM_SEED_COLOR] = argb
+                }
             }
         }
     }
@@ -460,8 +499,7 @@ class SettingsDataStore(private val context: Context) {
      * 单独读写、不进 AppSettings：它是派生数据（由榜单现算），放进设置模型会逼着
      * 每个调用方都重建一份 AppSettings，也会被备份当成用户设置带走。
      */
-    suspend fun rankingSnapshotJson(): String? =
-        runCatching { context.dataStore.data.first()[Keys.RANKING_SNAPSHOT_V1] }.getOrNull()
+    suspend fun rankingSnapshotJson(): String? = runCatching { context.dataStore.data.first()[Keys.RANKING_SNAPSHOT_V1] }.getOrNull()
 
     suspend fun setRankingSnapshotJson(json: String) {
         runCatching { context.dataStore.edit { it[Keys.RANKING_SNAPSHOT_V1] = json } }
@@ -477,12 +515,10 @@ class SettingsDataStore(private val context: Context) {
      * 用来区分「全新安装」与「升级安装」（后者不该被引导拦截），
      * 判定逻辑见 [FirstRunPolicy.shouldShowFirstRun]。
      */
-    suspend fun rawFirstRunCompleted(): Boolean? =
-        runCatching { context.dataStore.data.first()[Keys.FIRST_RUN_COMPLETED] }.getOrNull()
+    suspend fun rawFirstRunCompleted(): Boolean? = runCatching { context.dataStore.data.first()[Keys.FIRST_RUN_COMPLETED] }.getOrNull()
 
     /** DataStore 里是否已有任意设置键（= 用户之前用过本应用）。 */
-    suspend fun hasStoredSettings(): Boolean =
-        runCatching { context.dataStore.data.first().asMap().isNotEmpty() }.getOrDefault(false)
+    suspend fun hasStoredSettings(): Boolean = runCatching { context.dataStore.data.first().asMap().isNotEmpty() }.getOrDefault(false)
 
     /** 重置所有设置到默认值。 */
     suspend fun resetAll() {
@@ -683,16 +719,19 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.DYNAMIC_COLOR] = settings.dynamicColor
                 prefs[Keys.OLED_DARK] = settings.oledDark
                 prefs[Keys.THEME_COLOR_INDEX] = settings.themeColorIndex
-                if (settings.customSeedColor == -1) prefs.remove(Keys.CUSTOM_SEED_COLOR)
-                else prefs[Keys.CUSTOM_SEED_COLOR] = settings.customSeedColor
+                if (settings.customSeedColor == -1) {
+                    prefs.remove(Keys.CUSTOM_SEED_COLOR)
+                } else {
+                    prefs[Keys.CUSTOM_SEED_COLOR] = settings.customSeedColor
+                }
                 prefs[Keys.WALLPAPER_ENABLED] = settings.wallpaperEnabled
                 prefs[Keys.WALLPAPER_PARALLAX_ENABLED] = settings.wallpaperParallaxEnabled
-        prefs[Keys.DETAIL_HIDDEN_SECTIONS] = settings.detailHiddenSections
-        prefs[Keys.DETAIL_SECTION_ORDER] = settings.detailSectionOrder
-        prefs[Keys.DETAIL_COLLAPSED_SECTIONS] = settings.detailCollapsedSections
-        prefs[Keys.TITLE_LOGO_MODE] = settings.titleLogoMode
-        prefs[Keys.HALFTONE_ENABLED] = settings.halftoneEnabled
-        prefs[Keys.CRT_MODE_ENABLED] = settings.crtModeEnabled
+                prefs[Keys.DETAIL_HIDDEN_SECTIONS] = settings.detailHiddenSections
+                prefs[Keys.DETAIL_SECTION_ORDER] = settings.detailSectionOrder
+                prefs[Keys.DETAIL_COLLAPSED_SECTIONS] = settings.detailCollapsedSections
+                prefs[Keys.TITLE_LOGO_MODE] = settings.titleLogoMode
+                prefs[Keys.HALFTONE_ENABLED] = settings.halftoneEnabled
+                prefs[Keys.CRT_MODE_ENABLED] = settings.crtModeEnabled
                 prefs[Keys.WALLPAPER_URI] = settings.wallpaperUri
                 prefs[Keys.WALLPAPER_LIBRARY_URI] = settings.wallpaperLibraryUri
                 prefs[Keys.WALLPAPER_DISCOVER_URI] = settings.wallpaperDiscoverUri
@@ -708,6 +747,7 @@ class SettingsDataStore(private val context: Context) {
                 prefs[Keys.ACTIVE_THEME_PACK_ID] = settings.activeThemePackId
                 prefs[Keys.REDUCE_MOTION] = settings.reduceMotion
                 prefs[Keys.GLASS_AUTO_TIER] = settings.glassAutoTier
+                prefs[Keys.GLASS_STRENGTH] = GlassStrength.clamp(settings.glassStrength)
                 prefs[Keys.CUSTOM_ICON_MODE] = settings.customIconMode
                 prefs[Keys.SHARE_INCLUDE_RATING] = settings.shareIncludeRating
                 prefs[Keys.SHARE_INCLUDE_PROGRESS] = settings.shareIncludeProgress

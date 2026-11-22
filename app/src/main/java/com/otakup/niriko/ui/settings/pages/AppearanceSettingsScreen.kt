@@ -1,7 +1,7 @@
 package com.otakup.niriko.ui.settings.pages
 
-import android.content.Intent
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,9 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Animation
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Title
-import androidx.compose.material.icons.outlined.Tv
-import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.BlurCircular
 import androidx.compose.material.icons.outlined.BlurLinear
 import androidx.compose.material.icons.outlined.BlurOff
@@ -21,8 +18,8 @@ import androidx.compose.material.icons.outlined.BlurOn
 import androidx.compose.material.icons.outlined.BrightnessAuto
 import androidx.compose.material.icons.outlined.BrightnessHigh
 import androidx.compose.material.icons.outlined.Brush
-import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.ColorLens
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
@@ -34,11 +31,15 @@ import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.NotificationsActive
+import androidx.compose.material.icons.outlined.Opacity
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material.icons.outlined.Timeline
+import androidx.compose.material.icons.outlined.Title
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Tv
+import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.AlertDialog
@@ -48,7 +49,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,30 +59,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import com.otakup.niriko.data.settings.CardGlassLevel
-import com.otakup.niriko.data.settings.GlassEffectLevel
-import com.otakup.niriko.data.settings.ThemeMode
-import com.otakup.niriko.data.settings.WallpaperAtmosphere
-import com.otakup.niriko.ui.icon.AppIconManager
-import com.otakup.niriko.ui.settings.SettingsActionRow
-import com.otakup.niriko.util.TitleLogoMode
-import com.otakup.niriko.ui.settings.SettingsDetailScaffold
-import com.otakup.niriko.ui.settings.SettingsGroupTitle
-import com.otakup.niriko.ui.settings.SettingsInfoRow
-import com.otakup.niriko.ui.settings.SettingsPickerRow
-import com.otakup.niriko.ui.settings.SettingsRadioRow
-import com.otakup.niriko.ui.settings.SettingsSliderRow
 import com.otakup.niriko.data.diagnose.GlassAutoMode
 import com.otakup.niriko.data.diagnose.deviceTier
 import com.otakup.niriko.data.diagnose.effectiveGlassLevel
 import com.otakup.niriko.data.diagnose.glassLevelLabel
 import com.otakup.niriko.data.diagnose.glassTierLabel
+import com.otakup.niriko.data.settings.CardGlassLevel
+import com.otakup.niriko.data.settings.GlassEffectLevel
+import com.otakup.niriko.data.settings.GlassStrength
+import com.otakup.niriko.data.settings.ThemeMode
+import com.otakup.niriko.data.settings.WallpaperAtmosphere
+import com.otakup.niriko.ui.icon.AppIconManager
+import com.otakup.niriko.ui.settings.SettingsActionRow
+import com.otakup.niriko.ui.settings.SettingsDetailScaffold
+import com.otakup.niriko.ui.settings.SettingsGroupTitle
+import com.otakup.niriko.ui.settings.SettingsInfoRow
 import com.otakup.niriko.ui.settings.SettingsPageSplitGroup
+import com.otakup.niriko.ui.settings.SettingsPickerRow
+import com.otakup.niriko.ui.settings.SettingsRadioRow
+import com.otakup.niriko.ui.settings.SettingsSliderRow
 import com.otakup.niriko.ui.settings.SettingsSwitchRow
 import com.otakup.niriko.ui.theme.SeedColorScheme
 import com.otakup.niriko.ui.theme.ThemeColorPickerDialog
+import com.otakup.niriko.util.TitleLogoMode
 import com.otakup.niriko.util.WallpaperPage
 import com.otakup.niriko.viewmodel.SettingsViewModel
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * 外观设置页（二级页外壳：脚手架 + 返回箭头）。
@@ -141,376 +144,415 @@ fun AppearanceSettingsContent(
         }
         val target = pendingWallpaperTarget
         viewModel.setWallpaperEnabled(true)
-        if (target == null) viewModel.setWallpaperUri(uri.toString())
-        else viewModel.setWallpaperPageUri(target, uri.toString())
+        if (target == null) {
+            viewModel.setWallpaperUri(uri.toString())
+        } else {
+            viewModel.setWallpaperPageUri(target, uri.toString())
+        }
         pendingWallpaperTarget = null
     }
 
     Column {
         // ===== 主题模式（三选项：就地单选） =====
         SettingsGroupTitle("主题模式")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.BrightnessAuto,
-                    title = "跟随系统",
-                    description = "随系统深色/浅色切换",
-                    selected = settings.themeMode == ThemeMode.SYSTEM,
-                    onSelect = { viewModel.setThemeMode(ThemeMode.SYSTEM) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.LightMode,
-                    title = "浅色",
-                    description = "始终使用浅色主题",
-                    selected = settings.themeMode == ThemeMode.LIGHT,
-                    onSelect = { viewModel.setThemeMode(ThemeMode.LIGHT) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.DarkMode,
-                    title = "深色",
-                    description = "始终使用深色主题",
-                    selected = settings.themeMode == ThemeMode.DARK,
-                    onSelect = { viewModel.setThemeMode(ThemeMode.DARK) },
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.BrightnessAuto,
+                        title = "跟随系统",
+                        description = "随系统深色/浅色切换",
+                        selected = settings.themeMode == ThemeMode.SYSTEM,
+                        onSelect = { viewModel.setThemeMode(ThemeMode.SYSTEM) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.LightMode,
+                        title = "浅色",
+                        description = "始终使用浅色主题",
+                        selected = settings.themeMode == ThemeMode.LIGHT,
+                        onSelect = { viewModel.setThemeMode(ThemeMode.LIGHT) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.DarkMode,
+                        title = "深色",
+                        description = "始终使用深色主题",
+                        selected = settings.themeMode == ThemeMode.DARK,
+                        onSelect = { viewModel.setThemeMode(ThemeMode.DARK) },
+                    )
+                },
+            )
+        )
 
         // ===== 详情页标题（C · 13.1）：默认只用文字，避免替所有人改观感 =====
         SettingsGroupTitle("详情页标题")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.Title,
-                    title = "只用文字",
-                    description = "默认；不请求任何 logo",
-                    selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.OFF,
-                    onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.OFF.key) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.AutoAwesome,
-                    title = "始终用作品 logo",
-                    description = "没有 logo 的条目仍显示文字",
-                    selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.ALWAYS,
-                    onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.ALWAYS.key) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.Visibility,
-                    title = "看不清时显示文字",
-                    description = "推荐：对比度不足时回退文字",
-                    selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.TEXT_WHEN_UNCLEAR,
-                    onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.TEXT_WHEN_UNCLEAR.key) },
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.Title,
+                        title = "只用文字",
+                        description = "默认；不请求任何 logo",
+                        selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.OFF,
+                        onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.OFF.key) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.AutoAwesome,
+                        title = "始终用作品 logo",
+                        description = "没有 logo 的条目仍显示文字",
+                        selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.ALWAYS,
+                        onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.ALWAYS.key) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.Visibility,
+                        title = "看不清时显示文字",
+                        description = "推荐：对比度不足时回退文字",
+                        selected = TitleLogoMode.fromKey(settings.titleLogoMode) == TitleLogoMode.TEXT_WHEN_UNCLEAR,
+                        onSelect = { viewModel.setTitleLogoMode(TitleLogoMode.TEXT_WHEN_UNCLEAR.key) },
+                    )
+                },
+            )
+        )
 
         // ===== 主题 =====
         SettingsGroupTitle("主题")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsPickerRow(
-                    icon = Icons.Outlined.Palette,
-                    title = "主题色",
-                    description = "品牌色种子（默认品牌绿）",
-                    value = if (settings.customSeedColor == SeedColorScheme.UnsetSeed)
-                        "默认（品牌绿）"
-                    else
-                        "#%06X".format(0xFFFFFF and settings.customSeedColor),
-                    onClick = { showThemeColorPicker = true },
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.ColorLens,
-                    title = "Material You 动态取色",
-                    description = "使用 Android 12+ 动态配色覆盖品牌色",
-                    checked = settings.dynamicColor,
-                    onCheckedChange = viewModel::setDynamicColor,
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Contrast,
-                    title = "OLED 纯黑优化",
-                    description = "深色模式下使用纯黑背景",
-                    checked = settings.oledDark,
-                    onCheckedChange = viewModel::setOledDark,
-                )
-            },
-            // 第 5 轮：开屏（品牌绿底 + 大 N 图标 + 衔接动画）已按用户要求整体移除，
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Animation,
-                    title = "减少动态效果",
-                    description = "跳过列表/分区的入场动画（系统关闭动画时同样生效）",
-                    checked = settings.reduceMotion,
-                    onCheckedChange = viewModel::setReduceMotion,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsPickerRow(
+                        icon = Icons.Outlined.Palette,
+                        title = "主题色",
+                        description = "品牌色种子（默认品牌绿）",
+                        value = if (settings.customSeedColor == SeedColorScheme.UnsetSeed) {
+                            "默认（品牌绿）"
+                        } else {
+                            "#%06X".format(0xFFFFFF and settings.customSeedColor)
+                        },
+                        onClick = { showThemeColorPicker = true },
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.ColorLens,
+                        title = "Material You 动态取色",
+                        description = "使用 Android 12+ 动态配色覆盖品牌色",
+                        checked = settings.dynamicColor,
+                        onCheckedChange = viewModel::setDynamicColor,
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Contrast,
+                        title = "OLED 纯黑优化",
+                        description = "深色模式下使用纯黑背景",
+                        checked = settings.oledDark,
+                        onCheckedChange = viewModel::setOledDark,
+                    )
+                },
+                // 第 5 轮：开屏（品牌绿底 + 大 N 图标 + 衔接动画）已按用户要求整体移除，
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Animation,
+                        title = "减少动态效果",
+                        description = "跳过列表/分区的入场动画（系统关闭动画时同样生效）",
+                        checked = settings.reduceMotion,
+                        onCheckedChange = viewModel::setReduceMotion,
+                    )
+                },
+            )
+        )
 
         // ===== 玻璃效果（三选项：就地单选） =====
         SettingsGroupTitle("玻璃效果")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.BlurOn,
-                    title = "全效果（默认）",
-                    description = "真液态玻璃：模糊 + 折射 + 色散",
-                    selected = settings.glassEffect == GlassEffectLevel.FULL,
-                    onSelect = { viewModel.setGlassEffect(GlassEffectLevel.FULL) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.BlurLinear,
-                    title = "降低特效",
-                    description = "关闭折射，保留模糊与发光",
-                    selected = settings.glassEffect == GlassEffectLevel.REDUCED,
-                    onSelect = { viewModel.setGlassEffect(GlassEffectLevel.REDUCED) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.BlurOff,
-                    title = "关闭玻璃",
-                    description = "性能最优，仅保留静态底色",
-                    selected = settings.glassEffect == GlassEffectLevel.OFF,
-                    onSelect = { viewModel.setGlassEffect(GlassEffectLevel.OFF) },
-                )
-            },
-            {
-                // 10.1：设备能力自动降档。把「本机能力」和「最终生效」一起写出来，
-                // 用户不用猜 REDUCED 到底关了什么；关掉开关即完全听用户档位。
-                val tier = remember { deviceTier(context) }
-                val effective = effectiveGlassLevel(settings.glassEffect, tier)
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.AutoAwesome,
-                    title = "按设备能力自动降档",
-                    description = "本机：${glassTierLabel(tier)} · 生效：${glassLevelLabel(effective)}",
-                    checked = GlassAutoMode.isAuto(settings.glassAutoTier),
-                    onCheckedChange = { auto ->
-                        viewModel.setGlassAutoTier(if (auto) GlassAutoMode.AUTO else GlassAutoMode.MANUAL)
-                    },
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.BlurOn,
+                        title = "全效果（默认）",
+                        description = "真液态玻璃：模糊 + 折射 + 色散",
+                        selected = settings.glassEffect == GlassEffectLevel.FULL,
+                        onSelect = { viewModel.setGlassEffect(GlassEffectLevel.FULL) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.BlurLinear,
+                        title = "降低特效",
+                        description = "关闭折射，保留模糊与发光",
+                        selected = settings.glassEffect == GlassEffectLevel.REDUCED,
+                        onSelect = { viewModel.setGlassEffect(GlassEffectLevel.REDUCED) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.BlurOff,
+                        title = "关闭玻璃",
+                        description = "性能最优，仅保留静态底色",
+                        selected = settings.glassEffect == GlassEffectLevel.OFF,
+                        onSelect = { viewModel.setGlassEffect(GlassEffectLevel.OFF) },
+                    )
+                },
+                {
+                    // 10.1：设备能力自动降档。把「本机能力」和「最终生效」一起写出来，
+                    // 用户不用猜 REDUCED 到底关了什么；关掉开关即完全听用户档位。
+                    val tier = remember { deviceTier(context) }
+                    val effective = effectiveGlassLevel(settings.glassEffect, tier)
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.AutoAwesome,
+                        title = "按设备能力自动降档",
+                        description = "本机：${glassTierLabel(tier)} · 生效：${glassLevelLabel(effective)}",
+                        checked = GlassAutoMode.isAuto(settings.glassAutoTier),
+                        onCheckedChange = { auto ->
+                            viewModel.setGlassAutoTier(if (auto) GlassAutoMode.AUTO else GlassAutoMode.MANUAL)
+                        },
+                    )
+                },
+            )
+        )
+
+        // ===== 玻璃强度（N1）：缩放各玻璃表面的底色 tint，默认 60% = 与改动前观感一致 =====
+        SettingsGroupTitle("玻璃强度")
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsSliderRow(
+                        icon = Icons.Outlined.Opacity,
+                        title = "透明度与着色",
+                        description = "越清晰背后内容透得越多，越着色底色越实、文字越稳；默认 60%",
+                        value = settings.glassStrength,
+                        valueRange = GlassStrength.Min..GlassStrength.Max,
+                        steps = 9,
+                        valueLabel = { value -> GlassStrength.label(value) + " · " + (value * 100).roundToInt() + "%" },
+                        onValueChange = { viewModel.setGlassStrength(it) },
+                    )
+                },
+            )
+        )
 
         // ===== 卡片玻璃（三选项：就地单选） =====
         SettingsGroupTitle("卡片玻璃")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.Layers,
-                    title = "全开（性能较高）",
-                    description = "每张卡真折射，流畅但耗 GPU",
-                    selected = settings.cardGlassLevel == CardGlassLevel.FULL,
-                    onSelect = { viewModel.setCardGlassLevel(CardGlassLevel.FULL) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.CollectionsBookmark,
-                    title = "仅已收藏（更省电）",
-                    description = "收藏列表真玻璃，搜索/趋势静态",
-                    selected = settings.cardGlassLevel == CardGlassLevel.COLLECTION_ONLY,
-                    onSelect = { viewModel.setCardGlassLevel(CardGlassLevel.COLLECTION_ONLY) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.BlurOff,
-                    title = "关闭（静态卡片）",
-                    description = "最省电，卡片无真玻璃",
-                    selected = settings.cardGlassLevel == CardGlassLevel.OFF,
-                    onSelect = { viewModel.setCardGlassLevel(CardGlassLevel.OFF) },
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.Layers,
+                        title = "全开（性能较高）",
+                        description = "每张卡真折射，流畅但耗 GPU",
+                        selected = settings.cardGlassLevel == CardGlassLevel.FULL,
+                        onSelect = { viewModel.setCardGlassLevel(CardGlassLevel.FULL) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.CollectionsBookmark,
+                        title = "仅已收藏（更省电）",
+                        description = "收藏列表真玻璃，搜索/趋势静态",
+                        selected = settings.cardGlassLevel == CardGlassLevel.COLLECTION_ONLY,
+                        onSelect = { viewModel.setCardGlassLevel(CardGlassLevel.COLLECTION_ONLY) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.BlurOff,
+                        title = "关闭（静态卡片）",
+                        description = "最省电，卡片无真玻璃",
+                        selected = settings.cardGlassLevel == CardGlassLevel.OFF,
+                        onSelect = { viewModel.setCardGlassLevel(CardGlassLevel.OFF) },
+                    )
+                },
+            )
+        )
 
         // ===== 壁纸 =====
         val globalUri = settings.wallpaperUri
         // F18：书籍 / 漫画半调网点（其他类型不生效）
         SettingsGroupTitle("漫画 / 书籍")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.AutoAwesome,
-                    title = "半调网点",
-                    description = "漫画与书籍详情页叠加一层很淡的网点纸质感，可随时关闭",
-                    checked = settings.halftoneEnabled,
-                    onCheckedChange = viewModel::setHalftoneEnabled,
-                )
-            },
-            {
-                // F08：默认关闭；开启后只对 2000 年以前的动画播放约 4 秒（首次说明写在这里）
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Tv,
-                    title = "CRT 老电视模式",
-                    description = "打开后，2000 年以前的动画详情页会播放约 4 秒扫描线效果（不含真正的几何畸变）",
-                    checked = settings.crtModeEnabled,
-                    onCheckedChange = viewModel::setCrtModeEnabled,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.AutoAwesome,
+                        title = "半调网点",
+                        description = "漫画与书籍详情页叠加一层很淡的网点纸质感，可随时关闭",
+                        checked = settings.halftoneEnabled,
+                        onCheckedChange = viewModel::setHalftoneEnabled,
+                    )
+                },
+                {
+                    // F08：默认关闭；开启后只对 2000 年以前的动画播放约 4 秒（首次说明写在这里）
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Tv,
+                        title = "CRT 老电视模式",
+                        description = "打开后，2000 年以前的动画详情页会播放约 4 秒扫描线效果（不含真正的几何畸变）",
+                        checked = settings.crtModeEnabled,
+                        onCheckedChange = viewModel::setCrtModeEnabled,
+                    )
+                },
+            )
+        )
 
         SettingsGroupTitle("壁纸")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Wallpaper,
-                    title = "启用壁纸",
-                    description = "作品库/发现/统计/设置页背景（详情页不受影响）",
-                    checked = settings.wallpaperEnabled,
-                    onCheckedChange = viewModel::setWallpaperEnabled,
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Wallpaper,
-                    title = "动态视差",
-                    checked = settings.wallpaperParallaxEnabled,
-                    onCheckedChange = viewModel::setWallpaperParallaxEnabled,
-                )
-            },
-            {
-                SettingsPickerRow(
-                    icon = Icons.Outlined.Image,
-                    title = "全局壁纸",
-                    description = "未单独设置时所有页面共用",
-                    value = wallpaperKindLabel(context, globalUri),
-                    onClick = {
-                        pendingWallpaperTarget = null
-                        wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
-                    },
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Collections,
-                    title = "壁纸库",
-                    description = "收藏壁纸、打标签、每日自动轮换",
-                    value = if (settings.wallpaperLibraryEntries.isEmpty()) {
-                        "空"
-                    } else {
-                        settings.wallpaperLibraryEntries.size.toString() + " 张"
-                    },
-                    onClick = onOpenWallpaperLibrary,
-                )
-            },
-            {
-                // F06：详情部件显示 / 隐藏（顺序见该页说明，第二步做）
-                SettingsActionRow(
-                    icon = Icons.Outlined.Visibility,
-                    title = "详情部件",
-                    description = "关掉详情页里用不到的区块",
-                    value = detailVisibleSectionSummary(
-                        settings.detailHiddenSections,
-                        settings.detailSectionOrder,
-                    ),
-                    onClick = onOpenDetailSections,
-                )
-            },
-            {
-                WallpaperPageRow(
-                    page = WallpaperPage.LIBRARY,
-                    overrideUri = settings.wallpaperLibraryUri,
-                    globalUri = globalUri,
-                    onClickPick = {
-                        pendingWallpaperTarget = WallpaperPage.LIBRARY.key
-                        wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
-                    },
-                    onClear = { viewModel.setWallpaperPageUri(WallpaperPage.LIBRARY.key, "") },
-                )
-            },
-            {
-                WallpaperPageRow(
-                    page = WallpaperPage.DISCOVER,
-                    overrideUri = settings.wallpaperDiscoverUri,
-                    globalUri = globalUri,
-                    onClickPick = {
-                        pendingWallpaperTarget = WallpaperPage.DISCOVER.key
-                        wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
-                    },
-                    onClear = { viewModel.setWallpaperPageUri(WallpaperPage.DISCOVER.key, "") },
-                )
-            },
-            {
-                WallpaperPageRow(
-                    page = WallpaperPage.STATS,
-                    overrideUri = settings.wallpaperStatsUri,
-                    globalUri = globalUri,
-                    onClickPick = {
-                        pendingWallpaperTarget = WallpaperPage.STATS.key
-                        wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
-                    },
-                    onClear = { viewModel.setWallpaperPageUri(WallpaperPage.STATS.key, "") },
-                )
-            },
-            {
-                WallpaperPageRow(
-                    page = WallpaperPage.SETTINGS,
-                    overrideUri = settings.wallpaperSettingsUri,
-                    globalUri = globalUri,
-                    onClickPick = {
-                        pendingWallpaperTarget = WallpaperPage.SETTINGS.key
-                        wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
-                    },
-                    onClear = { viewModel.setWallpaperPageUri(WallpaperPage.SETTINGS.key, "") },
-                )
-            },
-            {
-                SettingsSliderRow(
-                    icon = Icons.Outlined.BlurCircular,
-                    title = "壁纸柔化",
-                    description = "高斯模糊半径（0 = 不柔化）",
-                    value = settings.wallpaperBlurDp.toFloat(),
-                    valueRange = 0f..40f,
-                    steps = 7,
-                    valueLabel = { value -> value.toInt().toString() + " dp" },
-                    onValueChange = { viewModel.setWallpaperBlurDp(it.toInt()) },
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Wallpaper,
+                        title = "启用壁纸",
+                        description = "作品库/发现/统计/设置页背景（详情页不受影响）",
+                        checked = settings.wallpaperEnabled,
+                        onCheckedChange = viewModel::setWallpaperEnabled,
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Wallpaper,
+                        title = "动态视差",
+                        checked = settings.wallpaperParallaxEnabled,
+                        onCheckedChange = viewModel::setWallpaperParallaxEnabled,
+                    )
+                },
+                {
+                    SettingsPickerRow(
+                        icon = Icons.Outlined.Image,
+                        title = "全局壁纸",
+                        description = "未单独设置时所有页面共用",
+                        value = wallpaperKindLabel(context, globalUri),
+                        onClick = {
+                            pendingWallpaperTarget = null
+                            wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
+                        },
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Collections,
+                        title = "壁纸库",
+                        description = "收藏壁纸、打标签、每日自动轮换",
+                        value = if (settings.wallpaperLibraryEntries.isEmpty()) {
+                            "空"
+                        } else {
+                            settings.wallpaperLibraryEntries.size.toString() + " 张"
+                        },
+                        onClick = onOpenWallpaperLibrary,
+                    )
+                },
+                {
+                    // F06：详情部件显示 / 隐藏（顺序见该页说明，第二步做）
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Visibility,
+                        title = "详情部件",
+                        description = "关掉详情页里用不到的区块",
+                        value = detailVisibleSectionSummary(
+                            settings.detailHiddenSections,
+                            settings.detailSectionOrder,
+                        ),
+                        onClick = onOpenDetailSections,
+                    )
+                },
+                {
+                    WallpaperPageRow(
+                        page = WallpaperPage.LIBRARY,
+                        overrideUri = settings.wallpaperLibraryUri,
+                        globalUri = globalUri,
+                        onClickPick = {
+                            pendingWallpaperTarget = WallpaperPage.LIBRARY.key
+                            wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
+                        },
+                        onClear = { viewModel.setWallpaperPageUri(WallpaperPage.LIBRARY.key, "") },
+                    )
+                },
+                {
+                    WallpaperPageRow(
+                        page = WallpaperPage.DISCOVER,
+                        overrideUri = settings.wallpaperDiscoverUri,
+                        globalUri = globalUri,
+                        onClickPick = {
+                            pendingWallpaperTarget = WallpaperPage.DISCOVER.key
+                            wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
+                        },
+                        onClear = { viewModel.setWallpaperPageUri(WallpaperPage.DISCOVER.key, "") },
+                    )
+                },
+                {
+                    WallpaperPageRow(
+                        page = WallpaperPage.STATS,
+                        overrideUri = settings.wallpaperStatsUri,
+                        globalUri = globalUri,
+                        onClickPick = {
+                            pendingWallpaperTarget = WallpaperPage.STATS.key
+                            wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
+                        },
+                        onClear = { viewModel.setWallpaperPageUri(WallpaperPage.STATS.key, "") },
+                    )
+                },
+                {
+                    WallpaperPageRow(
+                        page = WallpaperPage.SETTINGS,
+                        overrideUri = settings.wallpaperSettingsUri,
+                        globalUri = globalUri,
+                        onClickPick = {
+                            pendingWallpaperTarget = WallpaperPage.SETTINGS.key
+                            wallpaperLauncher.launch(arrayOf("image/*", "video/*"))
+                        },
+                        onClear = { viewModel.setWallpaperPageUri(WallpaperPage.SETTINGS.key, "") },
+                    )
+                },
+                {
+                    SettingsSliderRow(
+                        icon = Icons.Outlined.BlurCircular,
+                        title = "壁纸柔化",
+                        description = "高斯模糊半径（0 = 不柔化）",
+                        value = settings.wallpaperBlurDp.toFloat(),
+                        valueRange = 0f..40f,
+                        steps = 7,
+                        valueLabel = { value -> value.toInt().toString() + " dp" },
+                        onValueChange = { viewModel.setWallpaperBlurDp(it.toInt()) },
+                    )
+                },
+            )
+        )
 
         // ===== 壁纸氛围（三选项：就地单选） =====
         SettingsGroupTitle("壁纸氛围")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.Contrast,
-                    title = "浓郁",
-                    description = "压暗更强，文字更清晰",
-                    selected = settings.wallpaperAtmosphere == WallpaperAtmosphere.RICH,
-                    onSelect = { viewModel.setWallpaperAtmosphere(WallpaperAtmosphere.RICH) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.Tune,
-                    title = "均衡（默认）",
-                    description = "压暗与亮度折中",
-                    selected = settings.wallpaperAtmosphere == WallpaperAtmosphere.BALANCED,
-                    onSelect = { viewModel.setWallpaperAtmosphere(WallpaperAtmosphere.BALANCED) },
-                )
-            },
-            {
-                SettingsRadioRow(
-                    icon = Icons.Outlined.BrightnessHigh,
-                    title = "素净",
-                    description = "保留壁纸亮度",
-                    selected = settings.wallpaperAtmosphere == WallpaperAtmosphere.MINIMAL,
-                    onSelect = { viewModel.setWallpaperAtmosphere(WallpaperAtmosphere.MINIMAL) },
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.Contrast,
+                        title = "浓郁",
+                        description = "压暗更强，文字更清晰",
+                        selected = settings.wallpaperAtmosphere == WallpaperAtmosphere.RICH,
+                        onSelect = { viewModel.setWallpaperAtmosphere(WallpaperAtmosphere.RICH) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.Tune,
+                        title = "均衡（默认）",
+                        description = "压暗与亮度折中",
+                        selected = settings.wallpaperAtmosphere == WallpaperAtmosphere.BALANCED,
+                        onSelect = { viewModel.setWallpaperAtmosphere(WallpaperAtmosphere.BALANCED) },
+                    )
+                },
+                {
+                    SettingsRadioRow(
+                        icon = Icons.Outlined.BrightnessHigh,
+                        title = "素净",
+                        description = "保留壁纸亮度",
+                        selected = settings.wallpaperAtmosphere == WallpaperAtmosphere.MINIMAL,
+                        onSelect = { viewModel.setWallpaperAtmosphere(WallpaperAtmosphere.MINIMAL) },
+                    )
+                },
+            )
+        )
 
         // ===== 主题包 =====
         ThemePackSection(
@@ -523,6 +565,7 @@ fun AppearanceSettingsContent(
         // 手动隐藏但桌面没有任何 Niriko 快捷方式时，先确认（否则用户会从桌面彻底找不到应用）
         var confirmHideWithoutShortcut by remember { mutableStateOf(false) }
         val iconScope = rememberCoroutineScope()
+
         // 主题色变化时只刷新"主题色模式"的快捷方式图标；上传图片模式不覆盖（原 bug 根因）
         // 第 6 轮返工（用户实测定位）：旧流程只看 requestPinShortcut 的返回值就隐藏本体图标，
         // 而小米 HyperOS 上它**不弹窗、返回值仍为 true** → 用户同时失去快捷方式与本体图标。
@@ -536,11 +579,13 @@ fun AppearanceSettingsContent(
                         iconHidden = true
                         snackbarHostState.showSnackbar("桌面快捷方式已创建，原图标已隐藏")
                     }
+
                     AppIconManager.PinOutcome.UNCONFIRMED ->
                         snackbarHostState.showSnackbar(
                             "未能确认桌面已添加快捷方式，已保留原图标。" +
                                 "小米/红米请先在「设置 → 应用设置 → 权限管理 → 桌面快捷方式」允许后再试",
                         )
+
                     AppIconManager.PinOutcome.UNSUPPORTED ->
                         snackbarHostState.showSnackbar("当前设备不支持创建桌面快捷方式，已保留原图标")
                 }
@@ -568,67 +613,71 @@ fun AppearanceSettingsContent(
         }
 
         SettingsGroupTitle("桌面图标")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Brush,
-                    title = "生成主题色图标",
-                    description = "以当前主题色生成图标，钉到桌面并隐藏原图标",
-                    onClick = {
-                        pinAndHide(
-                            context,
-                            AppIconManager.generateThemeIcon(
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Brush,
+                        title = "生成主题色图标",
+                        description = "以当前主题色生成图标，钉到桌面并隐藏原图标",
+                        onClick = {
+                            pinAndHide(
                                 context,
-                                if (settings.customSeedColor == SeedColorScheme.UnsetSeed)
-                                    SeedColorScheme.DefaultSeed.toArgb()
-                                else settings.customSeedColor,
-                            ),
-                            mode = "theme",
-                        )
-                    },
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Image,
-                    title = "使用图片作图标",
-                    description = "从相册选择图片，圆角裁切后钉到桌面",
-                    onClick = { imagePicker.launch("image/*") },
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.VisibilityOff,
-                    title = "隐藏桌面图标",
-                    description = "关闭后恢复默认桌面图标",
-                    checked = iconHidden,
-                    onCheckedChange = { hidden ->
-                        if (hidden) {
-                            if (AppIconManager.isShortcutPinned(context)) {
-                                AppIconManager.hideLauncherIcon(context)
-                                iconHidden = true
+                                AppIconManager.generateThemeIcon(
+                                    context,
+                                    if (settings.customSeedColor == SeedColorScheme.UnsetSeed) {
+                                        SeedColorScheme.DefaultSeed.toArgb()
+                                    } else {
+                                        settings.customSeedColor
+                                    },
+                                ),
+                                mode = "theme",
+                            )
+                        },
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Image,
+                        title = "使用图片作图标",
+                        description = "从相册选择图片，圆角裁切后钉到桌面",
+                        onClick = { imagePicker.launch("image/*") },
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.VisibilityOff,
+                        title = "隐藏桌面图标",
+                        description = "关闭后恢复默认桌面图标",
+                        checked = iconHidden,
+                        onCheckedChange = { hidden ->
+                            if (hidden) {
+                                if (AppIconManager.isShortcutPinned(context)) {
+                                    AppIconManager.hideLauncherIcon(context)
+                                    iconHidden = true
+                                } else {
+                                    confirmHideWithoutShortcut = true
+                                }
                             } else {
-                                confirmHideWithoutShortcut = true
+                                // 恢复默认图标：还原 alias 并清除自定义模式
+                                AppIconManager.showLauncherIcon(context)
+                                viewModel.setCustomIconMode("none")
+                                iconHidden = false
                             }
-                        } else {
-                            // 恢复默认图标：还原 alias 并清除自定义模式
-                            AppIconManager.showLauncherIcon(context)
-                            viewModel.setCustomIconMode("none")
-                            iconHidden = false
-                        }
-                    },
-                )
-            },
-            {
-                SettingsInfoRow(
-                    icon = Icons.Outlined.Info,
-                    title = "说明",
-                    description = "只有确认桌面已添加快捷方式，才会隐藏原图标；无法确认时原图标会保留。" +
-                        "小米/红米若点「生成主题色图标」没有弹窗：设置 → 应用设置 → 权限管理 → 桌面快捷方式，" +
-                        "允许后重试。若误删快捷方式：系统设置 → 应用管理 → Niriko 打开后，在本页恢复默认图标。",
-                )
-            },
-        ))
+                        },
+                    )
+                },
+                {
+                    SettingsInfoRow(
+                        icon = Icons.Outlined.Info,
+                        title = "说明",
+                        description = "只有确认桌面已添加快捷方式，才会隐藏原图标；无法确认时原图标会保留。" +
+                            "小米/红米若点「生成主题色图标」没有弹窗：设置 → 应用设置 → 权限管理 → 桌面快捷方式，" +
+                            "允许后重试。若误删快捷方式：系统设置 → 应用管理 → Niriko 打开后，在本页恢复默认图标。",
+                    )
+                },
+            )
+        )
 
         // 手动隐藏前确认：桌面没有 Niriko 快捷方式时，隐藏后将从桌面彻底找不到应用（第 6 轮返工）
         if (confirmHideWithoutShortcut) {
@@ -658,49 +707,53 @@ fun AppearanceSettingsContent(
 
         // ===== 分享卡 =====
         SettingsGroupTitle("分享卡")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Star,
-                    title = "包含评分",
-                    description = "分享卡显示我的/Bangumi 评分与评价人数",
-                    checked = settings.shareIncludeRating,
-                    onCheckedChange = viewModel::setShareIncludeRating,
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.Timeline,
-                    title = "包含进度",
-                    description = "分享卡显示观看进度",
-                    checked = settings.shareIncludeProgress,
-                    onCheckedChange = viewModel::setShareIncludeProgress,
-                )
-            },
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.LocalOffer,
-                    title = "包含个人标签",
-                    description = "分享卡显示我的标签",
-                    checked = settings.shareIncludeTags,
-                    onCheckedChange = viewModel::setShareIncludeTags,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Star,
+                        title = "包含评分",
+                        description = "分享卡显示我的/Bangumi 评分与评价人数",
+                        checked = settings.shareIncludeRating,
+                        onCheckedChange = viewModel::setShareIncludeRating,
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Timeline,
+                        title = "包含进度",
+                        description = "分享卡显示观看进度",
+                        checked = settings.shareIncludeProgress,
+                        onCheckedChange = viewModel::setShareIncludeProgress,
+                    )
+                },
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.LocalOffer,
+                        title = "包含个人标签",
+                        description = "分享卡显示我的标签",
+                        checked = settings.shareIncludeTags,
+                        onCheckedChange = viewModel::setShareIncludeTags,
+                    )
+                },
+            )
+        )
 
         // ===== 放送提醒 =====
         SettingsGroupTitle("放送提醒")
-        SettingsPageSplitGroup(content = listOf(
-            {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.NotificationsActive,
-                    title = "在看条目放送提醒",
-                    description = "在看作品新一集放送当天发送通知",
-                    checked = settings.airingReminderEnabled,
-                    onCheckedChange = viewModel::setAiringReminderEnabled,
-                )
-            },
-        ))
+        SettingsPageSplitGroup(
+            content = listOf(
+                {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.NotificationsActive,
+                        title = "在看条目放送提醒",
+                        description = "在看作品新一集放送当天发送通知",
+                        checked = settings.airingReminderEnabled,
+                        onCheckedChange = viewModel::setAiringReminderEnabled,
+                    )
+                },
+            )
+        )
     }
 
     if (showThemeColorPicker) {

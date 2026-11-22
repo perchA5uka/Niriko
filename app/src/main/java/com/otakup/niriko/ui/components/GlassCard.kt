@@ -55,6 +55,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.otakup.niriko.data.settings.GlassStrength
 import com.otakup.niriko.ui.animation.NirikoMotionSpecs
 import com.otakup.niriko.ui.common.loadCoverAnalysisBitmap
 import com.otakup.niriko.ui.components.liquidglass.LIQUID_GLASS_HIGHLIGHT_ANGLE_DEGREES
@@ -70,6 +71,7 @@ import com.otakup.niriko.ui.components.liquidglass.liquidGlassTint
 import com.otakup.niriko.ui.components.liquidglass.tryLoadLiquidGlassShader
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.LocalGlassStrength
 import com.otakup.niriko.ui.theme.NirikoShapes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -101,14 +103,17 @@ fun Modifier.appleGlassCard(
     val glassEffect = LocalGlassEffect.current
     val glassLevel = LocalCardGlassLevel.current
     val luma = LocalGlassLuminance.current
+    val glassStrength = LocalGlassStrength.current
     // 参考款：很透的磨砂玻璃 —— 低 alpha 中性 tint（浅白/深黑），让背景透过卡清晰可见。
     // 自适应亮度：亮壁纸 → 稍微加深 tint 保对比；暗壁纸 → 更透。
     val adaptive = (luma - 0.5f) * 0.10f
-    val glassBaseAlpha = if (isDark) {
+    val adaptiveBaseAlpha = if (isDark) {
         (0.30f + adaptive).coerceIn(0.22f, 0.42f)
     } else {
         (0.20f + adaptive).coerceIn(0.14f, 0.32f)
     }
+    // N1：玻璃强度只缩放底色 tint；默认强度（0.6）的倍率恰好为 1.0，默认观感不变
+    val glassBaseAlpha = GlassStrength.scaledAlpha(adaptiveBaseAlpha, glassStrength)
     val glassBase = if (isDark) {
         Color.Black.copy(alpha = glassBaseAlpha)
     } else {

@@ -19,7 +19,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.otakup.niriko.data.settings.GlassStrength
 import com.otakup.niriko.ui.theme.LocalDarkTheme
+import com.otakup.niriko.ui.theme.LocalGlassStrength
 import kotlin.math.max
 
 /**
@@ -39,13 +41,16 @@ fun BlurredGlassSurface(
     borderCornerRadius: Float = 16f,
     content: @Composable () -> Unit,
 ) {
+    val glassStrength = LocalGlassStrength.current
     if (bitmap == null) {
         // 加载中/无封面：用中性半透明底（surfaceContainerHigh），避免纯黑。
         Box(
             modifier = modifier
                 .clip(shape)
                 .background(
-                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = if (LocalDarkTheme.current) 0.55f else 0.75f),
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                        alpha = GlassStrength.scaledAlpha(if (LocalDarkTheme.current) 0.55f else 0.75f, glassStrength),
+                    ),
                 ),
         ) { content() }
         return
@@ -81,7 +86,7 @@ fun BlurredGlassSurface(
                     }
                     // 中性 tint 遮罩（surfaceContainerHigh）：深色不再纯黑，模糊封面透出后仍有玻璃厚度。
                     drawRect(
-                        color = glassTint.copy(alpha = if (isDark) 0.45f else 0.35f),
+                        color = glassTint.copy(alpha = GlassStrength.scaledAlpha(if (isDark) 0.45f else 0.35f, glassStrength)),
                     )
                     // 顶部受光高光 + 底部微沉降（玻璃层次）
                     drawRect(
