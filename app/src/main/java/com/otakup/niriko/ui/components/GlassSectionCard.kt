@@ -18,9 +18,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.otakup.niriko.data.settings.GlassEffectLevel
+import com.otakup.niriko.data.settings.GlassStrength
 import com.otakup.niriko.ui.components.liquidglass.LIQUID_LENS_SHADER
 import com.otakup.niriko.ui.theme.LocalDarkTheme
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.LocalGlassStrength
 import com.otakup.niriko.ui.theme.NirikoShapes
 import top.yukonga.miuix.kmp.blur.Backdrop
 import top.yukonga.miuix.kmp.blur.colorControls
@@ -57,6 +59,7 @@ fun GlassSectionCard(
     val isDark = LocalDarkTheme.current
     val density = LocalDensity.current
     val glassEffect = LocalGlassEffect.current
+    val glassStrength = LocalGlassStrength.current
     // 玻璃 tint 底（@Composable 读取，供 drawBackdrop onDrawSurface 的 DrawScope 使用）
     val glassContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
     val effectiveFallback = fallbackBitmap ?: LocalDetailCoverFallback.current
@@ -100,9 +103,12 @@ fun GlassSectionCard(
     val blurRadiusPx = with(density) { 12.dp.toPx() }
     val blurEffect = remember(blurRadiusPx) {
         android.graphics.RenderEffect.createBlurEffect(
-            blurRadiusPx, blurRadiusPx, android.graphics.Shader.TileMode.CLAMP,
+            blurRadiusPx,
+            blurRadiusPx,
+            android.graphics.Shader.TileMode.CLAMP,
         )
     }
+
     // 缓存用普通可变对象（非 Compose state）：miuix effects block 在绘制阶段执行，
     // 写入 Compose state 会触发"绘制期写快照"→ 重组风暴/卡死/闪退。
     class GlassCacheHolder {
@@ -155,7 +161,7 @@ fun GlassSectionCard(
                     // 半透明 tint 底：调浅让背后模糊封面透出来（不再纯黑）
                     drawRect(
                         color = glassContainerColor,
-                        alpha = if (isDark) 0.38f else 0.50f,
+                        alpha = GlassStrength.scaledAlpha(if (isDark) 0.38f else 0.50f, glassStrength),
                     )
                 },
             ),

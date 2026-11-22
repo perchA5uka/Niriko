@@ -26,7 +26,10 @@ import com.otakup.niriko.ui.theme.LocalDarkTheme
 // - 卡片玻璃（自含材质）：浅色磨砂底 + 顶部受光 + 底部沉降 + 对角边缘反射；
 // - 浮层玻璃（真折射）：背后有内容源时，API 33+ 用 AGSL 折射 / 色散，API 31-32 高斯模糊，
 //   低版本降级为 tint 玻璃；
-// - 深色模式：卡片回退 M3 surfaceContainer（保证可读性，取消玻璃层次）。
+// - 深色模式：卡片同样走玻璃（黑色 tint + 亮度自适应，见 GlassCard.kt 的 appleGlassCard），
+//   不再回退 surfaceContainer。
+//   （2026-11-22 更正：此处原写「深色回退 surfaceContainer」，与实际实现不符；同时删除了零引用的
+//   LightGlassBase = White α0.85，卡片真实底色是 α0.14–0.42 的亮度自适应值。）
 //
 // 材质层：色令牌不再是「死令牌」——LiquidGlassPalette 的每一个颜色都被
 // liquidGlassHighlight / liquidGlassShadow / liquidGlassInnerShadow 消费，
@@ -97,9 +100,6 @@ data class LiquidGlassConfig(
  * 取值与 GlassCard.kt 既有实装值逐一相等（收敛前这些数字散落在组件里）；改动本文件即改动全局玻璃材质。
  */
 object LiquidGlassPalette {
-    /** 磨砂玻璃底（浅色，明显从背景分离）。 */
-    val LightGlassBase: Color = Color.White.copy(alpha = 0.85f)
-
     /** 浮层 tint：浅色冷灰玻璃。 */
     val LightTint: Color = Color(0xFFF2F2F7).copy(alpha = 0.55f)
 

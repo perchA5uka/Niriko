@@ -12,12 +12,13 @@ import com.otakup.niriko.data.model.SubjectType
 import com.otakup.niriko.data.model.WatchStatus
 import com.otakup.niriko.data.model.WorkType
 import com.otakup.niriko.data.model.collection.SortOrder
-import com.otakup.niriko.data.settings.AppSettings
-import com.otakup.niriko.data.settings.ThemeMode
-import com.otakup.niriko.data.settings.CardGlassLevel
-import com.otakup.niriko.data.settings.WallpaperAtmosphere
 import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
+import com.otakup.niriko.data.settings.AppSettings
+import com.otakup.niriko.data.settings.CardGlassLevel
+import com.otakup.niriko.data.settings.ThemeMode
+import com.otakup.niriko.data.settings.WallpaperAtmosphere
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority
+import java.time.LocalDate
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -25,18 +26,17 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.time.LocalDate
+import kotlinx.serialization.json.longOrNull
 
 /**
  * 数据备份/恢复管理器。
@@ -81,92 +81,133 @@ class BackupManager(
         // 一次取全部成员再按分区分组：避免「每个分区一次查询」的 N+1（分区多时导出会明显变慢）
         val folderMembers = database.libraryFolderDao().getAllMembers().groupBy { it.folderId }
 
-        return json.encodeToString(JsonObject.serializer(), buildJsonObject {
-            put("version", JsonPrimitive(EXPORT_VERSION))
-            put("exportTime", JsonPrimitive(System.currentTimeMillis()))
-            put("appVersion", JsonPrimitive(APP_VERSION))
+        return json.encodeToString(
+            JsonObject.serializer(),
+            buildJsonObject {
+                put("version", JsonPrimitive(EXPORT_VERSION))
+                put("exportTime", JsonPrimitive(System.currentTimeMillis()))
+                put("appVersion", JsonPrimitive(APP_VERSION))
 
-            put("subjects", buildJsonArray {
-                subjects.forEach { s -> add(subjectToJson(s)) }
-            })
-            put("collections", buildJsonArray {
-                collections.forEach { c -> add(collectionToJson(c)) }
-            })
-            put("workItems", buildJsonArray {
-                workItems.forEach { w -> add(workItemToJson(w)) }
-            })
-            put("searchHistory", buildJsonArray {
-                history.forEach { h -> add(searchHistoryToJson(h)) }
-            })
-            put("personCollections", buildJsonArray {
-                persons.forEach { p -> add(personCollectionToJson(p)) }
-            })
-            put("externalIds", buildJsonArray {
-                externalIds.forEach { e ->
-                    add(buildJsonObject {
-                        put("subjectId", JsonPrimitive(e.subjectId))
-                        put("provider", JsonPrimitive(e.provider))
-                        put("externalId", JsonPrimitive(e.externalId))
-                        e.titleSnapshot?.let { put("titleSnapshot", JsonPrimitive(it)) }
-                        put("confidence", JsonPrimitive(e.confidence))
-                        put("bindMethod", JsonPrimitive(e.bindMethod))
-                        e.subKey?.let { put("subKey", JsonPrimitive(it)) }
-                        put("boundAt", JsonPrimitive(e.boundAt))
-                    })
+                put(
+                    "subjects",
+                    buildJsonArray {
+                        subjects.forEach { s -> add(subjectToJson(s)) }
+                    }
+                )
+                put(
+                    "collections",
+                    buildJsonArray {
+                        collections.forEach { c -> add(collectionToJson(c)) }
+                    }
+                )
+                put(
+                    "workItems",
+                    buildJsonArray {
+                        workItems.forEach { w -> add(workItemToJson(w)) }
+                    }
+                )
+                put(
+                    "searchHistory",
+                    buildJsonArray {
+                        history.forEach { h -> add(searchHistoryToJson(h)) }
+                    }
+                )
+                put(
+                    "personCollections",
+                    buildJsonArray {
+                        persons.forEach { p -> add(personCollectionToJson(p)) }
+                    }
+                )
+                put(
+                    "externalIds",
+                    buildJsonArray {
+                        externalIds.forEach { e ->
+                            add(
+                                buildJsonObject {
+                                    put("subjectId", JsonPrimitive(e.subjectId))
+                                    put("provider", JsonPrimitive(e.provider))
+                                    put("externalId", JsonPrimitive(e.externalId))
+                                    e.titleSnapshot?.let { put("titleSnapshot", JsonPrimitive(it)) }
+                                    put("confidence", JsonPrimitive(e.confidence))
+                                    put("bindMethod", JsonPrimitive(e.bindMethod))
+                                    e.subKey?.let { put("subKey", JsonPrimitive(it)) }
+                                    put("boundAt", JsonPrimitive(e.boundAt))
+                                }
+                            )
+                        }
+                    }
+                )
+                put(
+                    "myEpisodeRatings",
+                    buildJsonArray {
+                        myEpisodeRatings.forEach { r ->
+                            add(
+                                buildJsonObject {
+                                    put("epId", JsonPrimitive(r.epId))
+                                    put("subjectId", JsonPrimitive(r.subjectId))
+                                    put("score", JsonPrimitive(r.score))
+                                    r.comment?.let { put("comment", JsonPrimitive(it)) }
+                                    put("rewatch", JsonPrimitive(r.rewatch))
+                                    put("ratedAt", JsonPrimitive(r.ratedAt))
+                                }
+                            )
+                        }
+                    }
+                )
+                put(
+                    "manualAwards",
+                    buildJsonArray {
+                        manualAwards.forEach { a ->
+                            add(
+                                buildJsonObject {
+                                    put("subjectId", JsonPrimitive(a.subjectId))
+                                    put("sourceId", JsonPrimitive(a.sourceId))
+                                    a.score?.let { put("score", JsonPrimitive(it)) }
+                                    put("scoreMax", JsonPrimitive(a.scoreMax))
+                                    a.rankPosition?.let { put("rankPosition", JsonPrimitive(it)) }
+                                    a.note?.let { put("note", JsonPrimitive(it)) }
+                                    a.url?.let { put("url", JsonPrimitive(it)) }
+                                    put("createTime", JsonPrimitive(a.createTime))
+                                }
+                            )
+                        }
+                    }
+                )
+                put(
+                    "coverOverrides",
+                    buildJsonObject {
+                        coverOverrides.forEach { (id, uri) -> put(id.toString(), JsonPrimitive(uri)) }
+                    }
+                )
+                put(
+                    "libraryFolders",
+                    buildJsonArray {
+                        libraryFolders.forEach { folder ->
+                            add(
+                                buildJsonObject {
+                                    put("name", JsonPrimitive(folder.name))
+                                    put("sortOrder", JsonPrimitive(folder.sortOrder))
+                                    put("isCollapsed", JsonPrimitive(folder.isCollapsed))
+                                    put("createdAt", JsonPrimitive(folder.createdAt))
+                                    put(
+                                        "members",
+                                        buildJsonArray {
+                                            folderMembers[folder.id]
+                                                .orEmpty()
+                                                .sortedBy { it.sortOrder }
+                                                .forEach { member -> add(JsonPrimitive(member.subjectId)) }
+                                        },
+                                    )
+                                }
+                            )
+                        }
+                    }
+                )
+                if (settings != null) {
+                    put("settings", settingsToJson(settings))
                 }
-            })
-            put("myEpisodeRatings", buildJsonArray {
-                myEpisodeRatings.forEach { r ->
-                    add(buildJsonObject {
-                        put("epId", JsonPrimitive(r.epId))
-                        put("subjectId", JsonPrimitive(r.subjectId))
-                        put("score", JsonPrimitive(r.score))
-                        r.comment?.let { put("comment", JsonPrimitive(it)) }
-                        put("rewatch", JsonPrimitive(r.rewatch))
-                        put("ratedAt", JsonPrimitive(r.ratedAt))
-                    })
-                }
-            })
-            put("manualAwards", buildJsonArray {
-                manualAwards.forEach { a ->
-                    add(buildJsonObject {
-                        put("subjectId", JsonPrimitive(a.subjectId))
-                        put("sourceId", JsonPrimitive(a.sourceId))
-                        a.score?.let { put("score", JsonPrimitive(it)) }
-                        put("scoreMax", JsonPrimitive(a.scoreMax))
-                        a.rankPosition?.let { put("rankPosition", JsonPrimitive(it)) }
-                        a.note?.let { put("note", JsonPrimitive(it)) }
-                        a.url?.let { put("url", JsonPrimitive(it)) }
-                        put("createTime", JsonPrimitive(a.createTime))
-                    })
-                }
-            })
-            put("coverOverrides", buildJsonObject {
-                coverOverrides.forEach { (id, uri) -> put(id.toString(), JsonPrimitive(uri)) }
-            })
-            put("libraryFolders", buildJsonArray {
-                libraryFolders.forEach { folder ->
-                    add(buildJsonObject {
-                        put("name", JsonPrimitive(folder.name))
-                        put("sortOrder", JsonPrimitive(folder.sortOrder))
-                        put("isCollapsed", JsonPrimitive(folder.isCollapsed))
-                        put("createdAt", JsonPrimitive(folder.createdAt))
-                        put(
-                            "members",
-                            buildJsonArray {
-                                folderMembers[folder.id]
-                                    .orEmpty()
-                                    .sortedBy { it.sortOrder }
-                                    .forEach { member -> add(JsonPrimitive(member.subjectId)) }
-                            },
-                        )
-                    })
-                }
-            })
-            if (settings != null) {
-                put("settings", settingsToJson(settings))
             }
-        })
+        )
     }
 
     // ==================== 导入 ====================
@@ -248,11 +289,17 @@ class BackupManager(
                 val localPersonIds =
                     if (merge) database.personCollectionDao().getAll().map { it.personId }.toSet() else emptySet()
                 val localExternalIds =
-                    if (merge) database.externalIdDao().getAll().map { it.subjectId to it.provider }.toSet()
-                    else emptySet()
+                    if (merge) {
+                        database.externalIdDao().getAll().map { it.subjectId to it.provider }.toSet()
+                    } else {
+                        emptySet()
+                    }
                 val localEpisodeRatingIds =
-                    if (merge) database.externalRatingDao().getAllMyEpisodeRatings().map { it.epId }.toSet()
-                    else emptySet()
+                    if (merge) {
+                        database.externalRatingDao().getAllMyEpisodeRatings().map { it.epId }.toSet()
+                    } else {
+                        emptySet()
+                    }
                 val localAwardIds =
                     if (merge) database.manualAwardDao().getAll().map { it.id }.toSet() else emptySet()
 
@@ -440,6 +487,7 @@ class BackupManager(
         put("wallpaperRotationEnabled", JsonPrimitive(s.wallpaperRotationEnabled))
         put("wallpaperRotationFavoritesOnly", JsonPrimitive(s.wallpaperRotationFavoritesOnly))
         put("cardGlassLevel", JsonPrimitive(s.cardGlassLevel.name))
+        put("glassStrength", JsonPrimitive(s.glassStrength))
         put("splashEnabled", JsonPrimitive(s.splashEnabled))
         put("activeThemePackId", JsonPrimitive(s.activeThemePackId))
         put("reduceMotion", JsonPrimitive(s.reduceMotion))
@@ -497,7 +545,13 @@ class BackupManager(
                 subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@map null,
                 title = o["title"]?.jsonPrimitive?.content ?: "",
                 titleCN = o["titleCN"]?.jsonPrimitive?.content,
-                type = o["type"]?.jsonPrimitive?.content?.let { try { SubjectType.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                type = o["type"]?.jsonPrimitive?.content?.let {
+                    try {
+                        SubjectType.valueOf(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: return@map null,
                 summary = o["summary"]?.jsonPrimitive?.content,
                 coverUrl = o["coverUrl"]?.jsonPrimitive?.content,
                 totalEpisodes = o["totalEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
@@ -551,13 +605,31 @@ class BackupManager(
             CollectionEntity(
                 id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
                 subjectId = o["subjectId"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@map null,
-                status = o["status"]?.jsonPrimitive?.content?.let { try { WatchStatus.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                status = o["status"]?.jsonPrimitive?.content?.let {
+                    try {
+                        WatchStatus.valueOf(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: return@map null,
                 watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
                 // A-D3：旧备份（≤v4）没有这个键 → null，不影响其它字段
                 watchedVolumes = o["watchedVolumes"]?.jsonPrimitive?.content?.toIntOrNull(),
                 rating = o["rating"]?.jsonPrimitive?.content?.toFloatOrNull(),
-                startDate = o["startDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
-                finishDate = o["finishDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
+                startDate = o["startDate"]?.jsonPrimitive?.content?.let {
+                    try {
+                        LocalDate.parse(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                },
+                finishDate = o["finishDate"]?.jsonPrimitive?.content?.let {
+                    try {
+                        LocalDate.parse(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                },
                 personalTags = parseStringList(o["personalTags"]),
                 personalImpression = o["personalImpression"]?.jsonPrimitive?.content,
                 remark = o["remark"]?.jsonPrimitive?.content,
@@ -575,13 +647,37 @@ class BackupManager(
             WorkItem(
                 id = o["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
                 title = o["title"]?.jsonPrimitive?.content ?: return@map null,
-                type = o["type"]?.jsonPrimitive?.content?.let { try { WorkType.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
-                status = o["status"]?.jsonPrimitive?.content?.let { try { WatchStatus.valueOf(it) } catch (_: Exception) { null } } ?: return@map null,
+                type = o["type"]?.jsonPrimitive?.content?.let {
+                    try {
+                        WorkType.valueOf(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: return@map null,
+                status = o["status"]?.jsonPrimitive?.content?.let {
+                    try {
+                        WatchStatus.valueOf(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                } ?: return@map null,
                 totalEpisodes = o["totalEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
                 watchedEpisodes = o["watchedEpisodes"]?.jsonPrimitive?.content?.toIntOrNull(),
                 rating = o["rating"]?.jsonPrimitive?.content?.toFloatOrNull(),
-                startDate = o["startDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
-                finishDate = o["finishDate"]?.jsonPrimitive?.content?.let { try { LocalDate.parse(it) } catch (_: Exception) { null } },
+                startDate = o["startDate"]?.jsonPrimitive?.content?.let {
+                    try {
+                        LocalDate.parse(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                },
+                finishDate = o["finishDate"]?.jsonPrimitive?.content?.let {
+                    try {
+                        LocalDate.parse(it)
+                    } catch (_: Exception) {
+                        null
+                    }
+                },
                 tags = parseStringList(o["tags"]),
                 coverPath = o["coverPath"]?.jsonPrimitive?.content,
                 remark = o["remark"]?.jsonPrimitive?.content,
@@ -696,7 +792,11 @@ class BackupManager(
         return AppSettings(
             // 外观
             themeMode = o["themeMode"]?.jsonPrimitive?.content?.let { n ->
-                try { ThemeMode.valueOf(n) } catch (_: Exception) { null }
+                try {
+                    ThemeMode.valueOf(n)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: defaults.themeMode,
             dynamicColor = o["dynamicColor"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.dynamicColor,
             oledDark = o["oledDark"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.oledDark,
@@ -710,7 +810,11 @@ class BackupManager(
             wallpaperSettingsUri = o["wallpaperSettingsUri"]?.jsonPrimitive?.content ?: defaults.wallpaperSettingsUri,
             wallpaperBlurDp = o["wallpaperBlurDp"]?.jsonPrimitive?.content?.toIntOrNull() ?: defaults.wallpaperBlurDp,
             wallpaperAtmosphere = o["wallpaperAtmosphere"]?.jsonPrimitive?.content?.let { n ->
-                try { WallpaperAtmosphere.valueOf(n) } catch (_: Exception) { null }
+                try {
+                    WallpaperAtmosphere.valueOf(n)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: defaults.wallpaperAtmosphere,
             wallpaperLibraryEntries = com.otakup.niriko.data.wallpaper.WallpaperLibraryCodec.decode(
                 o["wallpaperLibrary"]?.jsonPrimitive?.content,
@@ -720,8 +824,14 @@ class BackupManager(
             wallpaperRotationFavoritesOnly = o["wallpaperRotationFavoritesOnly"]?.jsonPrimitive?.content?.toBooleanStrictOrNull()
                 ?: defaults.wallpaperRotationFavoritesOnly,
             cardGlassLevel = o["cardGlassLevel"]?.jsonPrimitive?.content?.let { n ->
-                try { CardGlassLevel.valueOf(n) } catch (_: Exception) { null }
+                try {
+                    CardGlassLevel.valueOf(n)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: defaults.cardGlassLevel,
+            glassStrength = o["glassStrength"]?.jsonPrimitive?.content?.toFloatOrNull()
+                ?.let(com.otakup.niriko.data.settings.GlassStrength::clamp) ?: defaults.glassStrength,
             splashEnabled = o["splashEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.splashEnabled,
             activeThemePackId = o["activeThemePackId"]?.jsonPrimitive?.content ?: defaults.activeThemePackId,
             reduceMotion = o["reduceMotion"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.reduceMotion,
@@ -729,7 +839,11 @@ class BackupManager(
 
             // 收藏
             defaultSortOrder = o["defaultSortOrder"]?.jsonPrimitive?.content?.let { n ->
-                try { SortOrder.valueOf(n) } catch (_: Exception) { null }
+                try {
+                    SortOrder.valueOf(n)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: defaults.defaultSortOrder,
             showStatusTags = o["showStatusTags"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showStatusTags,
             showProgressBar = o["showProgressBar"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.showProgressBar,
@@ -740,7 +854,11 @@ class BackupManager(
 
             // 数据源
             bangumiEndpoint = o["bangumiEndpoint"]?.jsonPrimitive?.content?.let { n ->
-                try { BangumiEndpoint.valueOf(n) } catch (_: Exception) { null }
+                try {
+                    BangumiEndpoint.valueOf(n)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: defaults.bangumiEndpoint,
             steamApiKey = o["steamApiKey"]?.jsonPrimitive?.content ?: defaults.steamApiKey,
             steamId64 = o["steamId64"]?.jsonPrimitive?.content ?: defaults.steamId64,
@@ -758,7 +876,11 @@ class BackupManager(
             bangumiUsername = o["bangumiUsername"]?.jsonPrimitive?.content ?: defaults.bangumiUsername,
             bangumiSyncEnabled = o["bangumiSyncEnabled"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.bangumiSyncEnabled,
             bangumiSyncPriority = o["bangumiSyncPriority"]?.jsonPrimitive?.content?.let { n ->
-                try { BangumiSyncPriority.valueOf(n) } catch (_: Exception) { null }
+                try {
+                    BangumiSyncPriority.valueOf(n)
+                } catch (_: Exception) {
+                    null
+                }
             } ?: defaults.bangumiSyncPriority,
             bangumiAutoSync = o["bangumiAutoSync"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: defaults.bangumiAutoSync,
 
@@ -783,15 +905,15 @@ class BackupManager(
 
     companion object {
         /**
-     * 备份格式版本（A-D3 起为 5）。
-     *
-     * v3 → v4：新增 `libraryFolders`（作品库自定义分区）与每个分区下的 `members`。
-     * v4 → v5：collections 增加 `watchedVolumes`（书籍/漫画卷进度）。
-     * 旧版本备份缺这些字段 → 解析成空/null，导入照常成功（不视为错误）；
-     * 反过来，旧版 App 读 v5 备份会被 [importFromJson] 的版本校验**显式拒绝**，
-     * 不会静默丢字段。
-     */
-    private const val EXPORT_VERSION = 5
+         * 备份格式版本（A-D3 起为 5）。
+         *
+         * v3 → v4：新增 `libraryFolders`（作品库自定义分区）与每个分区下的 `members`。
+         * v4 → v5：collections 增加 `watchedVolumes`（书籍/漫画卷进度）。
+         * 旧版本备份缺这些字段 → 解析成空/null，导入照常成功（不视为错误）；
+         * 反过来，旧版 App 读 v5 备份会被 [importFromJson] 的版本校验**显式拒绝**，
+         * 不会静默丢字段。
+         */
+        private const val EXPORT_VERSION = 5
         private val APP_VERSION: String = com.otakup.niriko.BuildConfig.VERSION_NAME
         private const val TAG = "BackupManager"
     }

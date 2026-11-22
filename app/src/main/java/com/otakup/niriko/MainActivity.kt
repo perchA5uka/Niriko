@@ -75,6 +75,7 @@ import com.otakup.niriko.ui.components.LocalGlassLuminance
 import com.otakup.niriko.ui.onboarding.FirstRunScreen
 import com.otakup.niriko.ui.screens.TopLevelPageIndicator
 import com.otakup.niriko.ui.theme.LocalGlassEffect
+import com.otakup.niriko.ui.theme.LocalGlassStrength
 import com.otakup.niriko.ui.theme.NirikoTheme
 import com.otakup.niriko.ui.wallpaper.WallpaperHost
 import com.otakup.niriko.util.WallpaperPage
@@ -300,6 +301,7 @@ class MainActivity : ComponentActivity() {
                     CompositionLocalProvider(
                         LocalSearchGestureLock provides searchGestureLock,
                         LocalGlassEffect provides settings.glassEffect,
+                        LocalGlassStrength provides settings.glassStrength,
                         LocalBottomBarHideFraction provides bottomBarHideFraction,
                         LocalFloatingControls provides floatingControls,
                     ) {

@@ -3,8 +3,8 @@ package com.otakup.niriko.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.otakup.niriko.data.refresh.RefreshCoordinator
 import com.otakup.niriko.data.model.collection.SortOrder
+import com.otakup.niriko.data.refresh.RefreshCoordinator
 import com.otakup.niriko.data.remote.BangumiClient
 import com.otakup.niriko.data.remote.BangumiClient.BangumiEndpoint
 import com.otakup.niriko.data.settings.AppSettings
@@ -12,11 +12,11 @@ import com.otakup.niriko.data.settings.SettingsDataStore
 import com.otakup.niriko.data.settings.ThemeMode
 import com.otakup.niriko.data.sync.SyncFailureKind
 import com.otakup.niriko.data.sync.SyncManager
+import com.otakup.niriko.data.sync.SyncResult
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncManager
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncPriority
 import com.otakup.niriko.data.sync.bangumi.BangumiSyncResult
 import com.otakup.niriko.plugin.PluginManager
-import com.otakup.niriko.data.sync.SyncResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -52,10 +52,9 @@ class SettingsViewModel(
 ) : ViewModel() {
 
     /** C-1：读取体检计数；失败返回 null（体检页显示「读取失败」，不假装干净）。 */
-    suspend fun loadCollectionCounts(): com.otakup.niriko.data.diagnose.CollectionCounts? =
-        collectionCountsProvider?.let { provider ->
-            runCatching { provider.load() }.getOrNull()
-        }
+    suspend fun loadCollectionCounts(): com.otakup.niriko.data.diagnose.CollectionCounts? = collectionCountsProvider?.let { provider ->
+        runCatching { provider.load() }.getOrNull()
+    }
 
     /**
      * 自动同步的新鲜度/退避状态。
@@ -207,6 +206,11 @@ class SettingsViewModel(
     /** 设置玻璃/特效强度（阶段 P：低端机降级）。 */
     fun setGlassEffect(level: com.otakup.niriko.data.settings.GlassEffectLevel) {
         viewModelScope.launch { dataStore.setGlassEffect(level) }
+    }
+
+    /** 玻璃强度（N1）：滑条松手时落库。 */
+    fun setGlassStrength(strength: Float) {
+        viewModelScope.launch { dataStore.setGlassStrength(strength) }
     }
 
     /** 10.1：AUTO = 按设备能力自动降档；MANUAL = 只听用户档位。 */
@@ -430,7 +434,9 @@ class SettingsViewModel(
                         ?: return@withContext SyncResult(success = false, message = "同步管理器未初始化")
                     if (upload) {
                         manager.upload(
-                            s.webDavUrl, s.webDavUsername, s.webDavPassword,
+                            s.webDavUrl,
+                            s.webDavUsername,
+                            s.webDavPassword,
                             forceOverwrite = forceOverwrite,
                         )
                     } else {
@@ -465,6 +471,7 @@ class SettingsViewModel(
     val isBangumiSyncing: StateFlow<Boolean> = _isBangumiSyncing.asStateFlow()
 
     private val _bangumiLoginState = MutableStateFlow<String?>(null)
+
     @Suppress("unused")
     val bangumiLoginState: StateFlow<String?> = _bangumiLoginState.asStateFlow()
 
@@ -683,8 +690,13 @@ class SettingsViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SettingsViewModel::class.java)) {
             return SettingsViewModel(
-                dataStore, pluginManager, syncManager, bangumiSyncManager,
-                refreshCoordinator, initialSettings, collectionCountsProvider,
+                dataStore,
+                pluginManager,
+                syncManager,
+                bangumiSyncManager,
+                refreshCoordinator,
+                initialSettings,
+                collectionCountsProvider,
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

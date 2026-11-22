@@ -126,6 +126,11 @@ data class AppSettings(
     /** 玻璃/特效强度：默认 FULL（全效果），可降级为 REDUCED/OFF（阶段 P 性能优化）。 */
     val glassEffect: GlassEffectLevel = GlassEffectLevel.FULL,
     /**
+     * 玻璃强度（Niriko 27 · N1）：缩放各玻璃表面底色 tint 的不透明度，0 = 极致清晰、1 = 完全着色。
+     * 默认 [GlassStrength.Default]，其倍率恰好为 1.0，默认观感与引入本字段之前一致。
+     */
+    val glassStrength: Float = GlassStrength.Default,
+    /**
      * 玻璃自动降档（10.1）：AUTO = 按本机能力自动降档；MANUAL = 只听 [glassEffect]。
      *
      * 存字符串而不是布尔：以后要加「只降折射 / 只降模糊」等细分档时不用改键名。
