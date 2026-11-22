@@ -70,10 +70,11 @@ class SettingsPushPolicyTest {
     @Test
     fun 所有二级设置页路由常量都命中判定() {
         val constants = settingsRouteConstants()
-        // 数量本身是契约：新增二级页时必须回来看转场（v1.2.2 审计基线 = 10 条）
+        // 数量本身是契约：新增二级页时必须回来看转场（v1.2.2 审计基线 10 条；
+        // Niriko 27 · S0 新增 settings_design 设计对照页 → 11 条，它走 settings_ 前缀因此命中横向推入）
         assertEquals(
-            "二级设置页路由数量变化（v1.2.2 基线 10 条）：新增/删除后同步本断言与 docs/v1.2.2/00-inventory.md",
-            10,
+            "二级设置页路由数量变化（基线 11 条，含 debug 专用的 settings_design）：新增/删除后同步本断言与 docs/v1.2.2/00-inventory.md",
+            11,
             constants.size,
         )
         for ((name, route) in constants) {
@@ -85,7 +86,7 @@ class SettingsPushPolicyTest {
     @Test
     fun NavHost路由数量与审计基线一致() {
         val count = Regex("""\bcomposable\s*\(""").findAll(navHostSource()).count()
-        assertEquals("NavHost 内 composable() 数量变化（v1.2.2 审计基线 = 19）", 19, count)
+        assertEquals("NavHost 内 composable() 数量变化（v1.2.2 审计基线 19，S0 加 debug 专用的设计对照页后 = 20）", 20, count)
     }
 
     @Test

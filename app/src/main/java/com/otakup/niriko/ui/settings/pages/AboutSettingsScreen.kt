@@ -4,11 +4,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Feedback
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import com.otakup.niriko.ui.settings.SettingsActionRow
 import com.otakup.niriko.ui.settings.SettingsDetailScaffold
 import com.otakup.niriko.ui.settings.SettingsGroupTitle
@@ -31,9 +32,11 @@ import com.otakup.niriko.ui.settings.SettingsSplitGroup
 fun AboutSettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 非空且是 debug 构建时，在页底显示「设计对照」入口（Niriko 27 · S0 的评审页）。 */
+    onOpenDesignPlayground: (() -> Unit)? = null,
 ) {
     SettingsDetailScaffold(title = "关于", onBack = onBack, modifier = modifier) {
-        AboutSettingsContent()
+        AboutSettingsContent(onOpenDesignPlayground = onOpenDesignPlayground)
     }
 }
 
@@ -42,7 +45,7 @@ fun AboutSettingsScreen(
  * 窄屏由 AboutSettingsScreen 套进 SettingsDetailScaffold，宽屏由设置两栏的右列直接调用。
  */
 @Composable
-fun AboutSettingsContent() {
+fun AboutSettingsContent(onOpenDesignPlayground: (() -> Unit)? = null) {
     var showLicenseDialog by remember { mutableStateOf(false) }
     // 运行时读取版本号，避免硬编码与实际版本漂移
     val context = LocalContext.current
@@ -53,31 +56,48 @@ fun AboutSettingsContent() {
 
     Column {
         SettingsGroupTitle("应用")
-        SettingsSplitGroup(content = listOf(
-            {
-                SettingsInfoRow(
-                    icon = Icons.Outlined.Info,
-                    title = "版本号",
-                    value = "v$versionName",
+        SettingsSplitGroup(
+            content = listOf(
+                {
+                    SettingsInfoRow(
+                        icon = Icons.Outlined.Info,
+                        title = "版本号",
+                        value = "v$versionName",
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Description,
+                        title = "开源许可",
+                        description = "MIT License",
+                        onClick = { showLicenseDialog = true },
+                    )
+                },
+                {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Feedback,
+                        title = "反馈与建议",
+                        description = "GitHub Issues",
+                        onClick = { openExternalUrl(context, REPO_ISSUES_URL) },
+                    )
+                },
+            )
+        )
+        if (onOpenDesignPlayground != null && com.otakup.niriko.BuildConfig.DEBUG) {
+            SettingsGroupTitle("开发")
+            SettingsSplitGroup(
+                content = listOf(
+                    {
+                        SettingsActionRow(
+                            icon = Icons.Outlined.Palette,
+                            title = "设计对照",
+                            description = "令牌与现状组件同屏对照（仅 debug 构建）",
+                            onClick = onOpenDesignPlayground,
+                        )
+                    },
                 )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Description,
-                    title = "开源许可",
-                    description = "MIT License",
-                    onClick = { showLicenseDialog = true },
-                )
-            },
-            {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Feedback,
-                    title = "反馈与建议",
-                    description = "GitHub Issues",
-                    onClick = { openExternalUrl(context, REPO_ISSUES_URL) },
-                )
-            },
-        ))
+            )
+        }
     }
 
     if (showLicenseDialog) {
